@@ -17,6 +17,8 @@ import json
 import re
 import logging
 import asyncio
+
+ENABLE_CRITIQUE_PIPELINE = False
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -367,66 +369,12 @@ async def analyze_writing_profile(user_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def process_job(
+async def _generate_draft(
     job: WritingJob,
+    history: list[dict[str, Any]],
+    profile: list[str],
     on_stream_chunk: Callable[[str, str], Awaitable[None]] | None = None,
-) -> AIResult:
-    """Process a single WriteRight AI job.
-
-    This is the main entry point called by queue_consumer for each job.
-
-    Args:
-        job: The WritingJob payload from Redis.
-
-    Returns:
-        AIResult with the improved text, teaching, and follow-up.
-
-    Raises:
-        ModelTimeoutError: If the LLM call times out.
-        ModelError: If the LLM call fails.
-        Exception: For unexpected errors.
-    """
-    logger.info(
-        '{"event": "job.processing", "job_id": "%s", "chat_id": "%s", '
-        '"tone": "%s", "mode": "%s", "attempt": %d}',
-        job.id,
-        job.chat_id,
-        job.tone,
-        job.mode,
-        job.attempt,
-    )
-
-    # 1. Update job status to processing in Supabase
-    try:
-        await update_job_status(job.id, "processing")
-    except Exception:
-        logger.warning(
-            "Failed to update job status to processing in Supabase (non-fatal)")
-
-    # 2. Fetch chat history from Supabase
-    history: list[dict[str, Any]] = []
-    try:
-        raw_history = await get_chat_history(job.chat_id, limit=20)
-        # Convert to dicts for prompt builder
-        history = [
-            {"role": msg.get("role", "user"), "content": msg.get("content", "")}
-            for msg in raw_history
-        ]
-    except Exception:
-        logger.warning(
-            "Failed to fetch chat history for %s (continuing without history)",
-            job.chat_id,
-        )
-
-    # 2.5. Fetch Personal Writing Profile
-    profile: list[str] = []
-    try:
-        profile = await get_writing_profile(job.user_id)
-    except Exception:
-        logger.warning(
-            f"Failed to fetch profile for {
-                job.user_id} (continuing without profile)")
-
+) -> tuple[AIResult, dict[str, bool]]:
     # 3. Build prompt
     messages, prompt_metadata = build_messages(
         user_text=job.content,
@@ -485,6 +433,137 @@ async def process_job(
             if repaired_result.improved_text != repaired.strip():
                 logger.info("JSON repair succeeded for job %s", job.id)
                 result = repaired_result
+
+    return result, prompt_metadata
+
+
+async def _generate_critique_and_revision(
+    draft_result: AIResult,
+    job: WritingJob,
+) -> AIResult:
+    """Phase 2 Critique Layer: Second LLM pass to refine the draft."""
+    router = get_model_router()
+
+    critique_prompt = f"""
+    You are an expert editor. Review the following draft and improve it further.
+    Original user tone: {job.tone}
+    Original mode: {job.mode}
+    Draft to improve:
+    {draft_result.improved_text}
+
+    Return ONLY a JSON object exactly matching the WriteRight schema (improved_text, teaching, follow_up, suggestions, scores).
+    """
+
+    messages = [
+        {"role": "system", "content": "You are a professional editor. Output only valid JSON."},
+        {"role": "user", "content": critique_prompt}
+    ]
+
+    try:
+        model_response = await router.route(
+            task_type="write_improvement",
+            messages=messages,
+            max_tokens=settings.max_output_tokens,
+        )
+
+        result = _parse_ai_response(
+            content=model_response.content,
+            model=model_response.model,
+            prompt_tokens=model_response.prompt_tokens,
+            completion_tokens=model_response.completion_tokens,
+            mode=job.mode,
+        )
+
+        # Merge some context from draft if needed, but we can just use the new result
+        # To make sure we keep the same structure:
+        if result.improved_text == model_response.content.strip():
+             # fallback failed parsing
+             return draft_result
+
+        return result
+    except Exception as e:
+        logger.warning(f"Critique pass failed, returning original draft: {e}")
+        return draft_result
+
+async def process_job(
+    job: WritingJob,
+    on_stream_chunk: Callable[[str, str], Awaitable[None]] | None = None,
+    on_status: Callable[[str], Awaitable[None]] | None = None,
+) -> AIResult:
+    """Process a single WriteRight AI job.
+
+    This is the main entry point called by queue_consumer for each job.
+
+    Args:
+        job: The WritingJob payload from Redis.
+
+    Returns:
+        AIResult with the improved text, teaching, and follow-up.
+
+    Raises:
+        ModelTimeoutError: If the LLM call times out.
+        ModelError: If the LLM call fails.
+        Exception: For unexpected errors.
+    """
+    logger.info(
+        '{"event": "job.processing", "job_id": "%s", "chat_id": "%s", '
+        '"tone": "%s", "mode": "%s", "attempt": %d}',
+        job.id,
+        job.chat_id,
+        job.tone,
+        job.mode,
+        job.attempt,
+    )
+
+    # 1. Update job status to processing in Supabase
+    try:
+        await update_job_status(job.id, "processing")
+    except Exception:
+        logger.warning(
+            "Failed to update job status to processing in Supabase (non-fatal)")
+
+    # 2. Fetch chat history from Supabase
+    history: list[dict[str, Any]] = []
+    try:
+        raw_history = await get_chat_history(job.chat_id, limit=20)
+        # Convert to dicts for prompt builder
+        history = [
+            {"role": msg.get("role", "user"), "content": msg.get("content", "")}
+            for msg in raw_history
+        ]
+    except Exception:
+        logger.warning(
+            "Failed to fetch chat history for %s (continuing without history)",
+            job.chat_id,
+        )
+
+    # 2.5. Fetch Personal Writing Profile
+    profile: list[str] = []
+    try:
+        profile = await get_writing_profile(job.user_id)
+    except Exception:
+        logger.warning(
+            f"Failed to fetch profile for {
+                job.user_id} (continuing without profile)")
+
+    if on_status:
+        await on_status("drafting")
+
+    result, prompt_metadata = await _generate_draft(
+        job=job,
+        history=history,
+        profile=profile,
+        on_stream_chunk=on_stream_chunk,
+    )
+
+    if ENABLE_CRITIQUE_PIPELINE:
+        if on_status:
+            await on_status("critiquing")
+        result = await _generate_critique_and_revision(result, job)
+
+    if on_status:
+        await on_status("finalizing")
+
 
     # 6. Persist AI message to Supabase
     try:

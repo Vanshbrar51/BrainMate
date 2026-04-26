@@ -177,6 +177,7 @@ interface SharePayload {
 
 interface StreamJobHandlers {
   onToken?: (chunk: string) => void
+  onStatus?: (stage: string, message: string) => void
 }
 
 interface SpeechRecognitionAlternativeLike {
@@ -500,6 +501,17 @@ async function streamJobResult(
       }
     })
 
+    eventSource.addEventListener('status', (e) => {
+      try {
+        const payload = JSON.parse((e as MessageEvent).data ?? '{}') as { stage?: string; message?: string }
+        if (payload.stage && payload.message) {
+          handlers?.onStatus?.(payload.stage, payload.message)
+        }
+      } catch {
+        // Ignore malformed status events.
+      }
+    })
+
     eventSource.addEventListener('result', (e) => {
       try {
         const data = JSON.parse(e.data) as { result?: AIJobResult }
@@ -750,7 +762,7 @@ const THINKING_MESSAGES = [
 ] as const
 
 // ── CHANGED: [UI-6] Brain Wave Loading Animation ──
-function WriteRightThinking({ startTime }: { startTime: number | null }) {
+function WriteRightThinking({ startTime, customMessage }: { startTime: number | null; customMessage?: string }) {
   const [elapsed, setElapsed] = useState(0)
   const [msgIndex, setMsgIndex] = useState(0)
 
@@ -2033,6 +2045,7 @@ export default function WriteRightPage() {
   const [sharePayload, setSharePayload] = useState<SharePayload | null>(null)
 
   const [streamingText, setStreamingText] = useState('')
+  const [pipelineMessage, setPipelineMessage] = useState('')
   const [streamingBefore, setStreamingBefore] = useState('')
 
   const [fileBadge, setFileBadge] = useState<{ name: string; loading: boolean } | null>(null)
@@ -3024,7 +3037,7 @@ export default function WriteRightPage() {
                   )
                 })}
 
-                {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} />}
+                {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} customMessage={pipelineMessage} />}
 
                 {loading && streamingText && (
                   <AIMessage

@@ -100,8 +100,17 @@ export async function GET(
                     const parsed = JSON.parse(message) as {
                       chunk?: string;
                       delta?: string;
+                      stage?: string;
                     };
-                    if (parsed.chunk) {
+                    if (parsed.stage) {
+                      // Only send pipeline stages that match our exact requirements
+                      if (["drafting", "critiquing", "finalizing"].includes(parsed.stage)) {
+                        sendEvent("status", {
+                          stage: parsed.stage,
+                          message: parsed.stage === "drafting" ? "Writing initial draft..." : parsed.stage === "critiquing" ? "Refining output..." : "Finalizing..."
+                        });
+                      }
+                    } else if (parsed.chunk) {
                       sendEvent("token", {
                         chunk: parsed.chunk,
                         delta: parsed.delta ?? parsed.chunk,
