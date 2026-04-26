@@ -1,39 +1,70 @@
 // FILE: app/api/writeright/health/route.ts — Health check endpoint
+// ── CHANGED: [BE-5] Full health endpoint with latency tracking ──
 
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
-import { getRedisPool } from "@/lib/redis";
+import { getRedisPool, isCircuitOpen } from "@/lib/redis";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   let redisOk = false;
   let supabaseOk = false;
+  let redisLatency = -1;
+  let supabaseLatency = -1;
 
-  // Check Redis
+  // ── CHANGED: [BE-5] Redis health check with latency ──
   try {
-    const pingPromise = getRedisPool().ping();
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Redis ping timeout")), 500)
-    );
-    await Promise.race([pingPromise, timeoutPromise]);
-    redisOk = true;
+    if (!isCircuitOpen()) {
+      const start = performance.now();
+      const pingPromise = getRedisPool().ping();
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Redis ping timeout")), 500),
+      );
+      await Promise.race([pingPromise, timeoutPromise]);
+      redisLatency = Math.round(performance.now() - start);
+      redisOk = true;
+    }
   } catch (error) {
     console.error("[api.writeright.health] Redis health check failed:", error);
   }
 
-  // Check Supabase
+  // ── CHANGED: [BE-5] Supabase health check with latency ──
   try {
+    const start = performance.now();
     const supabase = getSupabaseAdmin();
-    const { error } = await supabase.from("writeright_chats").select("id").limit(1);
-    if (!error) {
-      supabaseOk = true;
-    } else {
-      console.error("[api.writeright.health] Supabase health check failed:", error);
+
+    const queryPromise = supabase
+      .from("writeright_chats")
+      .select("id")
+      .limit(1);
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Supabase query timeout")), 1000),
+    );
+
+    const result = await Promise.race([queryPromise, timeoutPromise]);
+    supabaseLatency = Math.round(performance.now() - start);
+
+    // result is the Supabase response
+    if (result && typeof result === "object" && "error" in result) {
+      const sbResult = result as { error: unknown };
+      if (!sbResult.error) {
+        supabaseOk = true;
+      } else {
+        console.error(
+          "[api.writeright.health] Supabase health check failed:",
+          sbResult.error,
+        );
+      }
     }
   } catch (error) {
     console.error("[api.writeright.health] Supabase health check failed:", error);
   }
 
-  let status = "ok";
+  // ── CHANGED: [BE-5] Structured response with latency ──
+  let status: "ok" | "degraded" | "down" = "ok";
   if (!redisOk && !supabaseOk) {
     status = "down";
   } else if (!redisOk || !supabaseOk) {
@@ -43,11 +74,22 @@ export async function GET() {
   return NextResponse.json(
     {
       status,
-      redis: redisOk,
-      supabase: supabaseOk,
-      timestamp: new Date().toISOString(),
+      checks: {
+        redis: redisOk,
+        supabase: supabaseOk,
+      },
+      latency: {
+        redis: redisLatency,
+        supabase: supabaseLatency,
+      },
+      ts: new Date().toISOString(),
     },
-    { status: status === "down" ? 503 : 200 }
+    {
+      status: status === "down" ? 503 : status === "degraded" ? 503 : 200,
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
+    },
   );
 }
 

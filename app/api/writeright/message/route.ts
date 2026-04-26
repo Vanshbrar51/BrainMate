@@ -1,4 +1,5 @@
 // FILE: app/api/writeright/message/route.ts — Core WriteRight message processing
+// ── CHANGED: [BE-3] Rate limit headers + [BE-1] centralized error handling ──
 //
 // POST — Submit a user message for AI improvement
 
@@ -19,7 +20,7 @@ import {
   traceLogFields,
   injectTraceContext,
 } from "@/lib/tracing";
-import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
+import { withErrorHandler, createApiError, type ErrorCode } from "@/lib/writeright-errors";
 import { MessageSchema } from "@/lib/writeright-validators";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,18 @@ function sanitizeInput(text: string): string {
 function getMaxRequestsPerMinute(): number {
   const envVal = parseInt(process.env.WRITERIGHT_RATE_LIMIT_PER_MINUTE ?? "10", 10);
   return Number.isFinite(envVal) && envVal > 0 ? envVal : 10;
+}
+
+// ── NEW: [BE-3] Helper to build rate limit response headers ──
+function buildRateLimitHeaders(
+  limit: number,
+  remaining: number,
+): Record<string, string> {
+  return {
+    "X-RateLimit-Limit": limit.toString(),
+    "X-RateLimit-Remaining": remaining.toString(),
+    "X-RateLimit-Reset": (Math.floor(Date.now() / 1000) + 60).toString(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -65,10 +78,19 @@ export async function POST(req: Request) {
       // 3. Validate fields
       const parsed = MessageSchema.safeParse(body);
       if (!parsed.success) {
-        throw createApiError("VALIDATION_ERROR", "Invalid input", 400, { issues: parsed.error.issues });
+        throw createApiError("VALIDATION_ERROR", "Invalid input", 400, {
+          issues: parsed.error.issues,
+        });
       }
 
-      const { chatId, text: rawText, tone, mode, output_language: outputLanguage, intensity } = parsed.data;
+      const {
+        chatId,
+        text: rawText,
+        tone,
+        mode,
+        output_language: outputLanguage,
+        intensity,
+      } = parsed.data;
 
       // 4. Sanitize text
       const text = sanitizeInput(rawText);
@@ -77,28 +99,32 @@ export async function POST(req: Request) {
       }
 
       // 5. Rate limit check
+      const limit = getMaxRequestsPerMinute();
+      let rateLimitHeaders: Record<string, string> = {};
       try {
-        const limit = getMaxRequestsPerMinute();
         const { allowed, remaining } = await checkRateLimit(userId, limit);
+        rateLimitHeaders = buildRateLimitHeaders(limit, remaining);
         addSpanAttributes({ "writeright.rate_limit_remaining": remaining });
 
         if (!allowed) {
           addSpanEvent("rate_limit.exceeded", { user_id: userId });
           throw createApiError("RATE_LIMITED", "Rate limit exceeded", 429, {
-            headers: {
-              "X-RateLimit-Limit": limit.toString(),
-              "X-RateLimit-Remaining": remaining.toString(),
-              "X-RateLimit-Reset": (Math.floor(Date.now() / 1000) + 60).toString(),
-              "Retry-After": "60"
-            }
+            headers: { ...rateLimitHeaders, "Retry-After": "60" },
           });
         }
       } catch (err) {
-        if (err instanceof Error && err.name === "WriteRightError") throw err;
+        if (
+          err instanceof Error &&
+          (err as { code?: ErrorCode }).code === "RATE_LIMITED"
+        ) {
+          throw err;
+        }
         console.error("[api.writeright.message] Rate limit check failed:", {
           error: err instanceof Error ? err.message : String(err),
           ...traceLogFields(),
         });
+        // Graceful fallback: allow request if rate limit check itself fails
+        rateLimitHeaders = buildRateLimitHeaders(limit, limit);
       }
 
       const supabase = getSupabaseAdmin();
@@ -113,7 +139,11 @@ export async function POST(req: Request) {
         .single();
 
       if (chatError || !chat) {
-        throw createApiError("CHAT_NOT_FOUND", "Chat not found or does not belong to you", 404);
+        throw createApiError(
+          "CHAT_NOT_FOUND",
+          "Chat not found or does not belong to you",
+          404,
+        );
       }
 
       // 7. Insert user message
@@ -138,7 +168,13 @@ export async function POST(req: Request) {
       }
 
       // 8. Cache check (duplicate submission guard)
-      const inputHash = computeInputHash(text, tone, mode, outputLanguage, intensity);
+      const inputHash = computeInputHash(
+        text,
+        tone,
+        mode,
+        outputLanguage,
+        intensity,
+      );
       try {
         const cachedResult = await getCachedAIResponse(inputHash);
         if (cachedResult) {
@@ -159,6 +195,7 @@ export async function POST(req: Request) {
             },
           });
 
+          // ── CHANGED: [BE-3] Include rate limit headers on cached response ──
           return NextResponse.json(
             {
               jobId: "cached",
@@ -166,7 +203,7 @@ export async function POST(req: Request) {
               status: "completed" as const,
               result: cachedResult,
             },
-            { status: 200 },
+            { status: 200, headers: rateLimitHeaders },
           );
         }
       } catch (err) {
@@ -184,7 +221,14 @@ export async function POST(req: Request) {
           user_id: userId,
           message_id: message.id,
           status: "pending",
-          metadata: { tone, mode, output_language: outputLanguage, intensity, input_length: text.length, input_hash: inputHash },
+          metadata: {
+            tone,
+            mode,
+            output_language: outputLanguage,
+            intensity,
+            input_length: text.length,
+            input_hash: inputHash,
+          },
         })
         .select("id, created_at")
         .single();
@@ -241,17 +285,22 @@ export async function POST(req: Request) {
           .update({ status: "failed", error: "Failed to enqueue to Redis" })
           .eq("id", job.id);
 
-        throw createApiError("QUEUE_ERROR", "Failed to enqueue job. Please try again.", 503);
+        throw createApiError(
+          "QUEUE_ERROR",
+          "Failed to enqueue job. Please try again.",
+          503,
+        );
       }
 
       // 12. Return jobId and messageId
+      // ── CHANGED: [BE-3] Include rate limit headers ──
       return NextResponse.json(
         {
           jobId: job.id,
           messageId: message.id,
           status: "pending" as const,
         },
-        { status: 202 },
+        { status: 202, headers: rateLimitHeaders },
       );
     });
   });

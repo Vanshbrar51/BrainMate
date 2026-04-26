@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     google_ai_studio_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
     default_model: str = "gemini-2.5-flash"
 
-    # Task-specific model overrides (JSON string: {"write_improvement": "model-name"})
+    # Task-specific model overrides (JSON string: {"write_improvement":
+    # "model-name"})
     task_model_map: str = "{}"
 
     # Worker settings

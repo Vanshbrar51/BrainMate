@@ -44,7 +44,8 @@ LOCK_TTL_SECS = settings.job_timeout_seconds * 3
 STATUS_TTL_SECS = 3600
 
 # Lua script: atomically pop one job whose score (scheduled time) <= now
-# Note: Next.js enqueues with Date.now() which is exactly Python's time.time() * 1000
+# Note: Next.js enqueues with Date.now() which is exactly Python's
+# time.time() * 1000
 ZPOPMIN_IF_DUE_SCRIPT = """
 local key = KEYS[1]
 local now = tonumber(ARGV[1])
@@ -142,13 +143,14 @@ async def consume_jobs(
     while True:
         try:
             now_ms = int(time.time() * 1000)
-            member = await redis_client.eval(ZPOPMIN_IF_DUE_SCRIPT, 1, JOBS_KEY, now_ms)  # type: ignore[misc]
+            member = await redis_client.eval(ZPOPMIN_IF_DUE_SCRIPT, 1, JOBS_KEY, now_ms)  # type: ignore
 
             if member is None:
                 await asyncio.sleep(poll_interval)
                 continue
 
-            member_str = member.decode("utf-8") if isinstance(member, bytes) else str(member)
+            member_str = member.decode(
+                "utf-8") if isinstance(member, bytes) else str(member)
 
             try:
                 job_data = json.loads(member_str)
@@ -180,7 +182,9 @@ async def consume_jobs(
                 await asyncio.gather(*active_tasks, return_exceptions=True)
             break
         except Exception:
-            logger.exception("Worker %s encountered an error in main loop", worker_id)
+            logger.exception(
+                "Worker %s encountered an error in main loop",
+                worker_id)
             await asyncio.sleep(poll_interval)
 
 
@@ -236,7 +240,8 @@ async def _process_job_safe(
             cache_key = f"writeright:cache:{_input_hash_for_cache(job)}"
             await redis_client.setex(cache_key, STATUS_TTL_SECS, json.dumps(result_dict))
         except Exception:
-            logger.warning("Failed to cache result for job %s (non-fatal)", job.id)
+            logger.warning(
+                "Failed to cache result for job %s (non-fatal)", job.id)
 
         logger.info(
             '{"event": "job.completed", "job_id": "%s", "chat_id": "%s", '
@@ -253,7 +258,10 @@ async def _process_job_safe(
         increment_metric("jobs_processed")
 
     except asyncio.TimeoutError:
-        logger.error("Job %s timed out after %ds", job.id, settings.job_timeout_seconds)
+        logger.error(
+            "Job %s timed out after %ds",
+            job.id,
+            settings.job_timeout_seconds)
         await _handle_failure(
             redis_client=redis_client,
             job=job,
@@ -298,7 +306,8 @@ async def _handle_failure(
         try:
             await update_job_status(job.id, "failed", error=error[:500])
         except Exception:
-            logger.exception("Failed to update Supabase job status for %s", job.id)
+            logger.exception(
+                "Failed to update Supabase job status for %s", job.id)
 
         logger.error(
             '{"event": "job.failed", "job_id": "%s", "attempts": %d, "error": "%s"}',
@@ -326,7 +335,8 @@ async def _handle_failure(
         try:
             await update_job_status(job.id, "retrying", error=error[:500])
         except Exception:
-            logger.exception("Failed to update Supabase job status for %s", job.id)
+            logger.exception(
+                "Failed to update Supabase job status for %s", job.id)
 
         logger.warning(
             '{"event": "job.retrying", "job_id": "%s", "attempt": %d, "delay_ms": %d}',
@@ -337,5 +347,9 @@ async def _handle_failure(
 
 
 def _input_hash_for_cache(job: WritingJob) -> str:
-    cache_material = f"{job.content}:{job.tone}:{job.mode}:{job.output_language or 'en'}"
+    cache_material = f"{
+        job.content}:{
+        job.tone}:{
+            job.mode}:{
+                job.output_language or 'en'}"
     return hashlib.sha256(cache_material.encode("utf-8")).hexdigest()

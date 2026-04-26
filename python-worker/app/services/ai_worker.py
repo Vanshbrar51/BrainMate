@@ -24,7 +24,7 @@ from typing import Any
 from app.config import settings
 from app.models.job import WritingJob, AIResult, TeachingBlock, ScoreBlock
 from app.services.prompt_builder import build_messages
-from app.services.model_router import ModelRouter, ModelTimeoutError, ModelError
+from app.services.model_router import ModelRouter
 from app.services.supabase_client import (
     get_chat_history,
     save_ai_message,
@@ -120,14 +120,16 @@ def _sanitize_suggestion(raw_suggestion: Any) -> str | None:
 
 
 def _fallback_suggestions(mode: str) -> list[str]:
-    defaults = DEFAULT_SUGGESTIONS_BY_MODE.get(mode, DEFAULT_SUGGESTIONS_BY_MODE["email"])
+    defaults = DEFAULT_SUGGESTIONS_BY_MODE.get(
+        mode, DEFAULT_SUGGESTIONS_BY_MODE["email"])
     return defaults.copy()
 
 
 def _extract_suggestions(data: dict[str, Any], mode: str) -> list[str]:
     """Return exactly 3 deduplicated, sanitized suggestion chips."""
     suggestions_raw = data.get("suggestions")
-    suggestions_list = suggestions_raw if isinstance(suggestions_raw, list) else []
+    suggestions_list = suggestions_raw if isinstance(
+        suggestions_raw, list) else []
 
     suggestions: list[str] = []
     seen: set[str] = set()
@@ -183,7 +185,8 @@ def _parse_ai_response(
 
     try:
         data = json.loads(cleaned)
-        data.pop("cot_reasoning", None)  # strip internal reasoning trace before processing
+        # strip internal reasoning trace before processing
+        data.pop("cot_reasoning", None)
 
         # Validate required fields
         improved_text = data.get("improved_text", "")
@@ -243,10 +246,10 @@ def _parse_ai_response(
                         english_version = None
                     teaching_data = data.get("teaching", {})
                     teaching = TeachingBlock(
-                        mistakes=teaching_data.get("mistakes", []),
-                        better_versions=teaching_data.get("better_versions", []),
-                        explanations=teaching_data.get("explanations", []),
-                    )
+                        mistakes=teaching_data.get(
+                            "mistakes", []), better_versions=teaching_data.get(
+                            "better_versions", []), explanations=teaching_data.get(
+                            "explanations", []), )
                     scores_data = data.get("scores", {})
                     if not isinstance(scores_data, dict):
                         scores_data = {}
@@ -256,7 +259,8 @@ def _parse_ai_response(
                         impact=_clamp_score(scores_data.get("impact")),
                         verdict=_normalize_verdict(scores_data.get("verdict")),
                     )
-                    logger.info("JSON extraction succeeded after initial parse failure")
+                    logger.info(
+                        "JSON extraction succeeded after initial parse failure")
                     return AIResult(
                         improved_text=improved_text,
                         english_version=english_version,
@@ -273,11 +277,14 @@ def _parse_ai_response(
 
         logger.warning("JSON extraction failed, falling back to regex")
 
-        improved_match = re.search(r'"improved_text"\s*:\s*"((?:\\"|[^"])*?)"', cleaned)
+        improved_match = re.search(
+            r'"improved_text"\s*:\s*"((?:\\"|[^"])*?)"', cleaned)
         if improved_match:
             try:
-                # Basic string unescaping fallback if standard loads aborts entirely
-                fb_text = improved_match.group(1).replace('\\"', '"').replace('\\n', '\n')
+                # Basic string unescaping fallback if standard loads aborts
+                # entirely
+                fb_text = improved_match.group(1).replace(
+                    '\\"', '"').replace('\\n', '\n')
                 return AIResult(
                     improved_text=fb_text,
                     english_version=None,
@@ -292,7 +299,8 @@ def _parse_ai_response(
             except Exception:
                 pass
 
-        logger.error("Regex parsing heavily failed, resolving to pure content dump")
+        logger.error(
+            "Regex parsing heavily failed, resolving to pure content dump")
         return AIResult(
             improved_text=content.strip() if content.strip() else "Unable to process your request. Please try again.",
             english_version=None,
@@ -341,19 +349,23 @@ async def analyze_writing_profile(user_id: str) -> None:
     try:
         usage_count = await get_usage_count(user_id)
         if usage_count > 0 and usage_count % 5 == 0:
-            logger.info(f"Triggering writing profile analysis for user_id={user_id} (count={usage_count})")
+            logger.info(
+                f"Triggering writing profile analysis for user_id={user_id} (count={usage_count})")
             mistakes = await get_recent_mistakes(user_id, limit=20)
             if mistakes:
                 counter = Counter(mistakes)
                 top_mistakes = [m for m, _ in counter.most_common(5)]
                 await update_writing_profile(user_id, top_mistakes, usage_count)
-                logger.info(f"Updated writing profile for user_id={user_id} with {len(top_mistakes)} mistakes")
+                logger.info(
+                    f"Updated writing profile for user_id={user_id} with {
+                        len(top_mistakes)} mistakes")
     except Exception:
         logger.exception("Failed to analyze writing profile")
 
 # ---------------------------------------------------------------------------
 # Job Processor
 # ---------------------------------------------------------------------------
+
 
 async def process_job(
     job: WritingJob,
@@ -388,7 +400,8 @@ async def process_job(
     try:
         await update_job_status(job.id, "processing")
     except Exception:
-        logger.warning("Failed to update job status to processing in Supabase (non-fatal)")
+        logger.warning(
+            "Failed to update job status to processing in Supabase (non-fatal)")
 
     # 2. Fetch chat history from Supabase
     history: list[dict[str, Any]] = []
@@ -410,7 +423,9 @@ async def process_job(
     try:
         profile = await get_writing_profile(job.user_id)
     except Exception:
-        logger.warning(f"Failed to fetch profile for {job.user_id} (continuing without profile)")
+        logger.warning(
+            f"Failed to fetch profile for {
+                job.user_id} (continuing without profile)")
 
     # 3. Build prompt
     messages, prompt_metadata = build_messages(
@@ -499,7 +514,8 @@ async def process_job(
             output=result.model_dump(),
         )
     except Exception:
-        logger.exception("Failed to update job status to completed in Supabase")
+        logger.exception(
+            "Failed to update job status to completed in Supabase")
 
     # 8. Record usage (non-fatal)
     try:
@@ -526,18 +542,19 @@ async def process_job(
     except Exception:
         logger.warning("Failed to update streak/achievements (non-fatal)")
 
-
     # Triggers F-04 logic asynchronously
     asyncio.create_task(analyze_writing_profile(job.user_id))
 
     # F-07: Generate Chat Title intelligently
     def _trigger_title_gen():
-        nonlocal result
         words = result.improved_text.split()
         if len(words) > 0:
             short_text = " ".join(words[:5]) + "..."
-            asyncio.create_task(update_chat_title(job.chat_id, f"📝 {short_text}"))
-    
+            asyncio.create_task(
+                update_chat_title(
+                    job.chat_id,
+                    f"📝 {short_text}"))
+
     _trigger_title_gen()
 
     return result

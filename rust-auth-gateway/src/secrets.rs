@@ -53,6 +53,12 @@ pub struct SecretManager {
     secret_mapping: HashMap<String, String>,
 }
 
+impl Default for SecretManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SecretManager {
     pub fn new() -> Self {
         let mut mapping = HashMap::new();

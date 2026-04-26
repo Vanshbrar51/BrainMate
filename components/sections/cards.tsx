@@ -216,7 +216,7 @@ const Cards = () => {
 
   return <div ref={ref} className="max-w-5xl mx-auto w-full h-[50rem] relative text-white">
 
-    {cards.map((card, index) =>
+    {cards.map((card) =>
       <motion.div key={card.title}>
         <motion.button
           onClick={() => setActive(card)}

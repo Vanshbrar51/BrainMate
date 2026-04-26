@@ -1349,6 +1349,114 @@ footer {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   WRITERIGHT — Design Token System (dark editorial theme)
+   Aesthetic: Notion × Linear × premium writing journal
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── NEW: [UI-*] WriteRight design tokens ── */
+[data-module="write"] {
+  --bg-1: #0f0f0f;
+  --bg-2: #161616;
+  --bg-3: #1e1e1e;
+  --text-1: #f0ede8;
+  --text-2: #a09890;
+  --text-3: #585450;
+  --border-1: #2a2622;
+  --border-2: #3d3830;
+  --mod-write: #c4a882;
+  --mod-write-dim: rgba(196,168,130,0.12);
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --error: #f87171;
+  --primary: #c4a882;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-serif: 'DM Serif Display', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --wr-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  background: var(--bg-1) !important;
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  letter-spacing: -0.01em;
+}
+
+/* ── NEW: Google Fonts import for WriteRight typography ── */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=DM+Serif+Display&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ── NEW: WriteRight motion keyframes ── */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes wr-fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes wr-scale-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes wr-slide-up {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes wr-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes wr-score-fill {
+    from { width: 0; }
+  }
+  @keyframes wr-bounce-settle {
+    0% { transform: scale(1.01); }
+    100% { transform: scale(1); }
+  }
+  @keyframes wr-mic-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.5; }
+  }
+  @keyframes wr-brain-wave {
+    0% { stroke-dashoffset: 100; }
+    100% { stroke-dashoffset: 0; }
+  }
+  @keyframes wr-confetti-burst {
+    0% { transform: translateY(0) rotate(0) scale(1); opacity: 1; }
+    100% { transform: translateY(-40px) rotate(180deg) scale(0); opacity: 0; }
+  }
+  @keyframes wr-glow-pulse {
+    0%, 100% { box-shadow: 0 0 0 0px transparent; }
+    50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success) 30%, transparent); }
+  }
+  @keyframes wr-achievement-shimmer {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+  }
+  @keyframes wr-streaming-cursor {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  @keyframes wr-word-fade {
+    from { opacity: 0; filter: blur(2px); }
+    to { opacity: 1; filter: blur(0); }
+  }
+  @keyframes wr-progress-ring {
+    from { stroke-dashoffset: 100; }
+  }
+  @keyframes wr-slide-pill {
+    from { opacity: 0; transform: translateX(-4px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+}
+
+/* ── NEW: WriteRight skeleton shimmer ── */
+.wr-skeleton {
+  background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-3) 50%, var(--bg-2) 75%);
+  background-size: 200% 100%;
+  animation: wr-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* ═══════════════════════════════════════════════════════════════
    WRITERIGHT — Page-specific design system additions
    ═══════════════════════════════════════════════════════════════ */
 
@@ -3174,3 +3282,485 @@ input[type="range"].wr-intensity-slider {
   border-top: 1px solid var(--border);
 }
 .wr-sidebar-onboard p { margin: 0 0 4px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   WRITERIGHT v2.0 — Premium UI Components
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── [UI-1] Mode Switcher — Segmented Control ── */
+.wr-mode-switcher {
+  display: flex; position: relative; gap: 0;
+  background: var(--bg-2); border-radius: var(--radius-md);
+  border: 1px solid var(--border-1); padding: 3px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.wr-mode-switcher::-webkit-scrollbar { display: none; }
+.wr-mode-switcher-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border: none; background: transparent;
+  color: var(--text-3); font-size: 13px; font-weight: 500;
+  font-family: var(--font-sans); cursor: pointer; white-space: nowrap;
+  border-radius: var(--radius-sm); position: relative; z-index: 1;
+  transition: color 180ms var(--wr-ease);
+  min-height: 44px;
+}
+.wr-mode-switcher-btn:hover { color: var(--text-2); }
+.wr-mode-switcher-btn.active { color: var(--text-1); font-weight: 600; }
+.wr-mode-pill-indicator {
+  position: absolute; top: 3px; height: calc(100% - 6px);
+  background: var(--bg-3); border-radius: var(--radius-sm);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  transition: left 220ms var(--wr-ease), width 220ms var(--wr-ease);
+  z-index: 0;
+}
+
+/* ── [UI-2] Tone Pills — Redesigned ── */
+[data-module="write"] .tone-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 14px; border-radius: 9999px;
+  font-size: 12px; font-weight: 500; font-family: var(--font-sans);
+  border: 1px solid var(--border-1); background: transparent;
+  color: var(--text-3); cursor: pointer; white-space: nowrap;
+  transition: all 180ms var(--wr-ease); min-height: 44px;
+}
+[data-module="write"] .tone-pill:hover {
+  background: var(--bg-3); color: var(--text-2); border-color: var(--border-2);
+  transform: translateY(-1px);
+}
+[data-module="write"] .tone-pill.active {
+  background: var(--mod-write); color: var(--bg-1);
+  border-color: var(--mod-write); font-weight: 600;
+}
+[data-module="write"] .tone-pill.active:active { transform: scale(0.97); }
+
+/* ── [UI-3] Intensity Slider — Custom ── */
+[data-module="write"] .wr-intensity-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 6px; border-radius: 3px;
+  background: linear-gradient(to right,
+    var(--mod-write) 0%, var(--mod-write) var(--slider-pct, 50%),
+    var(--bg-3) var(--slider-pct, 50%), var(--bg-3) 100%);
+  outline: none; cursor: pointer;
+}
+[data-module="write"] .wr-intensity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--mod-write); border: none;
+  box-shadow: 0 0 0 4px var(--mod-write-dim); cursor: pointer;
+  transition: box-shadow 180ms var(--wr-ease);
+}
+[data-module="write"] .wr-intensity-slider::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 0 6px var(--mod-write-dim);
+}
+[data-module="write"] .wr-intensity-slider::-moz-range-thumb {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--mod-write); border: none;
+  box-shadow: 0 0 0 4px var(--mod-write-dim); cursor: pointer;
+}
+
+/* ── [UI-5] Empty State — Headline ── */
+.wr-hero-title {
+  font-family: var(--font-serif); font-size: clamp(36px, 5vw, 52px);
+  font-weight: 400; line-height: 1.1; letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--text-1), var(--mod-write));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; margin: 0 0 12px;
+}
+.wr-hero-tagline {
+  font-family: var(--font-sans); font-size: 16px; color: var(--text-2);
+  margin: 0 0 32px; letter-spacing: -0.01em;
+}
+
+/* ── [OUTPUT-1] Transformation Card ── */
+[data-module="write"] .wr-diff-container {
+  background: var(--bg-2); border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+[data-module="write"] .wr-diff-before {
+  background: rgba(248,113,113,0.04); border-left: 2px solid var(--error);
+  padding: 16px 20px;
+}
+[data-module="write"] .wr-diff-after {
+  background: rgba(74,222,128,0.04); border-left: 2px solid var(--success);
+  padding: 16px 20px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-module="write"] .wr-diff-after.wr-just-arrived {
+    animation: wr-bounce-settle 300ms var(--wr-ease);
+  }
+}
+
+/* ── [UI-4] Sidebar — Refined ── */
+[data-module="write"] .wr-sidebar {
+  background: var(--bg-1); border-right: 1px solid var(--border-1);
+  width: 280px; flex-shrink: 0; display: flex; flex-direction: column;
+  height: 100vh; transition: width 220ms var(--wr-ease);
+  overflow: hidden;
+}
+.wr-sidebar-brand {
+  font-family: var(--font-serif); font-size: 18px; color: var(--text-1);
+  display: flex; align-items: center; gap: 8px; padding: 0;
+}
+.wr-sidebar-brand-icon {
+  color: var(--mod-write); font-size: 14px;
+}
+[data-module="write"] .wr-sidebar-item.active {
+  border-left: 3px solid var(--mod-write);
+  background: var(--mod-write-dim);
+}
+.wr-sidebar-item .wr-sidebar-del {
+  opacity: 0; transition: opacity 150ms;
+}
+.wr-sidebar-item:hover .wr-sidebar-del { opacity: 1; }
+.wr-sidebar-new-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 10px 14px; border: 1px dashed var(--mod-write);
+  background: transparent; color: var(--mod-write);
+  border-radius: var(--radius-md); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 180ms var(--wr-ease); min-height: 44px;
+}
+.wr-sidebar-new-btn:hover {
+  background: var(--mod-write-dim); border-style: solid;
+}
+
+/* ── [LOOP-2] Streak Counter ── */
+.wr-streak-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 9999px;
+  background: rgba(251,191,36,0.12); color: var(--warning);
+  font-size: 12px; font-weight: 600;
+}
+
+/* ── [LOOP-3] Momentum Counter ── */
+.wr-momentum-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--mod-write); font-weight: 500;
+}
+
+/* ── [UI-6] Brain Wave Loading ── */
+.wr-brain-wave svg {
+  width: 48px; height: 24px;
+}
+.wr-brain-wave path {
+  fill: none; stroke: var(--mod-write); stroke-width: 2;
+  stroke-linecap: round;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wr-brain-wave path {
+    stroke-dasharray: 100; stroke-dashoffset: 100;
+    animation: wr-brain-wave 1.5s ease-in-out infinite;
+  }
+  .wr-brain-wave path:nth-child(2) { animation-delay: 200ms; }
+  .wr-brain-wave path:nth-child(3) { animation-delay: 400ms; }
+}
+
+/* ── [UI-7] Toast System ── */
+.wr-toast-container {
+  position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none; max-width: 360px;
+}
+.wr-toast {
+  pointer-events: auto; padding: 14px 18px;
+  background: var(--bg-2); border: 1px solid var(--border-1);
+  border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  display: flex; align-items: center; justify-content: space-between; gap: 12;
+  font-size: 13px; color: var(--text-1);
+  animation: wr-slide-up 280ms var(--wr-ease);
+  transition: opacity 180ms, transform 180ms;
+}
+.wr-toast.exit { opacity: 0; transform: translateX(100%); }
+.wr-toast-error { border-left: 4px solid var(--error); }
+.wr-toast-warning { border-left: 4px solid var(--warning); }
+.wr-toast-success { border-left: 4px solid var(--success); }
+.wr-toast-info { border-left: 4px solid var(--mod-write); }
+.wr-toast-action {
+  background: none; border: none; color: var(--mod-write);
+  cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.wr-toast-dismiss {
+  background: none; border: none; color: var(--text-3);
+  cursor: pointer; font-size: 14px; padding: 2px 4px;
+}
+
+/* ── [INPUT-1] Smart Textarea ── */
+[data-module="write"] .chat-textarea {
+  background: var(--bg-2); border: 1px solid var(--border-1);
+  border-radius: var(--radius-md); color: var(--text-1);
+  font-family: var(--font-sans); font-size: 14px;
+  resize: none; transition: box-shadow 220ms var(--wr-ease), border-color 220ms var(--wr-ease);
+}
+[data-module="write"] .chat-textarea:focus {
+  border-color: var(--mod-write);
+  box-shadow: 0 0 0 1px var(--mod-write), 0 0 24px rgba(196,168,130,0.08);
+  outline: none;
+}
+
+/* ── [INPUT-4] Quick Action Chips ── */
+.wr-quick-actions {
+  display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 8px;
+  -webkit-overflow-scrolling: touch;
+}
+.wr-quick-actions::-webkit-scrollbar { display: none; }
+.wr-quick-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 12px; border-radius: 9999px;
+  background: var(--mod-write-dim); color: var(--mod-write);
+  border: 1px solid rgba(196,168,130,0.2);
+  font-size: 11px; font-weight: 500; white-space: nowrap;
+  cursor: pointer; transition: all 180ms var(--wr-ease);
+  min-height: 32px;
+}
+.wr-quick-chip:hover {
+  background: rgba(196,168,130,0.2); transform: translateY(-1px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wr-quick-chip { animation: wr-slide-pill 220ms var(--wr-ease) backwards; }
+  .wr-quick-chip:nth-child(2) { animation-delay: 60ms; }
+  .wr-quick-chip:nth-child(3) { animation-delay: 120ms; }
+  .wr-quick-chip:nth-child(4) { animation-delay: 180ms; }
+}
+
+/* ── [OUTPUT-5] Follow-up Action Chips ── */
+.wr-followup-actions {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px;
+}
+.wr-followup-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 14px; border-radius: 9999px;
+  background: transparent; color: var(--text-2);
+  border: 1px solid var(--border-1);
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  transition: all 180ms var(--wr-ease); min-height: 36px;
+}
+.wr-followup-chip:hover {
+  background: var(--bg-3); color: var(--text-1);
+  border-color: var(--border-2); transform: translateY(-1px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wr-followup-chip { animation: wr-fade-in 220ms var(--wr-ease) backwards; }
+  .wr-followup-chip:nth-child(2) { animation-delay: 60ms; }
+  .wr-followup-chip:nth-child(3) { animation-delay: 120ms; }
+}
+
+/* ── [INTEL-1] Rant Cooldown Card ── */
+.wr-rant-card {
+  position: absolute; bottom: 100%; left: 16px; right: 16px;
+  background: var(--bg-2); border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg); padding: 16px 20px;
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.2);
+  animation: wr-slide-up 220ms var(--wr-ease);
+  z-index: 10;
+}
+.wr-rant-meter { display: flex; gap: 3px; font-size: 16px; }
+
+/* ── [INTEL-3] Writing Habit Insights ── */
+.wr-insight-card {
+  background: var(--bg-2); border: 1px solid var(--border-1);
+  border-radius: var(--radius-md); padding: 14px 18px;
+  margin: 12px 0; display: flex; gap: 10px; align-items: flex-start;
+}
+.wr-insight-card-icon { font-size: 18px; flex-shrink: 0; }
+.wr-insight-card-text { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+
+/* ── [LOOP-4] Writing DNA Panel ── */
+.wr-dna-panel {
+  background: var(--bg-2); border: 1px solid var(--border-1);
+  border-radius: var(--radius-md); padding: 14px;
+  margin-top: 12px;
+}
+.wr-dna-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-3); margin: 0 0 10px;
+}
+.wr-mistake-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 9999px;
+  background: rgba(248,113,113,0.1); color: var(--error);
+  font-size: 11px; font-weight: 500; margin: 2px;
+}
+.wr-tone-active-chip {
+  display: inline-flex; padding: 3px 10px; border-radius: 9999px;
+  background: var(--mod-write-dim); color: var(--mod-write);
+  font-size: 11px; font-weight: 600; margin: 2px;
+}
+
+/* ── [GAME-1] Achievement Banner ── */
+.wr-achievement-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9998;
+  background: linear-gradient(135deg, var(--bg-2), var(--bg-3));
+  padding: 14px 24px; display: flex; align-items: center; justify-content: center;
+  gap: 12px; font-size: 14px; font-weight: 600; color: var(--text-1);
+  border-bottom: 1px solid var(--border-2);
+  background-size: 200% 100%;
+  animation: wr-slide-up 280ms var(--wr-ease), wr-achievement-shimmer 3s linear infinite;
+}
+.wr-achievement-banner-dismiss {
+  background: none; border: none; color: var(--text-3);
+  cursor: pointer; font-size: 16px; position: absolute; right: 16px;
+}
+
+/* ── [GAME-4] Milestone Card ── */
+.wr-milestone-card {
+  background: var(--bg-2); border: 1px solid var(--mod-write);
+  border-radius: var(--radius-lg); padding: 20px 24px;
+  text-align: center; margin: 16px auto; max-width: 400px;
+  box-shadow: 0 0 24px var(--mod-write-dim);
+}
+.wr-milestone-emoji { font-size: 28px; margin-bottom: 8px; }
+.wr-milestone-text { font-size: 14px; color: var(--text-2); }
+
+/* ── [INPUT-2] Drop Zone ── */
+.wr-drop-overlay {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(15,15,15,0.8); backdrop-filter: blur(4px);
+  border: 2px dashed var(--mod-write); border-radius: var(--radius-md);
+  color: var(--mod-write); font-size: 15px; font-weight: 600;
+  opacity: 0; pointer-events: none;
+  transition: opacity 180ms var(--wr-ease);
+}
+.wr-drop-overlay.active { opacity: 1; pointer-events: auto; }
+
+/* ── [PERF-2] Draft Banner ── */
+.wr-draft-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; background: var(--mod-write-dim);
+  border: 1px solid rgba(196,168,130,0.2); border-radius: var(--radius-sm);
+  font-size: 12px; color: var(--mod-write); margin-bottom: 8px;
+}
+.wr-draft-banner button {
+  background: none; border: none; color: var(--mod-write);
+  cursor: pointer; font-size: 12px; font-weight: 600; padding: 4px 8px;
+}
+
+/* ── [UI-8] Keyboard Hint ── */
+.wr-kb-hint {
+  position: absolute; bottom: calc(100% + 8px); right: 0;
+  background: var(--bg-2); border: 1px solid var(--border-1);
+  border-radius: var(--radius-sm); padding: 6px 12px;
+  font-size: 11px; color: var(--text-2); white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  animation: wr-fade-in 220ms var(--wr-ease);
+}
+.wr-kb-hint kbd {
+  display: inline-block; padding: 1px 5px;
+  background: var(--bg-3); border: 1px solid var(--border-2);
+  border-radius: 3px; font-family: var(--font-mono); font-size: 10px;
+}
+
+/* ── [INTEL-2] Readability Journey ── */
+.wr-readability-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 8px; font-size: 11px; color: var(--text-3);
+}
+.wr-readability-track {
+  flex: 1; height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--error), var(--warning), var(--success));
+  position: relative;
+}
+.wr-readability-dot {
+  position: absolute; top: -4px; width: 12px; height: 12px;
+  border-radius: 50%; border: 2px solid var(--bg-2);
+  transition: left 600ms var(--wr-ease);
+}
+
+/* ── Confetti particles ── */
+.wr-confetti {
+  position: absolute; pointer-events: none; z-index: 100;
+}
+.wr-confetti-particle {
+  position: absolute; width: 6px; height: 6px;
+  background: var(--mod-write); border-radius: 1px;
+  animation: wr-confetti-burst 600ms var(--wr-ease) forwards;
+}
+
+/* ── Daily Goal Ring ── */
+.wr-goal-ring {
+  width: 36px; height: 36px; flex-shrink: 0;
+}
+.wr-goal-ring-bg { fill: none; stroke: var(--bg-3); stroke-width: 3; }
+.wr-goal-ring-fill {
+  fill: none; stroke: var(--mod-write); stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 600ms var(--wr-ease);
+}
+
+/* ── [LOOP-2] Goal Complete Banner ── */
+.wr-goal-banner {
+  position: absolute; top: 0; left: 0; right: 0;
+  background: rgba(74,222,128,0.1); border-bottom: 1px solid rgba(74,222,128,0.2);
+  padding: 10px 16px; display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; font-weight: 600; color: var(--success);
+  animation: wr-slide-up 280ms var(--wr-ease); z-index: 5;
+}
+.wr-goal-banner button {
+  background: none; border: none; color: var(--text-3);
+  cursor: pointer; font-size: 14px;
+}
+
+/* ── Score improvements ── */
+[data-module="write"] .wr-score-track {
+  position: relative; height: 6px; border-radius: 3px;
+  background: var(--bg-3); overflow: visible;
+}
+[data-module="write"] .wr-score-fill {
+  height: 100%; border-radius: 3px;
+  width: var(--score-pct, 0%);
+  animation: wr-score-fill 600ms var(--wr-ease) backwards;
+  animation-delay: calc(var(--score-delay, 0) * 100ms);
+}
+.wr-score-ghost {
+  position: absolute; top: 0; height: 100%; border-radius: 3px;
+  background: var(--bg-3); opacity: 0.3;
+}
+.wr-score-delta {
+  font-size: 10px; font-weight: 600; margin-left: 4px;
+}
+.wr-score-delta.up { color: var(--success); }
+.wr-score-delta.down { color: var(--error); }
+
+/* ── [INTEL-4] Tone drift ── */
+.wr-tone-drift {
+  padding: 8px 14px; background: var(--mod-write-dim);
+  border: 1px solid rgba(196,168,130,0.15);
+  border-radius: var(--radius-sm); font-size: 12px;
+  color: var(--text-2); display: flex; align-items: center;
+  gap: 8px; margin-bottom: 8px;
+}
+
+/* ── [RESP-1] Mobile ── */
+@media (max-width: 768px) {
+  [data-module="write"] .wr-sidebar { display: none; }
+  .wr-mode-switcher-btn span:not(.wr-mode-icon) { display: none; }
+  .wr-toast-container { left: 16px; right: 16px; max-width: none; }
+  [data-module="write"] .chat-textarea { min-height: 100px; }
+  .wr-followup-actions { flex-wrap: nowrap; overflow-x: auto; }
+}
+
+/* ── [RESP-2] Tablet ── */
+@media (min-width: 768px) and (max-width: 1024px) {
+  [data-module="write"] .wr-sidebar { width: 240px; }
+}
+
+/* ── Verdict glow ── */
+@media (prefers-reduced-motion: no-preference) {
+  .wr-verdict-glow { animation: wr-glow-pulse 1s ease-out 1; }
+}
+
+/* ── Streaming cursor ── */
+.wr-stream-cursor {
+  display: inline-block; width: 2px; height: 14px;
+  background: var(--mod-write); vertical-align: middle; margin-left: 2px;
+  animation: wr-streaming-cursor 1s step-end infinite;
+}
+
+/* ── Word reveal animation ── */
+@media (prefers-reduced-motion: no-preference) {
+  .wr-diff-after-text.animating span[data-w] {
+    animation: wr-word-fade 0.4s var(--wr-ease) backwards;
+    animation-delay: calc(var(--w) * 30ms);
+  }
+}
+
+/* ── [LOOP-1] Copy confetti ── */
+.wr-copy-confetti { position: relative; }

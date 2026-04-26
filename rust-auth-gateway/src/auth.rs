@@ -560,13 +560,13 @@ async fn validate_token(state: &AppState, token: &str) -> Result<ClerkClaims, Ap
     let key = state.jwks_cache.get_decoding_key(&kid).await?;
 
     let mut validation = Validation::new(Algorithm::RS256);
-    validation.set_issuer(&[state.config.clerk_issuer.clone()]);
+    validation.set_issuer(std::slice::from_ref(&state.config.clerk_issuer));
     validation.set_required_spec_claims(&["sub", "sid", "jti", "iss", "exp"]);
     validation.validate_nbf = true;
     validation.leeway = 10;
 
     if let Some(audience) = state.config.clerk_audience.as_ref() {
-        validation.set_audience(&[audience.clone()]);
+        validation.set_audience(std::slice::from_ref(audience));
     }
 
     let token_data = match decode::<ClerkClaims>(token, &key, &validation) {

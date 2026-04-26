@@ -54,7 +54,9 @@ def detect_injection(text: str) -> tuple[str, bool]:
     if detected:
         logger.warning(
             "Prompt injection detected and neutralized",
-            extra={"original_length": len(text), "sanitized_length": len(sanitized)},
+            extra={
+                "original_length": len(text),
+                "sanitized_length": len(sanitized)},
         )
 
     return sanitized, detected
@@ -240,48 +242,37 @@ REFINEMENT_PREFIX = (
 )
 
 # AI-01: Mode-specific few-shot example pool (2 per mode, randomly selected)
-FEW_SHOT_POOL: dict[str, list[dict[str, str]]] = {
-    "email": [
-        {
-            "input": "Respected sir, kindly revert back. I will do the needful.",
-            "output": '{"improved_text":"Hi [Name], please let me know your thoughts. I\'ll take care of the next steps once approved.","english_version":null,"teaching":{"mistakes":["Respected sir","kindly revert back","do the needful"],"better_versions":["Hi [Name]","please reply","take the necessary action"],"explanations":["Too formal for modern context","Redundant (revert means back)","Too vague"]},"follow_up":"Would you like me to specify the exact next steps?","suggestions":["Make it shorter","Make it more formal","Remove placeholders"],"scores":{"clarity":10,"tone":10,"impact":9,"verdict":"Ready to send"}}',
-        },
-        {
-            "input": "Please revert with your confirmation asap.",
-            "output": '{"improved_text":"Please confirm by [date].","english_version":null,"teaching":{"mistakes":["Please revert","asap"],"better_versions":["Please confirm","by end of day"],"explanations":["Revert means to go back, not reply","Acronyms without deadline are vague"]},"follow_up":"Should I add a specific date?","suggestions":["Add specific deadline","Make it shorter","Add context"],"scores":{"clarity":9,"tone":9,"impact":8,"verdict":"Ready to send"}}',
-        },
-    ],
-    "linkedin": [
-        {
-            "input": "Excited to share that I got promoted! Feeling humbled and blessed.",
-            "output": '{"improved_text":"After 2 years of leading [project], I\'m now stepping into a [new role] at [company].\n\nHere are 3 things I learned along the way:\n1. [Lesson 1]\n2. [Lesson 2]\n3. [Lesson 3]\n\nWhat\'s the best career advice you\'ve received?","english_version":null,"teaching":{"mistakes":["Excited to share","humbled and blessed"],"better_versions":["Direct announcement with context","Share specific learnings instead"],"explanations":["Overused LinkedIn cliché","Vague — shows no substance"]},"follow_up":"Want to add a specific achievement or metric?","suggestions":["Add specific metrics","Make it shorter","Add a stronger hook"],"scores":{"clarity":8,"tone":9,"impact":8,"verdict":"Strong draft"}}',
-        },
-        {
-            "input": "Thrilled to announce our new product launch. Stay tuned for more updates!",
-            "output": '{"improved_text":"We just shipped [product name] — here\'s why it matters:\n\n[One-sentence value prop]\n\nThe problem: [specific pain point]\nOur approach: [what makes it different]\n\nTry it free → [link]","english_version":null,"teaching":{"mistakes":["Thrilled to announce","Stay tuned for more updates"],"better_versions":["Direct product intro with value","Specific CTA with link"],"explanations":["Empty excitement — lead with value","Passive — give them action now"]},"follow_up":"Should I add social proof or a testimonial?","suggestions":["Add customer quote","Make hook stronger","Add urgency"],"scores":{"clarity":9,"tone":8,"impact":9,"verdict":"Ready to send"}}',
-        },
-    ],
-    "whatsapp": [
-        {
-            "input": "bro pls send me d file asap. v imp. thx",
-            "output": '{"improved_text":"Hi [Name], could you please share the file at your earliest convenience? It\'s needed for [reason]. Thank you!","english_version":null,"teaching":{"mistakes":["bro","pls","d file","v imp","thx"],"better_versions":["Hi [Name]","please","the file","It\'s important because...","Thank you"],"explanations":["Too casual for professional request","Text-speak in formal context","Abbreviation unclear","No context for urgency","Abbreviation"]},"follow_up":"Should I specify which file?","suggestions":["Add file name","Add deadline","Make it shorter"],"scores":{"clarity":9,"tone":9,"impact":8,"verdict":"Ready to send"}}',
-        },
-        {
-            "input": "ya ya will do. send me d details na",
-            "output": '{"improved_text":"Sure, I\'ll take care of it. Could you share the details when you get a chance?","english_version":null,"teaching":{"mistakes":["ya ya","will do","d details","na"],"better_versions":["Sure","I\'ll take care of it","the details","when you get a chance"],"explanations":["Casual filler","Vague commitment","Text-speak","Hinglish tag — not professional"]},"follow_up":"Should I add a specific timeline?","suggestions":["Add deadline","Be more specific","Make it formal"],"scores":{"clarity":8,"tone":9,"impact":7,"verdict":"Strong draft"}}',
-        },
-    ],
-    "paragraph": [
-        {
-            "input": "The thing is that basically the project was not completed on time due to various reasons.",
-            "output": '{"improved_text":"The project missed its deadline due to [specific reason 1] and [specific reason 2].","english_version":null,"teaching":{"mistakes":["The thing is that","basically","various reasons"],"better_versions":["Remove — throat-clearing","Remove — filler word","Name the specific reasons"],"explanations":["Empty opener adding no meaning","Weakens the statement","Too vague — always be specific"]},"follow_up":"Can you list the actual reasons for the delay?","suggestions":["Add specific reasons","Make it shorter","Add next steps"],"scores":{"clarity":9,"tone":8,"impact":8,"verdict":"Ready to send"}}',
-        },
-        {
-            "input": "It is to be noted that the aforementioned issues have been duly addressed and rectified.",
-            "output": '{"improved_text":"We\'ve fixed the issues mentioned above.","english_version":null,"teaching":{"mistakes":["It is to be noted that","aforementioned","duly addressed and rectified"],"better_versions":["Remove — unnecessary preamble","mentioned above","fixed"],"explanations":["Passive throat-clearing","Overly formal for modern writing","Two words saying the same thing"]},"follow_up":"Should I add what specifically was fixed?","suggestions":["Add specifics","Keep it concise","Add timeline"],"scores":{"clarity":10,"tone":8,"impact":9,"verdict":"Ready to send"}}',
-        },
-    ],
-}
+FEW_SHOT_POOL: dict[str,
+                    list[dict[str,
+                              str]]] = {"email": [{"input": "Respected sir, kindly revert back. I will do the needful.",
+                                                   "output": '{"improved_text":"Hi [Name], please let me know your thoughts. I\'ll take care of the next steps once approved.","english_version":null,"teaching":{"mistakes":["Respected sir","kindly revert back","do the needful"],"better_versions":["Hi [Name]","please reply","take the necessary action"],"explanations":["Too formal for modern context","Redundant (revert means back)","Too vague"]},"follow_up":"Would you like me to specify the exact next steps?","suggestions":["Make it shorter","Make it more formal","Remove placeholders"],"scores":{"clarity":10,"tone":10,"impact":9,"verdict":"Ready to send"}}',
+                                                   },
+                                                  {"input": "Please revert with your confirmation asap.",
+                                                   "output": '{"improved_text":"Please confirm by [date].","english_version":null,"teaching":{"mistakes":["Please revert","asap"],"better_versions":["Please confirm","by end of day"],"explanations":["Revert means to go back, not reply","Acronyms without deadline are vague"]},"follow_up":"Should I add a specific date?","suggestions":["Add specific deadline","Make it shorter","Add context"],"scores":{"clarity":9,"tone":9,"impact":8,"verdict":"Ready to send"}}',
+                                                   },
+                                                  ],
+                                        "linkedin": [{"input": "Excited to share that I got promoted! Feeling humbled and blessed.",
+                                                      "output": '{"improved_text":"After 2 years of leading [project], I\'m now stepping into a [new role] at [company].\n\nHere are 3 things I learned along the way:\n1. [Lesson 1]\n2. [Lesson 2]\n3. [Lesson 3]\n\nWhat\'s the best career advice you\'ve received?","english_version":null,"teaching":{"mistakes":["Excited to share","humbled and blessed"],"better_versions":["Direct announcement with context","Share specific learnings instead"],"explanations":["Overused LinkedIn cliché","Vague — shows no substance"]},"follow_up":"Want to add a specific achievement or metric?","suggestions":["Add specific metrics","Make it shorter","Add a stronger hook"],"scores":{"clarity":8,"tone":9,"impact":8,"verdict":"Strong draft"}}',
+                                                      },
+                                                     {"input": "Thrilled to announce our new product launch. Stay tuned for more updates!",
+                                                      "output": '{"improved_text":"We just shipped [product name] — here\'s why it matters:\n\n[One-sentence value prop]\n\nThe problem: [specific pain point]\nOur approach: [what makes it different]\n\nTry it free → [link]","english_version":null,"teaching":{"mistakes":["Thrilled to announce","Stay tuned for more updates"],"better_versions":["Direct product intro with value","Specific CTA with link"],"explanations":["Empty excitement — lead with value","Passive — give them action now"]},"follow_up":"Should I add social proof or a testimonial?","suggestions":["Add customer quote","Make hook stronger","Add urgency"],"scores":{"clarity":9,"tone":8,"impact":9,"verdict":"Ready to send"}}',
+                                                      },
+                                                     ],
+                                        "whatsapp": [{"input": "bro pls send me d file asap. v imp. thx",
+                                                      "output": '{"improved_text":"Hi [Name], could you please share the file at your earliest convenience? It\'s needed for [reason]. Thank you!","english_version":null,"teaching":{"mistakes":["bro","pls","d file","v imp","thx"],"better_versions":["Hi [Name]","please","the file","It\'s important because...","Thank you"],"explanations":["Too casual for professional request","Text-speak in formal context","Abbreviation unclear","No context for urgency","Abbreviation"]},"follow_up":"Should I specify which file?","suggestions":["Add file name","Add deadline","Make it shorter"],"scores":{"clarity":9,"tone":9,"impact":8,"verdict":"Ready to send"}}',
+                                                      },
+                                                     {"input": "ya ya will do. send me d details na",
+                                                      "output": '{"improved_text":"Sure, I\'ll take care of it. Could you share the details when you get a chance?","english_version":null,"teaching":{"mistakes":["ya ya","will do","d details","na"],"better_versions":["Sure","I\'ll take care of it","the details","when you get a chance"],"explanations":["Casual filler","Vague commitment","Text-speak","Hinglish tag — not professional"]},"follow_up":"Should I add a specific timeline?","suggestions":["Add deadline","Be more specific","Make it formal"],"scores":{"clarity":8,"tone":9,"impact":7,"verdict":"Strong draft"}}',
+                                                      },
+                                                     ],
+                                        "paragraph": [{"input": "The thing is that basically the project was not completed on time due to various reasons.",
+                                                       "output": '{"improved_text":"The project missed its deadline due to [specific reason 1] and [specific reason 2].","english_version":null,"teaching":{"mistakes":["The thing is that","basically","various reasons"],"better_versions":["Remove — throat-clearing","Remove — filler word","Name the specific reasons"],"explanations":["Empty opener adding no meaning","Weakens the statement","Too vague — always be specific"]},"follow_up":"Can you list the actual reasons for the delay?","suggestions":["Add specific reasons","Make it shorter","Add next steps"],"scores":{"clarity":9,"tone":8,"impact":8,"verdict":"Ready to send"}}',
+                                                       },
+                                                      {"input": "It is to be noted that the aforementioned issues have been duly addressed and rectified.",
+                                                       "output": '{"improved_text":"We\'ve fixed the issues mentioned above.","english_version":null,"teaching":{"mistakes":["It is to be noted that","aforementioned","duly addressed and rectified"],"better_versions":["Remove — unnecessary preamble","mentioned above","fixed"],"explanations":["Passive throat-clearing","Overly formal for modern writing","Two words saying the same thing"]},"follow_up":"Should I add what specifically was fixed?","suggestions":["Add specifics","Keep it concise","Add timeline"],"scores":{"clarity":10,"tone":8,"impact":9,"verdict":"Ready to send"}}',
+                                                       },
+                                                      ],
+                                        }
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +314,8 @@ def _looks_like_reply_chain(text: str) -> bool:
         r"\bon .+ wrote:\s*$",
     ]
     lowered = text.lower()
-    return any(re.search(pattern, lowered, re.MULTILINE) for pattern in patterns)
+    return any(re.search(pattern, lowered, re.MULTILINE)
+               for pattern in patterns)
 
 
 def format_history(
@@ -336,7 +328,8 @@ def format_history(
     to use as the assistant content. Limits to last N messages.
     """
     # Take last N messages
-    recent = messages[-max_messages:] if len(messages) > max_messages else messages
+    recent = messages[-max_messages:] if len(
+        messages) > max_messages else messages
 
     formatted: list[dict[str, str]] = []
     for msg in recent:
@@ -391,7 +384,8 @@ def build_messages(
 
     intensity_instruction = INTENSITY_CONTEXT.get(intensity, "")
     if intensity_instruction:
-        system_prompt = system_prompt + "\n\n" + intensity_instruction.format(tone=tone)
+        system_prompt = system_prompt + "\n\n" + \
+            intensity_instruction.format(tone=tone)
 
     if profile:
         profile_str = ", ".join(profile)
@@ -400,16 +394,14 @@ def build_messages(
     if _looks_like_reply_chain(sanitized):
         system_prompt += (
             "\n\nThis appears to be a reply chain. Improve ONLY the user's portion "
-            "(the newest text at the top). Preserve quoted context unchanged."
-        )
+            "(the newest text at the top). Preserve quoted context unchanged.")
 
     if len(sanitized) < 50:
         system_prompt += "\n\nThe input is very short. Match the output length."
     elif len(sanitized) > 2000:
         system_prompt += (
             "\n\nThis is a long document. Maintain the same structure and length. "
-            "Do not summarise or truncate."
-        )
+            "Do not summarise or truncate.")
 
     output_language_clean = output_language.strip().lower()
     if output_language_clean and output_language_clean != "en":
@@ -451,7 +443,8 @@ def build_messages(
     ]
 
     # 7. Construct final messages array
-    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": system_prompt}]
     messages.extend(few_shot_messages)
     messages.extend(history_messages)
     messages.append({"role": "user", "content": user_content})

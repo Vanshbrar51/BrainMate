@@ -154,13 +154,14 @@ class ModelRouter:
                 if response.status_code != 200:
                     error_text = response.text[:500]
                     raise ModelError(
-                        f"Google AI Studio API error {response.status_code}: {error_text}"
-                    )
+                        f"Google AI Studio API error {
+                            response.status_code}: {error_text}")
 
                 data = response.json()
                 choices = data.get("choices", [])
                 if not choices:
-                    raise ModelError("Google AI Studio returned empty choices array")
+                    raise ModelError(
+                        "Google AI Studio returned empty choices array")
 
                 choice = choices[0]
                 content = choice.get("message", {}).get("content", "")
@@ -169,9 +170,7 @@ class ModelRouter:
                 if finish_reason == "length":
                     logger.warning(
                         "Output truncated (finish_reason=length) for model %s. "
-                        "Attempting to parse partial JSON.",
-                        model,
-                    )
+                        "Attempting to parse partial JSON.", model, )
 
                 usage = data.get("usage", {})
 
@@ -196,8 +195,8 @@ class ModelRouter:
                     await asyncio.sleep(backoff)
                     continue
                 raise ModelTimeoutError(
-                    f"Google AI Studio request timed out after {settings.job_timeout_seconds}s"
-                ) from exc
+                    f"Google AI Studio request timed out after {
+                        settings.job_timeout_seconds}s") from exc
 
             except (httpx.HTTPError, httpx.StreamError) as exc:
                 if attempt < max_retries:
@@ -210,7 +209,8 @@ class ModelRouter:
                     )
                     await asyncio.sleep(backoff)
                     continue
-                raise ModelError(f"Google AI Studio HTTP error: {exc}") from exc
+                raise ModelError(
+                    f"Google AI Studio HTTP error: {exc}") from exc
 
         # Should not reach here, but satisfy type checker
         raise ModelError("Exhausted all retries")
@@ -258,7 +258,8 @@ class ModelRouter:
                     json=payload,
                 ) as response:
                     if response.status_code == 429:
-                        retry_after = float(response.headers.get("retry-after", str(2 ** attempt)))
+                        retry_after = float(response.headers.get(
+                            "retry-after", str(2 ** attempt)))
                         if attempt < max_retries:
                             await asyncio.sleep(retry_after)
                             continue
@@ -284,14 +285,21 @@ class ModelRouter:
 
                         final_model = item.get("model", final_model)
                         usage = item.get("usage") or {}
-                        prompt_tokens = int(usage.get("prompt_tokens", prompt_tokens) or prompt_tokens)
-                        completion_tokens = int(usage.get("completion_tokens", completion_tokens) or completion_tokens)
+                        prompt_tokens = int(
+                            usage.get(
+                                "prompt_tokens",
+                                prompt_tokens) or prompt_tokens)
+                        completion_tokens = int(
+                            usage.get(
+                                "completion_tokens",
+                                completion_tokens) or completion_tokens)
 
                         choices = item.get("choices") or []
                         if not choices:
                             continue
                         choice = choices[0]
-                        finish_reason = choice.get("finish_reason") or finish_reason
+                        finish_reason = choice.get(
+                            "finish_reason") or finish_reason
                         delta = choice.get("delta") or {}
                         chunk = delta.get("content") or ""
                         if chunk:
@@ -301,7 +309,8 @@ class ModelRouter:
 
                 content = "".join(content_chunks)
                 if not content:
-                    raise ModelError("Streaming response did not include any content")
+                    raise ModelError(
+                        "Streaming response did not include any content")
 
                 return ModelResponse(
                     content=content,
@@ -317,12 +326,13 @@ class ModelRouter:
                     await asyncio.sleep(2 ** attempt)
                     continue
                 raise ModelTimeoutError(
-                    f"Google AI Studio streaming request timed out after {settings.job_timeout_seconds}s"
-                ) from exc
+                    f"Google AI Studio streaming request timed out after {
+                        settings.job_timeout_seconds}s") from exc
             except (httpx.HTTPError, httpx.StreamError) as exc:
                 if attempt < max_retries:
                     await asyncio.sleep(2 ** attempt)
                     continue
-                raise ModelError(f"Google AI Studio streaming HTTP error: {exc}") from exc
+                raise ModelError(
+                    f"Google AI Studio streaming HTTP error: {exc}") from exc
 
         raise ModelError("Exhausted all streaming retries")

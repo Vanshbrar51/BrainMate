@@ -1,4 +1,5 @@
-// FILE: app/api/writeright/job/[jobId]/stream/route.ts — Job status and SSE streaming
+// FILE: app/api/writeright/job/[jobId]/stream/route.ts — Job SSE streaming
+// ── CHANGED: [BE-4] SSE Timeout Fix — properly marks failed jobs ──
 
 import { auth } from "@clerk/nextjs/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -7,11 +8,14 @@ import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
 import {
   withSpan,
   addSpanAttributes,
+  addSpanEvent,
   traceLogFields,
 } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
+import { logError } from "@/lib/writeright-logger";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function GET(
   req: Request,
@@ -20,20 +24,27 @@ export async function GET(
   return withErrorHandler(req, async () => {
     return withSpan("api.writeright.job.stream", async () => {
       const { userId } = await auth();
-      if (!userId) throw createApiError("UNAUTHORIZED", "Not authenticated", 401);
+      if (!userId)
+        throw createApiError("UNAUTHORIZED", "Not authenticated", 401);
 
       const { jobId } = await params;
+
+      // Handle cached results
       if (jobId === "cached") {
-        return new Response('event: result\ndata: {"status":"completed","result":null}\n\n', {
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
+        return new Response(
+          'event: result\ndata: {"status":"completed","result":null}\n\n',
+          {
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache",
+              Connection: "keep-alive",
+            },
           },
-        });
+        );
       }
-      
-      if (!UUID_RE.test(jobId)) throw createApiError("VALIDATION_ERROR", "Invalid job ID", 400);
+
+      if (!UUID_RE.test(jobId))
+        throw createApiError("VALIDATION_ERROR", "Invalid job ID", 400);
 
       addSpanAttributes({
         "user.id": userId,
@@ -52,7 +63,9 @@ export async function GET(
             if (ended) return;
             try {
               controller.enqueue(
-                encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+                encoder.encode(
+                  `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+                ),
               );
             } catch {
               ended = true;
@@ -74,30 +87,38 @@ export async function GET(
             subscriber = null;
           };
 
+          // ── Subscribe to Redis pub/sub for live token streaming ──
           if (!isCircuitOpen()) {
             try {
               subscriber = getRedisPool().duplicate();
               await subscriber.subscribe(channel);
-              subscriber.on("message", (incomingChannel: string, message: string) => {
-                if (incomingChannel !== channel) return;
-                try {
-                  const parsed = JSON.parse(message) as { chunk?: string; delta?: string };
-                  if (parsed.chunk) {
-                    sendEvent("token", { chunk: parsed.chunk, delta: parsed.delta ?? parsed.chunk });
+              subscriber.on(
+                "message",
+                (incomingChannel: string, message: string) => {
+                  if (incomingChannel !== channel) return;
+                  try {
+                    const parsed = JSON.parse(message) as {
+                      chunk?: string;
+                      delta?: string;
+                    };
+                    if (parsed.chunk) {
+                      sendEvent("token", {
+                        chunk: parsed.chunk,
+                        delta: parsed.delta ?? parsed.chunk,
+                      });
+                    }
+                  } catch {
+                    sendEvent("token", { chunk: message, delta: message });
                   }
-                } catch {
-                  sendEvent("token", { chunk: message, delta: message });
-                }
-              });
+                },
+              );
             } catch (err) {
-              console.error("[stream] Redis subscribe failed:", {
-                error: err instanceof Error ? err.message : String(err),
-                ...traceLogFields(),
-              });
+              logError("stream.redis_subscribe_failed", err, traceLogFields());
               await cleanupSubscriber();
             }
           }
 
+          // ── Poll loop ──
           const MAX_MS = 90_000;
           const POLL_MS = 250;
           const start = Date.now();
@@ -112,7 +133,10 @@ export async function GET(
                 if (status) {
                   redisOk = true;
                   if (status.user_id && status.user_id !== userId) {
-                    sendEvent("error", { code: "UNAUTHORIZED", error: "Job not found" });
+                    sendEvent("error", {
+                      code: "UNAUTHORIZED",
+                      error: "Job not found",
+                    });
                     break;
                   }
 
@@ -121,22 +145,33 @@ export async function GET(
                   if (status.status === "completed") {
                     const result = await readJobResult(jobId);
                     sendEvent("result", { status: "completed", result });
+                    addSpanEvent("stream.completed", { job_id: jobId });
                     break;
                   }
 
                   if (status.status === "failed") {
-                    sendEvent("error", { code: "INTERNAL_ERROR", status: "failed", error: status.error ?? "Job failed" });
+                    sendEvent("error", {
+                      code: "INTERNAL_ERROR",
+                      status: "failed",
+                      error: status.error ?? "Job failed",
+                    });
+                    addSpanEvent("stream.failed", {
+                      job_id: jobId,
+                      error: status.error ?? "unknown",
+                    });
                     break;
                   }
                 }
               } catch (err) {
-                console.error("[stream] Redis status fallback:", {
-                  error: err instanceof Error ? err.message : String(err),
-                  ...traceLogFields(),
-                });
+                logError(
+                  "stream.redis_status_fallback",
+                  err,
+                  traceLogFields(),
+                );
               }
             }
 
+            // ── Fallback: poll Supabase if Redis is unavailable ──
             if (!redisOk) {
               const supabase = getSupabaseAdmin();
               const { data: job, error } = await supabase
@@ -147,7 +182,10 @@ export async function GET(
                 .single();
 
               if (error || !job) {
-                sendEvent("error", { code: "NOT_FOUND", error: "Job not found" });
+                sendEvent("error", {
+                  code: "NOT_FOUND",
+                  error: "Job not found",
+                });
                 break;
               }
 
@@ -160,11 +198,17 @@ export async function GET(
                 } catch {
                   // no-op
                 }
-                sendEvent("result", { status: "completed", result: result ?? job.output });
+                sendEvent("result", {
+                  status: "completed",
+                  result: result ?? job.output,
+                });
                 break;
               }
               if (job.status === "failed") {
-                sendEvent("error", { code: "INTERNAL_ERROR", error: job.error ?? "Job failed" });
+                sendEvent("error", {
+                  code: "INTERNAL_ERROR",
+                  error: job.error ?? "Job failed",
+                });
                 break;
               }
             }
@@ -172,13 +216,31 @@ export async function GET(
             await new Promise((resolve) => setTimeout(resolve, POLL_MS));
           }
 
+          // ── CHANGED: [BE-4] Timeout handler — mark job as failed in Supabase ──
           if (Date.now() - start >= MAX_MS) {
-            const supabase = getSupabaseAdmin();
-            await supabase
-              .from("writeright_ai_jobs")
-              .update({ status: "failed", error: "timeout_90s" })
-              .eq("id", jobId);
-            sendEvent("error", { code: "TIMEOUT", error: "This took too long. Please try a shorter text." });
+            addSpanEvent("stream.timeout", { job_id: jobId });
+
+            // Critical fix: update Supabase so job doesn't stay stuck in 'pending'
+            try {
+              const supabase = getSupabaseAdmin();
+              await supabase
+                .from("writeright_ai_jobs")
+                .update({ status: "failed", error: "timeout_90s" })
+                .eq("id", jobId)
+                .in("status", ["pending", "processing"]); // Only update if still active
+            } catch (err) {
+              logError("stream.timeout_db_update_failed", err, {
+                job_id: jobId,
+                ...traceLogFields(),
+              });
+            }
+
+            // Send error event to client
+            sendEvent("error", {
+              code: "TIMEOUT",
+              error:
+                "This took too long. Try with shorter text.",
+            });
           }
 
           await cleanupSubscriber();
@@ -186,7 +248,7 @@ export async function GET(
           controller.close();
         },
         async cancel() {
-          // stream closed by client
+          // Stream closed by client — no-op
         },
       });
 

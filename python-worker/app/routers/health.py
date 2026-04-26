@@ -92,7 +92,9 @@ async def health_check() -> dict[str, Any]:
     except Exception:
         pass
 
-    status = "healthy" if (redis_ok and supabase_ok) else ("degraded" if redis_ok else "unhealthy")
+    status = "healthy" if (
+        redis_ok and supabase_ok) else (
+        "degraded" if redis_ok else "unhealthy")
 
     return {
         "status": status,
@@ -100,7 +102,8 @@ async def health_check() -> dict[str, Any]:
         "supabase_connected": supabase_ok,
         "jobs_processed": _metrics.get("jobs_processed", 0),
         "jobs_failed": _metrics.get("jobs_failed", 0),
-        "uptime_seconds": round(time.time() - _metrics["start_time"], 1),  # type: ignore[operator]
+        # type: ignore[operator]
+        "uptime_seconds": round(time.time() - _metrics["start_time"], 1),
     }
 
 

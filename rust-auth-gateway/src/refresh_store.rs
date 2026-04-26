@@ -255,6 +255,7 @@ impl RefreshTokenStore {
     ///   - First wins the row lock, sets revoked=true, gets RETURNING row.
     ///   - Second finds `revoked=true`, UPDATE affects 0 rows, RETURNING = NULL.
     ///   - Second returns ReplayDetected and rolls back.
+    ///
     ///   This is the authoritative gate — the Redis lock is defense-in-depth.
     ///
     /// # Write ordering
@@ -334,6 +335,7 @@ impl RefreshTokenStore {
     }
 
 
+    #[allow(clippy::too_many_arguments)]
     async fn do_rotate_db(
         &self,
         _old_raw_token_id: &str,

@@ -749,6 +749,7 @@ const THINKING_MESSAGES = [
   'Almost ready...',
 ] as const
 
+// ── CHANGED: [UI-6] Brain Wave Loading Animation ──
 function WriteRightThinking({ startTime }: { startTime: number | null }) {
   const [elapsed, setElapsed] = useState(0)
   const [msgIndex, setMsgIndex] = useState(0)
@@ -774,22 +775,20 @@ function WriteRightThinking({ startTime }: { startTime: number | null }) {
         <div className="chat-msg-ai-avatar" style={{ background: 'var(--mod-write)', color: 'var(--text-inv)', borderColor: 'var(--mod-write)' }}>
           ✍️
         </div>
-        <span className="chat-msg-ai-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="dot-thinking"
-                style={{ animationDelay: `${i * 0.18}s`, color: 'var(--mod-write)' }}
-              />
-            ))}
+        <span className="chat-msg-ai-label" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="wr-brain-wave" aria-hidden="true">
+            <svg viewBox="0 0 48 24" fill="none">
+              <path d="M2 12 C8 4, 14 20, 20 12 S32 4, 38 12 S44 20, 46 12" />
+              <path d="M2 12 C8 6, 14 18, 20 12 S32 6, 38 12 S44 18, 46 12" />
+              <path d="M2 12 C8 8, 14 16, 20 12 S32 8, 38 12 S44 16, 46 12" />
+            </svg>
           </span>
           <span style={{ color: 'var(--text-2)', fontSize: 12, fontStyle: 'italic', transition: 'opacity 300ms ease' }}>
             {THINKING_MESSAGES[msgIndex]}
           </span>
-          {elapsed > 3 && (
+          {elapsed > 5 && (
             <span style={{ color: 'var(--text-3)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
-              {elapsed}s
+              Taking a bit longer... ({elapsed}s)
             </span>
           )}
         </span>
@@ -1824,6 +1823,76 @@ const DAILY_CHALLENGES = [
   { title: 'Send a cold outreach', desc: 'Write a warm opening for a potential new client.' },
 ] as const
 
+// ── NEW: [INPUT-4] Smart Quick Actions Bar ──
+function QuickActionsBar({ text, onAction }: { text: string; onAction: (prompt: string) => void }) {
+  const chips = useMemo(() => {
+    const result: Array<{ label: string; prompt: string }> = []
+    if (!text.trim() || text.length < 10) return result
+    if (/\?/.test(text)) result.push({ label: 'Make this a clear question', prompt: text })
+    if (text.split(/[.!?]+/).filter(s => s.trim()).length >= 3) result.push({ label: 'TL;DR this', prompt: text })
+    if (/[!]{2,}|[A-Z]{3,}/.test(text)) result.push({ label: 'Cool this down', prompt: text })
+    if (text.length > 200) result.push({ label: 'Tighten to 50 words', prompt: text })
+    return result.slice(0, 4)
+  }, [text])
+  if (chips.length === 0) return null
+  return (
+    <div className="wr-quick-actions">
+      {chips.map((c, i) => (
+        <button key={i} className="wr-quick-chip" onClick={() => onAction(c.prompt)} type="button" aria-label={c.label}>
+          {c.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+
+
+// ── NEW: [LOOP-1] Confetti burst helper ──
+function spawnConfetti(target: HTMLElement) {
+  const rect = target.getBoundingClientRect()
+  const container = document.createElement('div')
+  container.className = 'wr-confetti'
+  container.style.left = `${rect.left + rect.width / 2}px`
+  container.style.top = `${rect.top}px`
+  container.style.position = 'fixed'
+  for (let i = 0; i < 6; i++) {
+    const p = document.createElement('div')
+    p.className = 'wr-confetti-particle'
+    p.style.left = `${(Math.random() - 0.5) * 40}px`
+    p.style.animationDelay = `${Math.random() * 100}ms`
+    p.style.animationDuration = `${400 + Math.random() * 200}ms`
+    container.appendChild(p)
+  }
+  document.body.appendChild(container)
+  setTimeout(() => container.remove(), 800)
+}
+
+// ── NEW: [LOOP-2] Daily Goal Ring SVG ──
+function DailyGoalRing({ current, goal }: { current: number; goal: number }) {
+  const pct = Math.min(current / goal, 1)
+  const circumference = 2 * Math.PI * 14
+  const offset = circumference * (1 - pct)
+  return (
+    <svg className="wr-goal-ring" viewBox="0 0 36 36" aria-label={`${current} of ${goal} daily goal`}>
+      <circle className="wr-goal-ring-bg" cx="18" cy="18" r="14" />
+      <circle
+        className="wr-goal-ring-fill"
+        cx="18" cy="18" r="14"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        transform="rotate(-90 18 18)"
+      />
+      <text x="18" y="18" textAnchor="middle" dominantBaseline="central" fill="var(--text-1)" fontSize="10" fontWeight="600">
+        {current}
+      </text>
+    </svg>
+  )
+}
+
+const MILESTONES: Record<number, string> = { 5: '🏆 5 texts improved! You\u2019re warming up.', 10: '⚡ 10x writer! Building momentum.', 25: '🔥 25 improvements — you\u2019re on fire!', 50: '👑 50 texts! Writing mastery unlocked.' }
+
+
 export default function WriteRightPage() {
   const { toasts, dismiss, showError } = useErrorToast()
   const [input, setInput] = useState('')
@@ -1845,7 +1914,6 @@ export default function WriteRightPage() {
   
   
   // Draft Auto-save
-  const [draftRestored, setDraftRestored] = useState(false)
   useEffect(() => {
     if (chatId && input) {
       const t = setTimeout(() => localStorage.setItem(`wr:draft:${chatId}`, input), 2000)
@@ -1857,6 +1925,7 @@ export default function WriteRightPage() {
       const saved = localStorage.getItem(`wr:draft:${chatId}`)
       if (saved && !input) setInput(saved)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId])
 
   // F-08: Chip counts
@@ -1910,6 +1979,16 @@ export default function WriteRightPage() {
     if (sessionCount === 1) return '1 text improved today'
     if (sessionCount < 4) return `${sessionCount} texts improved`
     return `${sessionCount} on a roll 🔥`
+  }, [sessionCount])
+
+  // GAME-1: Achievement milestone banner
+  const [achievementBanner, setAchievementBanner] = useState<string | null>(null)
+  useEffect(() => {
+    if (sessionCount > 0 && MILESTONES[sessionCount]) {
+      setAchievementBanner(MILESTONES[sessionCount])
+      const t = setTimeout(() => setAchievementBanner(null), 5000)
+      return () => clearTimeout(t)
+    }
   }, [sessionCount])
 
   // F-11: Prompt Builder
@@ -2055,11 +2134,13 @@ export default function WriteRightPage() {
     })
   }, [])
 
-  const copyTextToClipboard = useCallback(async (text: string) => {
+  const copyTextToClipboard = useCallback(async (text: string, targetEl?: HTMLElement) => {
     if (!text.trim()) return
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(text)
+        // LOOP-1: Micro-celebration confetti on copy
+        if (targetEl) spawnConfetti(targetEl)
         return
       }
       throw new Error('Clipboard API unavailable')
@@ -2072,6 +2153,7 @@ export default function WriteRightPage() {
       ta.select()
       try {
         document.execCommand('copy')
+        if (targetEl) spawnConfetti(targetEl)
       } finally {
         document.body.removeChild(ta)
       }
@@ -2320,7 +2402,7 @@ export default function WriteRightPage() {
       console.error('Export failed', err); showError('Failed to export. Please try again.')
       setIsExporting(false)
     }
-  }, [])
+  }, [showError])
 
   const submit = useCallback(async (text?: string, forcedTone?: ToneOption) => {
     const msg = (text ?? input).trim()
@@ -2442,9 +2524,10 @@ export default function WriteRightPage() {
       const errCode = typeof err === 'object' && err !== null && 'code' in err && typeof (err as { code?: unknown }).code === 'string'
         ? (err as { code: string }).code
         : 'INTERNAL_ERROR'
-      showError(errorMessage, errCode); setMessages(items => items.slice(0, -1)); return;
+      showError(errorMessage, errCode)
+      // Remove the optimistic user message and add inline retry card
+      setMessages(items => items.slice(0, -1))
       const retryText = lastSubmittedText ?? msg
-
       setMessages((prev) => [...prev, {
         role: 'ai',
         content: (
@@ -2480,6 +2563,7 @@ export default function WriteRightPage() {
     sessionCount,
     stopRecording,
     tone,
+    showError,
   ])
 
   useEffect(() => {
@@ -2639,16 +2723,31 @@ export default function WriteRightPage() {
 
   return (
     <div className={`chat-workspace ${sidebarVisible ? 'wr-workspace-with-sidebar' : ''}`} data-module="write">
+      {/* GAME-1: Achievement milestone banner */}
+      {achievementBanner && (
+        <div className="wr-achievement-banner" role="status">
+          {achievementBanner}
+          <button className="wr-achievement-banner-dismiss" onClick={() => setAchievementBanner(null)}>×</button>
+        </div>
+      )}
       {sidebarVisible && (
         <div className="wr-sidebar">
           <div className="wr-sidebar-header">
+            <div className="wr-sidebar-brand">
+              <span className="wr-sidebar-brand-icon">✦</span>
+              <span style={{ fontFamily: 'var(--font-serif)', fontSize: 18 }}>WriteRight</span>
+            </div>
             {stats && stats.streak.current >= 1 && (
-              <div className="wr-streak-pill">
+              <div className="wr-streak-badge">
                 🔥 {stats.streak.current}-day streak
               </div>
             )}
-            {momentumMsg && (
-              <div className="wr-momentum-pill">{momentumMsg}</div>
+            {(!stats || stats.streak.current === 0) && (
+              <div style={{ fontSize: 11, color: 'var(--text-3)', cursor: 'pointer' }}
+                onClick={() => { setInput(`Challenge: ${todayChallenge.desc}`); taRef.current?.focus() }}
+              >
+                Start your streak →
+              </div>
             )}
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="wr-sidebar-new" style={{ flex: 1 }} onClick={() => handleModeChange('email')}>
@@ -2805,8 +2904,8 @@ export default function WriteRightPage() {
                 <div className="wr-module-orb" aria-hidden="true">
                   <span className="wr-module-orb-inner">✍️</span>
                 </div>
-                <h1 className="chat-module-title">WriteRight</h1>
-                <p className="chat-module-tagline">Your AI writing assistant for clear, professional, and impactful communication.</p>
+                <h1 className="wr-hero-title">WriteRight</h1>
+                <p className="wr-hero-tagline">Write like you mean it.</p>
                 
                 {!challengeDismissed && (
                 <div className={`wr-daily-chip${challengeDone ? ' done' : ''}`}>
@@ -3069,6 +3168,23 @@ export default function WriteRightPage() {
                 <span>{fileError}</span>
               </div>
             )}
+
+            {/* NEW: [INPUT-4] Smart Quick Actions */}
+            <QuickActionsBar text={input} onAction={(prompt) => { void submitRef.current(prompt) }} />
+
+            {/* NEW: [LOOP-2/3] Momentum + Goal Ring */}
+            {sessionCount > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <DailyGoalRing current={sessionCount} goal={5} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span className="wr-momentum-badge">
+                    {sessionCount < 5 ? `${sessionCount}/5 daily goal` : `${sessionCount} on a roll 🔥`}
+                  </span>
+                  {momentumMsg && <span style={{ fontSize: 10, color: 'var(--text-3)' }}>{momentumMsg}</span>}
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 8 }}>
               <button 
                 type="button" 
@@ -3296,40 +3412,23 @@ export default function WriteRightPage() {
         payload={sharePayload}
         onClose={() => setShareModalOpen(false)}
       />
-      <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="wr-toast-container">
         {toasts.map((t) => (
           <div
             key={t.id}
-            style={{
-              padding: '12px 16px',
-              background: 'var(--bg-1)',
-              border: '1px solid var(--border-1)',
-              borderRadius: 'var(--radius-md)',
-              boxShadow: 'var(--shadow-lg)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
-              borderLeft: t.type === 'error'
-                ? '4px solid var(--error)'
-                : t.type === 'warning'
-                  ? '4px solid var(--warning)'
-                  : t.type === 'success'
-                    ? '4px solid var(--success)'
-                    : '4px solid var(--mod-write)',
-            }}
+            className={`wr-toast wr-toast-${t.type || 'info'}`}
           >
             <span>{t.msg}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {['QUEUE_ERROR', 'STREAM_ERROR'].includes(t.code || '') && (
                 <button
+                  className="wr-toast-action"
                   onClick={() => { if (lastSubmittedText) void submitRef.current(lastSubmittedText) }}
-                  style={{ color: 'var(--mod-write)', cursor: 'pointer', background: 'none', border: 'none' }}
                 >
                   Retry
                 </button>
               )}
-              <button onClick={() => dismiss(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>x</button>
+              <button className="wr-toast-dismiss" onClick={() => dismiss(t.id)}>×</button>
             </div>
           </div>
         ))}

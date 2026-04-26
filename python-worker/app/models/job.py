@@ -93,7 +93,7 @@ class AIResult(BaseModel):
 
 class WritingJob(BaseModel):
     """Job payload as enqueued by Next.js API into the Redis ZSET.
-    
+
     Note: Chat history is NOT passed through the queue. The worker fetches
     fresh history from Supabase via get_chat_history() to ensure it always
     has the most up-to-date conversation context.

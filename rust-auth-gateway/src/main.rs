@@ -403,7 +403,7 @@ fn validate_security_posture(config: &Config, internal_api_tokens: &[String]) ->
         anyhow::bail!("REQUIRE_TLS=true but TLS_CERT_PATH/TLS_KEY_PATH are not fully configured");
     }
 
-    if !(has_tls_cert && has_tls_key) && !config.bind_addr.ip().is_loopback() {
+    if !config.bind_addr.ip().is_loopback() && !(has_tls_cert && has_tls_key) {
         if config.enforce_tls_for_public_listener {
             anyhow::bail!(
                 "ENFORCE_TLS_FOR_PUBLIC_LISTENER=true but TLS certs are not configured. Set TLS_CERT_PATH and TLS_KEY_PATH, or set AUTH_GATEWAY_BIND_ADDR to a loopback address for local development."
@@ -525,7 +525,7 @@ fn spawn_internal_token_reloader(state: AppState, path: String) {
 }
 
 fn parse_token_list(raw: &str) -> Vec<String> {
-    raw.split(|c| c == ',' || c == '\n' || c == '\r')
+    raw.split([',', '\n', '\r'])
         .map(str::trim)
         .filter(|token| !token.is_empty())
         .map(ToString::to_string)

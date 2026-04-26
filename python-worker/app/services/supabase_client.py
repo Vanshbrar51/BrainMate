@@ -13,6 +13,7 @@ from typing import Any, cast
 
 from supabase import create_client, Client
 import asyncio
+from postgrest.types import CountMethod
 
 from app.config import settings
 
@@ -56,7 +57,9 @@ def _fetch_history_sync(chat_id: str, limit: int) -> list[dict[str, Any]]:
     )
     return cast(list[dict[str, Any]], result.data or [])
 
-async def get_chat_history(chat_id: str, limit: int = 20) -> list[dict[str, Any]]:
+
+async def get_chat_history(
+        chat_id: str, limit: int = 20) -> list[dict[str, Any]]:
     """Fetch chat history from Supabase.
 
     Returns messages ordered by created_at ASC (oldest first).
@@ -66,7 +69,9 @@ async def get_chat_history(chat_id: str, limit: int = 20) -> list[dict[str, Any]
     try:
         return await asyncio.to_thread(_fetch_history_sync, chat_id, limit)
     except Exception:
-        logger.exception("Failed to fetch chat history for chat_id=%s", chat_id)
+        logger.exception(
+            "Failed to fetch chat history for chat_id=%s",
+            chat_id)
         return []
 
 
@@ -100,6 +105,7 @@ def _save_ai_message_sync(
         raise ValueError("Insert returned empty data")
 
     return cast(dict[str, Any], result.data[0])
+
 
 async def save_ai_message(
     chat_id: str,
@@ -135,17 +141,19 @@ def _update_chat_title_sync(chat_id: str, new_title: str) -> None:
     client = get_supabase()
     try:
         # Check current title
-        res = client.table("writeright_chats").select("title").eq("id", chat_id).single().execute()
-        row = cast(dict[str, Any], res.data) if res.data else {}
+        client.table("writeright_chats").select(
+            "title").eq("id", chat_id).single().execute()
 
         # Very simple heuristic: if it contains "Untitled" or is very short or is raw, we can overwrite.
         # But per simplified F-07 spec, we just overwrite if it's the first message or if requested.
         # Here we just blindly update as the worker heuristic decides.
-        response = client.table("writeright_chats").update({"title": new_title, "updated_at": "now()"}).eq("id", chat_id).execute()
+        response = client.table("writeright_chats").update(
+            {"title": new_title, "updated_at": "now()"}).eq("id", chat_id).execute()
         if not response.data:
             logger.warning("No chat updated for id %s", chat_id)
     except Exception as e:
         logger.error("Failed to update chat title for %s: %s", chat_id, e)
+
 
 async def update_chat_title(chat_id: str, new_title: str) -> None:
     """Update title for the given chat ID."""
@@ -179,6 +187,7 @@ def _update_job_status_sync(
         .eq("id", job_id)
         .execute()
     )
+
 
 async def update_job_status(
     job_id: str,
@@ -227,6 +236,7 @@ def _record_usage_sync(
         })
         .execute()
     )
+
 
 async def record_usage(
     user_id: str,
@@ -294,7 +304,8 @@ def _update_streak_and_achievements_sync(
         .execute()
     )
     streak_row_json = streak_res.data[0] if streak_res.data else None
-    streak_row = cast(dict[str, Any], streak_row_json) if streak_row_json else None
+    streak_row = cast(
+        dict[str, Any], streak_row_json) if streak_row_json else None
 
     if not streak_row:
         current_streak = 1
@@ -368,10 +379,8 @@ def _update_streak_and_achievements_sync(
     achievements: set[str] = set()
     if total_improvements >= 1:
         achievements.add("first_improvement")
-    if (
-        not injection_detected
-        and any("kindly revert" in m.lower() for m in teaching_mistakes if isinstance(m, str))
-    ):
+    if (not injection_detected and any("kindly revert" in m.lower()
+                                       for m in teaching_mistakes if isinstance(m, str))):
         achievements.add("indian_english_fixer")
     if mode == "whatsapp" and whatsapp_jobs >= 10:
         achievements.add("hinglish_hero")
@@ -428,10 +437,14 @@ async def update_streak_and_achievements(
 # Personal Writing Profile (F-04)
 # ---------------------------------------------------------------------------
 
+
 def _get_usage_count_sync(user_id: str) -> int:
     client = get_supabase()
-    res = client.table("writeright_usage").select("id", count="exact").eq("user_id", user_id).execute()  # type: ignore
+    res = client.table("writeright_usage").select(
+        "id", count=CountMethod.exact).eq(
+        "user_id", user_id).execute()
     return res.count if res.count is not None else 0
+
 
 async def get_usage_count(user_id: str) -> int:
     try:
@@ -440,9 +453,11 @@ async def get_usage_count(user_id: str) -> int:
         logger.warning(f"Failed to get usage count for {user_id}")
         return 0
 
+
 def _get_writing_profile_sync(user_id: str) -> list[str]:
     client = get_supabase()
-    res = client.table("writeright_writing_profiles").select("top_mistakes").eq("user_id", user_id).limit(1).execute()
+    res = client.table("writeright_writing_profiles").select(
+        "top_mistakes").eq("user_id", user_id).limit(1).execute()
     if res.data:
         row = cast(dict[str, Any], res.data[0])
         mistakes = row.get("top_mistakes")
@@ -450,12 +465,14 @@ def _get_writing_profile_sync(user_id: str) -> list[str]:
             return mistakes
     return []
 
+
 async def get_writing_profile(user_id: str) -> list[str]:
     try:
         return await asyncio.to_thread(_get_writing_profile_sync, user_id)
     except Exception:
         logger.warning(f"Failed to fetch profile for {user_id}")
         return []
+
 
 def _get_recent_mistakes_sync(user_id: str, limit: int = 20) -> list[str]:
     client = get_supabase()
@@ -466,7 +483,7 @@ def _get_recent_mistakes_sync(user_id: str, limit: int = 20) -> list[str]:
         .order("created_at", desc=True) \
         .limit(limit) \
         .execute()
-    
+
     import json
     all_mistakes = []
     for row_json in (res.data or []):
@@ -481,6 +498,7 @@ def _get_recent_mistakes_sync(user_id: str, limit: int = 20) -> list[str]:
             pass
     return all_mistakes
 
+
 async def get_recent_mistakes(user_id: str, limit: int = 20) -> list[str]:
     try:
         return await asyncio.to_thread(_get_recent_mistakes_sync, user_id, limit)
@@ -488,22 +506,31 @@ async def get_recent_mistakes(user_id: str, limit: int = 20) -> list[str]:
         logger.warning(f"Failed to get recent mistakes for {user_id}")
         return []
 
-def _update_writing_profile_sync(user_id: str, mistakes: list[str], count: int) -> None:
+
+def _update_writing_profile_sync(
+        user_id: str,
+        mistakes: list[str],
+        count: int) -> None:
     client = get_supabase()
     from datetime import datetime, timezone
-    
+
     upsert_data = {
         "user_id": user_id,
         "top_mistakes": mistakes,
         "improvement_count": count,
         "last_analyzed_at": datetime.now(timezone.utc).isoformat()
     }
-    
+
     # We use upsert on a unique user_id field
     # In Supabase/PostgREST, we can just upsert. If it exists, it updates.
-    client.table("writeright_writing_profiles").upsert(upsert_data, on_conflict="user_id").execute()  # type: ignore
+    client.table("writeright_writing_profiles").upsert(
+        upsert_data, on_conflict="user_id").execute()  # type: ignore
 
-async def update_writing_profile(user_id: str, mistakes: list[str], count: int) -> None:
+
+async def update_writing_profile(
+        user_id: str,
+        mistakes: list[str],
+        count: int) -> None:
     try:
         await asyncio.to_thread(_update_writing_profile_sync, user_id, mistakes, count)
     except Exception:

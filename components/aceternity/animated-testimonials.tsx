@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 
 export const AnimatedTestimonials = ({
   testimonials,
@@ -32,8 +33,8 @@ export const AnimatedTestimonials = ({
           transition={{ duration: 0.5, ease: "easeInOut" }}
           className="flex flex-col items-center justify-center max-w-2xl mx-auto text-center space-y-4"
         >
-          <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[color:var(--brand-300)] mb-4">
-            <img src={testimonials[active].src} alt={testimonials[active].name} className="object-cover w-full h-full" />
+          <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[color:var(--brand-300)] mb-4 relative">
+            <Image src={testimonials[active].src} alt={testimonials[active].name} fill className="object-cover" />
           </div>
           <h3 className="text-2xl font-heading font-semibold text-[color:var(--ink-900)] italic">
             &quot;{testimonials[active].quote}&quot;
