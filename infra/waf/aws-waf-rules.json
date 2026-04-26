@@ -1,0 +1,176 @@
+{
+  "Description": "AWS WAF v2 Web ACL for brainmate-ai authentication system",
+  "Name": "brainmate-auth-waf",
+  "Scope": "REGIONAL",
+  "DefaultAction": { "Allow": {} },
+  "Rules": [
+    {
+      "Name": "AWSManagedRulesCommonRuleSet",
+      "Priority": 1,
+      "OverrideAction": { "None": {} },
+      "Statement": {
+        "ManagedRuleGroupStatement": {
+          "VendorName": "AWS",
+          "Name": "AWSManagedRulesCommonRuleSet"
+        }
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "AWSCommonRules"
+      }
+    },
+    {
+      "Name": "AWSManagedRulesKnownBadInputsRuleSet",
+      "Priority": 2,
+      "OverrideAction": { "None": {} },
+      "Statement": {
+        "ManagedRuleGroupStatement": {
+          "VendorName": "AWS",
+          "Name": "AWSManagedRulesKnownBadInputsRuleSet"
+        }
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "AWSKnownBadInputs"
+      }
+    },
+    {
+      "Name": "AWSManagedRulesSQLiRuleSet",
+      "Priority": 3,
+      "OverrideAction": { "None": {} },
+      "Statement": {
+        "ManagedRuleGroupStatement": {
+          "VendorName": "AWS",
+          "Name": "AWSManagedRulesSQLiRuleSet"
+        }
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "AWSSQLi"
+      }
+    },
+    {
+      "Name": "AWSManagedRulesBotControlRuleSet",
+      "Priority": 4,
+      "OverrideAction": { "None": {} },
+      "Statement": {
+        "ManagedRuleGroupStatement": {
+          "VendorName": "AWS",
+          "Name": "AWSManagedRulesBotControlRuleSet",
+          "ManagedRuleGroupConfigs": [
+            { "LoginPath": "/sign-in" },
+            { "PayloadType": "JSON" }
+          ]
+        }
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "AWSBotControl"
+      }
+    },
+    {
+      "Name": "AuthEndpointRateLimit",
+      "Priority": 10,
+      "Action": { "Block": {} },
+      "Statement": {
+        "RateBasedStatement": {
+          "Limit": 100,
+          "AggregateKeyType": "IP",
+          "ScopeDownStatement": {
+            "ByteMatchStatement": {
+              "SearchString": "/api/auth/",
+              "FieldToMatch": { "UriPath": {} },
+              "PositionalConstraint": "STARTS_WITH",
+              "TextTransformations": [{ "Priority": 0, "Type": "LOWERCASE" }]
+            }
+          }
+        }
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "AuthRateLimit"
+      }
+    },
+    {
+      "Name": "LoginBruteForceProtection",
+      "Priority": 11,
+      "Action": { "Block": {} },
+      "Statement": {
+        "RateBasedStatement": {
+          "Limit": 10,
+          "AggregateKeyType": "IP",
+          "ScopeDownStatement": {
+            "AndStatement": {
+              "Statements": [
+                {
+                  "ByteMatchStatement": {
+                    "SearchString": "/sign-in",
+                    "FieldToMatch": { "UriPath": {} },
+                    "PositionalConstraint": "STARTS_WITH",
+                    "TextTransformations": [{ "Priority": 0, "Type": "LOWERCASE" }]
+                  }
+                },
+                {
+                  "ByteMatchStatement": {
+                    "SearchString": "POST",
+                    "FieldToMatch": { "Method": {} },
+                    "PositionalConstraint": "EXACTLY",
+                    "TextTransformations": [{ "Priority": 0, "Type": "NONE" }]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "LoginBruteForce"
+      }
+    },
+    {
+      "Name": "OversizedBodyBlock",
+      "Priority": 20,
+      "Action": { "Block": {} },
+      "Statement": {
+        "SizeConstraintStatement": {
+          "FieldToMatch": { "Body": { "OversizeHandling": "MATCH" } },
+          "ComparisonOperator": "GT",
+          "Size": 65536,
+          "TextTransformations": [{ "Priority": 0, "Type": "NONE" }]
+        }
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "OversizedBody"
+      }
+    },
+    {
+      "Name": "BlockGeoHighRisk",
+      "Priority": 30,
+      "Action": { "Block": {} },
+      "Statement": {
+        "GeoMatchStatement": {
+          "CountryCodes": ["KP", "IR", "CU", "SY"]
+        }
+      },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "GeoBlock"
+      }
+    }
+  ],
+  "VisibilityConfig": {
+    "SampledRequestsEnabled": true,
+    "CloudWatchMetricsEnabled": true,
+    "MetricName": "BrainmateAuthWAF"
+  }
+}

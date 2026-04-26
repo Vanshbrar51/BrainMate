@@ -1,0 +1,117 @@
+{
+  "description": "Cloudflare WAF rules for brainmate-ai auth endpoints",
+  "rules": [
+    {
+      "id": "auth-rate-limit",
+      "description": "Rate limit authentication endpoints (login, sync, logout)",
+      "expression": "(http.request.uri.path matches \"^/api/auth/\" and http.request.method eq \"POST\")",
+      "action": "managed_challenge",
+      "ratelimit": {
+        "characteristics": ["cf.colo.id", "ip.src"],
+        "period": 60,
+        "requests_per_period": 20,
+        "mitigation_timeout": 300,
+        "counting_expression": "(http.request.uri.path matches \"^/api/auth/\")"
+      }
+    },
+    {
+      "id": "gateway-rate-limit",
+      "description": "Rate limit Rust gateway public endpoints",
+      "expression": "(http.request.uri.path matches \"^/v1/auth/\" and not http.request.uri.path matches \"^/healthz\")",
+      "action": "managed_challenge",
+      "ratelimit": {
+        "characteristics": ["cf.colo.id", "ip.src"],
+        "period": 60,
+        "requests_per_period": 60,
+        "mitigation_timeout": 120
+      }
+    },
+    {
+      "id": "brute-force-login",
+      "description": "Block brute force login attempts (>5 failed logins in 5 min)",
+      "expression": "(http.request.uri.path matches \"^/sign-in\" and http.request.method eq \"POST\")",
+      "action": "block",
+      "ratelimit": {
+        "characteristics": ["ip.src"],
+        "period": 300,
+        "requests_per_period": 5,
+        "mitigation_timeout": 900,
+        "counting_expression": "(http.response.code in {401 403})"
+      }
+    },
+    {
+      "id": "credential-stuffing",
+      "description": "Detect credential stuffing patterns (many different user-agents from same IP)",
+      "expression": "(http.request.uri.path matches \"^/sign-in\" and http.request.method eq \"POST\" and not cf.bot_management.verified_bot)",
+      "action": "managed_challenge",
+      "ratelimit": {
+        "characteristics": ["ip.src"],
+        "period": 60,
+        "requests_per_period": 10,
+        "mitigation_timeout": 600
+      }
+    },
+    {
+      "id": "bot-detection",
+      "description": "Challenge suspected bots on auth endpoints",
+      "expression": "(cf.bot_management.score lt 30 and http.request.uri.path matches \"^/api/auth/\")",
+      "action": "managed_challenge"
+    },
+    {
+      "id": "block-tor-exit",
+      "description": "Block Tor exit nodes on auth endpoints",
+      "expression": "(cf.threat_score gt 25 and http.request.uri.path matches \"^/api/auth/\")",
+      "action": "block"
+    },
+    {
+      "id": "block-known-bad-ips",
+      "description": "Block IPs with bad reputation from Cloudflare threat intelligence",
+      "expression": "(cf.threat_score gt 50)",
+      "action": "block"
+    },
+    {
+      "id": "sqli-xss-protection",
+      "description": "Block SQL injection and XSS in request body/params",
+      "expression": "(http.request.uri.query matches \"(?i)(union|select|insert|drop|update|delete|exec|script|alert|onerror)\" or http.request.uri.path matches \"(?i)(\\.\\./|/etc/|cmd=|eval\\()\")",
+      "action": "block"
+    },
+    {
+      "id": "oversized-payload",
+      "description": "Block oversized request bodies (>64KB for auth endpoints)",
+      "expression": "(http.request.body.size gt 65536 and http.request.uri.path matches \"^/api/auth/\")",
+      "action": "block"
+    },
+    {
+      "id": "require-content-type",
+      "description": "Require JSON content-type on POST auth endpoints",
+      "expression": "(http.request.method eq \"POST\" and http.request.uri.path matches \"^/api/auth/\" and not http.request.headers[\"content-type\"][0] contains \"application/json\" and not http.request.headers[\"content-type\"][0] contains \"text/plain\")",
+      "action": "block"
+    },
+    {
+      "id": "block-scanners",
+      "description": "Block common vulnerability scanners",
+      "expression": "(http.user_agent matches \"(?i)(nikto|sqlmap|nmap|masscan|burp|nessus|acunetix|dirbuster|gobuster|wpscan)\")",
+      "action": "block"
+    },
+    {
+      "id": "geographic-restriction",
+      "description": "Challenge requests from high-risk countries (customize per deployment)",
+      "expression": "(ip.geoip.country in {\"KP\" \"IR\" \"CU\" \"SY\"} and http.request.uri.path matches \"^/api/auth/\")",
+      "action": "block"
+    }
+  ],
+  "managed_rulesets": [
+    {
+      "id": "cloudflare-managed-rules",
+      "description": "Cloudflare Managed Ruleset (OWASP Core Rule Set)",
+      "enabled": true,
+      "action_override": "block"
+    },
+    {
+      "id": "cloudflare-owasp-rules",
+      "description": "Cloudflare OWASP ModSecurity Core Rule Set",
+      "enabled": true,
+      "sensitivity": "high"
+    }
+  ]
+}

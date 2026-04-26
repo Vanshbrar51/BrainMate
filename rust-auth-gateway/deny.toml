@@ -1,0 +1,6 @@
+[advisories]
+unmaintained = "warn"
+vulnerability = "deny"
+
+[licenses]
+allow = ["MIT", "Apache-2.0", "ISC"]
