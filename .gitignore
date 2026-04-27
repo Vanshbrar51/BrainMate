@@ -39,3 +39,9 @@ yarn-error.log*
 # Other
 brainmate-ai.zip
 eslint_output.txt
+
+# Rules for agents 
+.agent/
+
+#
+.secrets

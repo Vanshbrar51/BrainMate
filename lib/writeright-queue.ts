@@ -28,7 +28,7 @@ export interface WritingJobPayload {
   tone: string;
   mode: string;
   output_language?: string;
-  history?: Array<{ role: string; content: string }>;
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
   intensity?: number;
   attempt: number;
   traceparent?: string;
@@ -96,6 +96,10 @@ function cacheKey(inputHash: string): string {
 
 function rateLimitKey(userId: string): string {
   return ns(KEY_JOBS, "ratelimit", userId);
+}
+
+function idempotencyKey(userId: string, requestKey: string): string {
+  return ns(KEY_JOBS, "idempotency", userId, requestKey);
 }
 
 // ---------------------------------------------------------------------------
@@ -239,6 +243,8 @@ export async function publishJobResult(jobId: string, result: AIJobResult): Prom
  * Returns null if no result is available yet.
  */
 export async function readJobResult(jobId: string): Promise<AIJobResult | null> {
+  if (isCircuitOpen()) return null;
+
   const redis = getRedisPool();
   const key = jobResultKey(jobId);
 
@@ -290,6 +296,8 @@ export async function cacheAIResponse(
   result: AIJobResult,
   ttlSecs: number = 3600,
 ): Promise<void> {
+  if (isCircuitOpen()) return;
+
   const redis = getRedisPool();
   const key = cacheKey(inputHash);
   await redis.setex(key, ttlSecs, JSON.stringify(result));
@@ -300,6 +308,8 @@ export async function cacheAIResponse(
  * Returns null on cache miss.
  */
 export async function getCachedAIResponse(inputHash: string): Promise<AIJobResult | null> {
+  if (isCircuitOpen()) return null;
+
   const redis = getRedisPool();
   const key = cacheKey(inputHash);
 
@@ -330,6 +340,10 @@ export async function checkRateLimit(
   userId: string,
   maxPerMinute: number = 10,
 ): Promise<{ allowed: boolean; remaining: number }> {
+  if (isCircuitOpen()) {
+    return { allowed: true, remaining: maxPerMinute };
+  }
+
   const redis = getRedisPool();
   const key = rateLimitKey(userId);
 
@@ -345,4 +359,38 @@ export async function checkRateLimit(
   const remaining = Math.max(0, maxPerMinute - count);
 
   return { allowed, remaining };
+}
+
+export async function getIdempotentResponse<T>(
+  userId: string,
+  requestKey: string,
+): Promise<T | null> {
+  if (isCircuitOpen()) return null;
+
+  const redis = getRedisPool();
+  const cached = await redis.get(idempotencyKey(userId, requestKey));
+  if (!cached) return null;
+
+  try {
+    return JSON.parse(cached) as T;
+  } catch {
+    console.error("[writeright-queue] Failed to parse idempotent response");
+    return null;
+  }
+}
+
+export async function setIdempotentResponse<T>(
+  userId: string,
+  requestKey: string,
+  response: T,
+  ttlSecs: number = 60,
+): Promise<void> {
+  if (isCircuitOpen()) return;
+
+  const redis = getRedisPool();
+  await redis.setex(
+    idempotencyKey(userId, requestKey),
+    ttlSecs,
+    JSON.stringify(response),
+  );
 }

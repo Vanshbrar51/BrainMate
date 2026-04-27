@@ -54,6 +54,11 @@ export const SearchSchema = z.object({
     .max(100, "Query is too long (max 100 characters)"),
 });
 
+export const ListChatsQuerySchema = z.object({
+  page: z.coerce.number().int().min(0).optional().default(0),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+});
+
 // ── NEW: [BE-2] ExportSchema ──
 export const ExportSchema = z.object({
   format: z
@@ -87,6 +92,7 @@ export type MessageInput = z.infer<typeof MessageSchema>;
 export type CreateChatInput = z.infer<typeof CreateChatSchema>;
 export type FeedbackInput = z.infer<typeof FeedbackSchema>;
 export type SearchInput = z.infer<typeof SearchSchema>;
+export type ListChatsQueryInput = z.infer<typeof ListChatsQuerySchema>;
 export type ExportInput = z.infer<typeof ExportSchema>;
 export type ShareInput = z.infer<typeof ShareSchema>;
 export type TemplateCreateInput = z.infer<typeof TemplateCreateSchema>;

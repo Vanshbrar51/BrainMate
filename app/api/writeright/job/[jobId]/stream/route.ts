@@ -58,6 +58,8 @@ export async function GET(
         async start(controller) {
           let ended = false;
           let subscriber: ReturnType<typeof getRedisPool> | null = null;
+          let lastStatusSent: string | null = null;
+          let lastEventAt = Date.now();
 
           const sendEvent = (event: string, data: unknown) => {
             if (ended) return;
@@ -67,24 +69,36 @@ export async function GET(
                   `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
                 ),
               );
+              if (event !== "ping") {
+                lastEventAt = Date.now();
+              }
             } catch {
               ended = true;
             }
           };
 
           const cleanupSubscriber = async () => {
-            if (!subscriber) return;
+            const activeSubscriber = subscriber;
+            subscriber = null;
+            if (!activeSubscriber) return;
             try {
-              await subscriber.unsubscribe(channel);
+              if (activeSubscriber.status !== "end") {
+                await activeSubscriber.unsubscribe(channel);
+              }
             } catch {
               // no-op
             }
             try {
-              await subscriber.quit();
+              if (activeSubscriber.status !== "end") {
+                await activeSubscriber.quit();
+              }
             } catch {
-              subscriber.disconnect();
+              try {
+                activeSubscriber.disconnect();
+              } catch {
+                // no-op
+              }
             }
-            subscriber = null;
           };
 
           // ── Subscribe to Redis pub/sub for live token streaming ──
@@ -140,7 +154,10 @@ export async function GET(
                     break;
                   }
 
-                  sendEvent("status", { status: status.status });
+                  if (lastStatusSent !== status.status) {
+                    sendEvent("status", { status: status.status });
+                    lastStatusSent = status.status;
+                  }
 
                   if (status.status === "completed") {
                     const result = await readJobResult(jobId);
@@ -189,7 +206,10 @@ export async function GET(
                 break;
               }
 
-              sendEvent("status", { status: job.status });
+              if (lastStatusSent !== job.status) {
+                sendEvent("status", { status: job.status });
+                lastStatusSent = job.status;
+              }
 
               if (job.status === "completed") {
                 let result = null;
@@ -211,6 +231,10 @@ export async function GET(
                 });
                 break;
               }
+            }
+
+            if (Date.now() - lastEventAt >= 15_000) {
+              sendEvent("ping", {});
             }
 
             await new Promise((resolve) => setTimeout(resolve, POLL_MS));

@@ -13,7 +13,7 @@ import {
   traceLogFields,
 } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
-import { CreateChatSchema } from "@/lib/writeright-validators";
+import { CreateChatSchema, ListChatsQuerySchema } from "@/lib/writeright-validators";
 
 // ---------------------------------------------------------------------------
 // POST /api/writeright/chat — Create a new chat
@@ -91,6 +91,19 @@ export async function GET(req: Request) {
 
       addSpanAttributes({ "user.id": userId });
 
+      const { searchParams } = new URL(req.url);
+      const parsedQuery = ListChatsQuerySchema.safeParse({
+        page: searchParams.get("page") ?? undefined,
+        limit: searchParams.get("limit") ?? undefined,
+      });
+      if (!parsedQuery.success) {
+        throw createApiError("VALIDATION_ERROR", "Invalid query params", 400, {
+          issues: parsedQuery.error.issues,
+        });
+      }
+
+      const { page, limit } = parsedQuery.data;
+      const offset = page * limit;
       const supabase = getSupabaseAdmin();
 
       const { data: chats, error } = await supabase
@@ -98,7 +111,8 @@ export async function GET(req: Request) {
         .select("id, user_id, title, mode, created_at, updated_at, writeright_messages(count)")
         .eq("user_id", userId)
         .is("deleted_at", null)
-        .order("updated_at", { ascending: false });
+        .order("updated_at", { ascending: false })
+        .range(offset, offset + limit - 1);
 
       if (error) {
         console.error("[api.writeright.chat] List failed:", {
@@ -124,9 +138,17 @@ export async function GET(req: Request) {
         })(),
       }));
 
-      addSpanAttributes({ "writeright.chat_count": transformed.length });
+      addSpanAttributes({
+        "writeright.chat_count": transformed.length,
+        "writeright.chat_page": page,
+        "writeright.chat_limit": limit,
+      });
 
-      return NextResponse.json({ chats: transformed });
+      return NextResponse.json({
+        chats: transformed,
+        page,
+        limit,
+      });
     });
   });
 }

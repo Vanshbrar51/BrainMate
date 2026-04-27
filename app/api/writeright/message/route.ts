@@ -11,7 +11,10 @@ import {
   checkRateLimit,
   computeInputHash,
   getCachedAIResponse,
+  getIdempotentResponse,
+  setIdempotentResponse,
   type WritingJobPayload,
+  type AIJobResult,
 } from "@/lib/writeright-queue";
 import {
   withSpan,
@@ -28,6 +31,8 @@ import { MessageSchema } from "@/lib/writeright-validators";
 // ---------------------------------------------------------------------------
 
 const MAX_TEXT_LENGTH = 10_000;
+const HISTORY_LIMIT = 6;
+const IDEMPOTENCY_KEY_MAX_LENGTH = 120;
 
 function sanitizeInput(text: string): string {
   let sanitized = text.slice(0, MAX_TEXT_LENGTH);
@@ -38,6 +43,57 @@ function sanitizeInput(text: string): string {
 function getMaxRequestsPerMinute(): number {
   const envVal = parseInt(process.env.WRITERIGHT_RATE_LIMIT_PER_MINUTE ?? "10", 10);
   return Number.isFinite(envVal) && envVal > 0 ? envVal : 10;
+}
+
+function normalizeIdempotencyKey(value: string | null): string | null {
+  if (!value) return null;
+  const normalized = value.trim().slice(0, IDEMPOTENCY_KEY_MAX_LENGTH);
+  return normalized.length > 0 ? normalized : null;
+}
+
+function extractAssistantHistoryContent(content: string): string {
+  try {
+    const parsed = JSON.parse(content) as { improved_text?: unknown };
+    if (typeof parsed.improved_text === "string" && parsed.improved_text.trim()) {
+      return parsed.improved_text;
+    }
+  } catch {
+    // Fall back to raw content when the assistant payload isn't structured JSON.
+  }
+  return content;
+}
+
+async function fetchChatHistory(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  chatId: string,
+  currentMessageId: string,
+): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+  const { data, error } = await supabase
+    .from("writeright_messages")
+    .select("id, role, content")
+    .eq("chat_id", chatId)
+    .neq("id", currentMessageId)
+    .order("created_at", { ascending: false })
+    .limit(HISTORY_LIMIT);
+
+  if (error || !data) {
+    console.error("[api.writeright.message] History lookup failed:", {
+      error: error?.message,
+      ...traceLogFields(),
+    });
+    return [];
+  }
+
+  return data
+    .slice()
+    .reverse()
+    .map((row): { role: "user" | "assistant"; content: string } => ({
+      role: row.role === "assistant" ? "assistant" : "user",
+      content: row.role === "assistant"
+        ? extractAssistantHistoryContent(row.content)
+        : row.content,
+    }))
+    .filter((entry) => entry.content.trim().length > 0);
 }
 
 // ── NEW: [BE-3] Helper to build rate limit response headers ──
@@ -98,6 +154,22 @@ export async function POST(req: Request) {
         throw createApiError("EMPTY_TEXT", "Text is empty after sanitization", 400);
       }
 
+      const idempotencyKey = normalizeIdempotencyKey(
+        req.headers.get("X-Idempotency-Key"),
+      );
+      if (idempotencyKey) {
+        const priorResponse = await getIdempotentResponse<{
+          jobId: string;
+          messageId: string;
+          status: "pending" | "completed";
+          result?: AIJobResult;
+        }>(userId, idempotencyKey);
+
+        if (priorResponse) {
+          return NextResponse.json(priorResponse, { status: 200 });
+        }
+      }
+
       // 5. Rate limit check
       const limit = getMaxRequestsPerMinute();
       let rateLimitHeaders: Record<string, string> = {};
@@ -154,7 +226,13 @@ export async function POST(req: Request) {
           user_id: userId,
           role: "user",
           content: text,
-          metadata: { tone, mode, output_language: outputLanguage, intensity },
+          metadata: {
+            tone,
+            mode,
+            output_language: outputLanguage,
+            intensity,
+            original_text: text,
+          },
         })
         .select("id, created_at")
         .single();
@@ -175,6 +253,7 @@ export async function POST(req: Request) {
         outputLanguage,
         intensity,
       );
+      const history = await fetchChatHistory(supabase, chatId, message.id);
       try {
         const cachedResult = await getCachedAIResponse(inputHash);
         if (cachedResult) {
@@ -192,17 +271,23 @@ export async function POST(req: Request) {
               result_type: "ai_improvement",
               cached: true,
               input_hash: inputHash,
+              job_id: "cached",
             },
           });
 
+          const responseBody = {
+            jobId: "cached",
+            messageId: message.id,
+            status: "completed" as const,
+            result: cachedResult,
+          };
+          if (idempotencyKey) {
+            await setIdempotentResponse(userId, idempotencyKey, responseBody);
+          }
+
           // ── CHANGED: [BE-3] Include rate limit headers on cached response ──
           return NextResponse.json(
-            {
-              jobId: "cached",
-              messageId: message.id,
-              status: "completed" as const,
-              result: cachedResult,
-            },
+            responseBody,
             { status: 200, headers: rateLimitHeaders },
           );
         }
@@ -265,6 +350,7 @@ export async function POST(req: Request) {
         tone,
         mode,
         output_language: outputLanguage,
+        history,
         intensity,
         attempt: 0,
         traceparent: traceHeaders.traceparent,
@@ -292,14 +378,19 @@ export async function POST(req: Request) {
         );
       }
 
+      const responseBody = {
+        jobId: job.id,
+        messageId: message.id,
+        status: "pending" as const,
+      };
+      if (idempotencyKey) {
+        await setIdempotentResponse(userId, idempotencyKey, responseBody);
+      }
+
       // 12. Return jobId and messageId
       // ── CHANGED: [BE-3] Include rate limit headers ──
       return NextResponse.json(
-        {
-          jobId: job.id,
-          messageId: message.id,
-          status: "pending" as const,
-        },
+        responseBody,
         { status: 202, headers: rateLimitHeaders },
       );
     });

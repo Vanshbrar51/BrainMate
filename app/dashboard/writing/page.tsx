@@ -1,18 +1,15 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useAuth } from '@clerk/nextjs'
 import { useErrorToast } from '@/lib/writeright-toast'
 import React from 'react'
 import {
-  Send,
   Mic,
   MicOff,
   Paperclip,
   ImagePlus,
   ArrowUpRight,
-  SpellCheck2,
-  Blend,
-  FileText,
   Mail,
   MessageSquare,
   Linkedin,
@@ -40,9 +37,10 @@ import {
   GraduationCap,
   Target,
   ArrowRight,
+  Wand2,
+  Settings2,
 } from 'lucide-react'
 import {
-  type Message,
   UserMessage,
   AIMessage,
 } from '@/components/dashboard/ChatMessage'
@@ -55,7 +53,6 @@ type WritingMode = 'email' | 'paragraph' | 'linkedin' | 'whatsapp'
 type ToneOption = 'Professional' | 'Friendly' | 'Concise' | 'Academic' | 'Assertive'
 type VoiceLang = 'en-IN' | 'hi-IN' | 'en-US'
 type OutputLang = 'en' | 'hindi' | 'tamil' | 'marathi' | 'bengali' | 'telugu'
-type SidebarTab = 'chats' | 'templates'
 
 interface AIQualityScores {
   clarity: number
@@ -107,14 +104,54 @@ interface ChatListItem {
 
 interface ListChatsResponse {
   chats: ChatListItem[]
+  page?: number
+  limit?: number
 }
 
 interface ChatMessageRow {
+  id: string
   role: 'user' | 'assistant'
   content: string
   metadata?: Record<string, unknown>
   created_at?: string
 }
+
+type WriteRightMessage =
+  | {
+    id: string
+    role: 'user'
+    content: string
+    timestamp?: number
+  }
+  | {
+    id: string
+    role: 'ai'
+    kind: 'result'
+    before: string
+    jobResult: AIJobResult
+    jobId?: string | null
+    chatId?: string | null
+    mode: WritingMode
+    tone: ToneOption
+    outputLang: OutputLang
+    prevScores?: AIQualityScores
+    timestamp?: number
+  }
+  | {
+    id: string
+    role: 'ai'
+    kind: 'notice'
+    content: string
+    timestamp?: number
+  }
+  | {
+    id: string
+    role: 'ai'
+    kind: 'error'
+    content: string
+    retryText: string
+    timestamp?: number
+  }
 
 interface SearchResultRow {
   chatId: string
@@ -219,24 +256,6 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-const CAPABILITIES = [
-  {
-    title: 'Indian English fixer',
-    desc: 'Detects "kindly revert", "do the needful", fixes automatically',
-    Icon: SpellCheck2,
-  },
-  {
-    title: 'Tone & clarity',
-    desc: 'Shift between Professional, Friendly, Concise, Academic',
-    Icon: Blend,
-  },
-  {
-    title: 'Format for any context',
-    desc: 'Emails, LinkedIn posts, WhatsApp, reports',
-    Icon: FileText,
-  },
-]
 
 const MODES: { id: WritingMode; label: string; Icon: React.ElementType; color: string }[] = [
   { id: 'email',     label: 'Email',               Icon: Mail,          color: '#3B82F6' },
@@ -422,15 +441,39 @@ function highlightText(text: string, query: string): React.ReactNode {
   ))
 }
 
-async function apiPost<T>(url: string, body: unknown): Promise<T> {
+function makeClientId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function isUuidLike(value: string | null | undefined): value is string {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+}
+
+async function apiPost<T>(
+  url: string,
+  body: unknown,
+  options?: { headers?: Record<string, string> },
+): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers ?? {}),
+    },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-    throw new Error(err.error ?? `Request failed: ${res.status}`)
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as {
+      error?: string
+      code?: string
+    }
+    const apiError = new Error(err.error ?? `Request failed: ${res.status}`) as Error & { code?: string }
+    apiError.code = err.code
+    throw apiError
   }
   return res.json()
 }
@@ -454,8 +497,13 @@ async function apiPostForm<T>(url: string, body: FormData): Promise<T> {
     body,
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-    throw new Error(err.error ?? `Request failed: ${res.status}`)
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as {
+      error?: string
+      code?: string
+    }
+    const apiError = new Error(err.error ?? `Request failed: ${res.status}`) as Error & { code?: string }
+    apiError.code = err.code
+    throw apiError
   }
   return res.json()
 }
@@ -463,8 +511,13 @@ async function apiPostForm<T>(url: string, body: FormData): Promise<T> {
 async function apiGet<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { signal })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-    throw new Error(err.error ?? `Request failed: ${res.status}`)
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as {
+      error?: string
+      code?: string
+    }
+    const apiError = new Error(err.error ?? `Request failed: ${res.status}`) as Error & { code?: string }
+    apiError.code = err.code
+    throw apiError
   }
   return res.json()
 }
@@ -480,59 +533,114 @@ async function apiDelete(url: string): Promise<void> {
 async function streamJobResult(
   jobId: string,
   signal: AbortSignal,
+  getToken: () => Promise<string | null>,
   handlers?: StreamJobHandlers,
 ): Promise<AIJobResult> {
-  return new Promise((resolve, reject) => {
-    const eventSource = new EventSource(`/api/writeright/job/${jobId}/stream`)
+  const token = await getToken()
+  if (!token) {
+    const authError = new Error('Your session expired. Please refresh the page.') as Error & { code?: string }
+    authError.code = 'UNAUTHORIZED'
+    throw authError
+  }
 
-    const onAbort = () => {
-      eventSource.close()
-      reject(new DOMException('Aborted', 'AbortError'))
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-
-    eventSource.addEventListener('token', (e) => {
-      try {
-        const payload = JSON.parse((e as MessageEvent).data ?? '{}') as { chunk?: string }
-        if (payload.chunk) handlers?.onToken?.(payload.chunk)
-      } catch {
-        // Ignore malformed token events.
-      }
-    })
-
-    eventSource.addEventListener('result', (e) => {
-      try {
-        const data = JSON.parse(e.data) as { result?: AIJobResult }
-        eventSource.close()
-        signal.removeEventListener('abort', onAbort)
-        if (data.result) resolve(data.result)
-        else reject(new Error('Empty result'))
-      } catch {
-        eventSource.close()
-        signal.removeEventListener('abort', onAbort)
-        reject(new Error('Failed to parse result'))
-      }
-    })
-
-    eventSource.addEventListener('error', (e) => {
-      try {
-        const data = JSON.parse((e as MessageEvent).data ?? '{}') as { error?: string }
-        eventSource.close()
-        signal.removeEventListener('abort', onAbort)
-        reject(new Error(data.error ?? 'Job failed'))
-      } catch {
-        eventSource.close()
-        signal.removeEventListener('abort', onAbort)
-        reject(new Error('Connection error'))
-      }
-    })
-
-    eventSource.onerror = () => {
-      eventSource.close()
-      signal.removeEventListener('abort', onAbort)
-      reject(new Error('Stream connection failed. Please try again.'))
-    }
+  const res = await fetch(`/api/writeright/job/${jobId}/stream`, {
+    method: 'GET',
+    signal,
+    headers: {
+      Accept: 'text/event-stream',
+      Authorization: `Bearer ${token}`,
+    },
+    cache: 'no-store',
   })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as {
+      error?: string
+      code?: string
+    }
+    const apiError = new Error(err.error ?? `Stream failed: ${res.status}`) as Error & { code?: string }
+    apiError.code = err.code
+    throw apiError
+  }
+
+  if (!res.body) {
+    throw new Error('Stream connection failed. Please try again.')
+  }
+
+  const reader = res.body
+    .pipeThrough(new TextDecoderStream())
+    .getReader()
+
+  let buffer = ''
+
+  const handleEventBlock = (block: string): AIJobResult | null => {
+    let eventName = 'message'
+    const dataLines: string[] = []
+
+    for (const line of block.split('\n')) {
+      if (!line || line.startsWith(':')) continue
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim()
+        continue
+      }
+      if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trim())
+      }
+    }
+
+    const rawData = dataLines.join('\n')
+    if (!rawData) return null
+
+    if (eventName === 'ping' || eventName === 'status') {
+      return null
+    }
+
+    try {
+      if (eventName === 'token') {
+        const payload = JSON.parse(rawData) as { chunk?: string }
+        if (payload.chunk) handlers?.onToken?.(payload.chunk)
+        return null
+      }
+
+      if (eventName === 'result') {
+        const payload = JSON.parse(rawData) as { result?: AIJobResult }
+        if (payload.result) {
+          return payload.result
+        }
+        throw new Error('Empty result')
+      }
+
+      if (eventName === 'error') {
+        const payload = JSON.parse(rawData) as { error?: string; code?: string }
+        const apiError = new Error(payload.error ?? 'Job failed') as Error & { code?: string }
+        apiError.code = payload.code
+        throw apiError
+      }
+    } catch (err) {
+      throw err instanceof Error ? err : new Error('Failed to parse stream response')
+    }
+
+    return null
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+
+    buffer += value.replace(/\r/g, '')
+
+    while (buffer.includes('\n\n')) {
+      const separatorIndex = buffer.indexOf('\n\n')
+      const block = buffer.slice(0, separatorIndex)
+      buffer = buffer.slice(separatorIndex + 2)
+      const result = handleEventBlock(block)
+      if (result) {
+        return result
+      }
+    }
+  }
+
+  throw new Error('Stream ended before a result was returned.')
 }
 
 function useRantDetector(text: string): boolean {
@@ -772,10 +880,10 @@ function WriteRightThinking({ startTime }: { startTime: number | null }) {
   return (
     <div className="chat-msg-ai">
       <div className="chat-msg-ai-header">
-        <div className="chat-msg-ai-avatar" style={{ background: 'var(--mod-write)', color: 'var(--text-inv)', borderColor: 'var(--mod-write)' }}>
+        <div className="chat-msg-ai-avatar wr-thinking-avatar">
           ✍️
         </div>
-        <span className="chat-msg-ai-label" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span className="chat-msg-ai-label wr-thinking-label">
           <span className="wr-brain-wave" aria-hidden="true">
             <svg viewBox="0 0 48 24" fill="none">
               <path d="M2 12 C8 4, 14 20, 20 12 S32 4, 38 12 S44 20, 46 12" />
@@ -783,11 +891,11 @@ function WriteRightThinking({ startTime }: { startTime: number | null }) {
               <path d="M2 12 C8 8, 14 16, 20 12 S32 8, 38 12 S44 16, 46 12" />
             </svg>
           </span>
-          <span style={{ color: 'var(--text-2)', fontSize: 12, fontStyle: 'italic', transition: 'opacity 300ms ease' }}>
+          <span className="wr-thinking-copy">
             {THINKING_MESSAGES[msgIndex]}
           </span>
           {elapsed > 5 && (
-            <span style={{ color: 'var(--text-3)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+            <span className="wr-thinking-elapsed">
               Taking a bit longer... ({elapsed}s)
             </span>
           )}
@@ -842,6 +950,65 @@ function scoreColor(score: number): string {
   return 'var(--error)'
 }
 
+function ScoreGauge({
+  label,
+  value,
+  previous,
+}: {
+  label: string
+  value: number
+  previous?: number
+}) {
+  const clamped = Math.max(1, Math.min(10, value))
+  const prev = typeof previous === 'number' ? Math.max(1, Math.min(10, previous)) : null
+  const delta = prev === null ? 0 : clamped - prev
+  const radius = 32
+  const circumference = 2 * Math.PI * radius
+  const arcRatio = 220 / 360
+  const dash = circumference * arcRatio
+  const gap = circumference - dash
+  const progressOffset = dash - (dash * clamped) / 10
+
+  return (
+    <div className="wr-score-gauge">
+      <div className="wr-gauge-wrap">
+        <svg className="wr-gauge-svg" viewBox="0 0 84 84" aria-hidden="true">
+          <circle
+            className="wr-gauge-track"
+            cx="42"
+            cy="42"
+            r={radius}
+            pathLength={circumference}
+            strokeDasharray={`${dash} ${gap}`}
+            strokeDashoffset="0"
+          />
+          <circle
+            className="wr-gauge-fill"
+            cx="42"
+            cy="42"
+            r={radius}
+            pathLength={circumference}
+            strokeDasharray={`${dash} ${gap}`}
+            style={
+              {
+                '--gauge-offset': progressOffset,
+                '--gauge-color': scoreColor(clamped),
+              } as React.CSSProperties
+            }
+          />
+        </svg>
+        <span className="wr-gauge-number"><AnimatedNumber value={clamped} /></span>
+        {delta !== 0 && (
+          <span className={`wr-gauge-delta${delta > 0 ? ' up' : ' down'}`}>
+            {delta > 0 ? `+${delta}` : delta}
+          </span>
+        )}
+      </div>
+      <span className="wr-gauge-label">{label}</span>
+    </div>
+  )
+}
+
 function ScoreCard({ scores, prevScores }: { scores?: AIQualityScores; prevScores?: AIQualityScores }) {
   if (!scores) return null
 
@@ -853,42 +1020,16 @@ function ScoreCard({ scores, prevScores }: { scores?: AIQualityScores; prevScore
 
   return (
     <div className="wr-score-card">
-      <p className="wr-score-title">Quality Score</p>
-      {rows.map((row) => {
-        const rawValue = typeof scores[row.key] === 'number' ? scores[row.key] : 0
-        const value = Math.max(1, Math.min(10, rawValue))
-        const pct = `${value * 10}%`
-        const fillColor = scoreColor(value)
-        const prevRaw = prevScores ? (typeof prevScores[row.key] === 'number' ? prevScores[row.key] : 0) : null
-        const prevValue = prevRaw !== null ? Math.max(1, Math.min(10, prevRaw)) : null
-        const delta = prevValue !== null ? value - prevValue : 0
-
-        return (
-          <div className="wr-score-row" key={row.key}>
-            <span className="wr-score-label">{row.label}</span>
-            <div className="wr-score-track">
-              <div
-                className="wr-score-fill"
-                style={
-                  {
-                    '--score-pct': pct,
-                    '--score-delay': rows.indexOf(row),
-                    background: fillColor,
-                  } as React.CSSProperties
-                }
-              />
-            </div>
-            <span className="wr-score-num">
-              <AnimatedNumber value={value} />
-              {delta !== 0 && (
-                <span className={`wr-score-delta${delta > 0 ? ' up' : ' down'}`}>
-                  {delta > 0 ? `+${delta}` : delta}
-                </span>
-              )}
-            </span>
-          </div>
-        )
-      })}
+      <div className="wr-score-gauges">
+        {rows.map((row) => (
+          <ScoreGauge
+            key={row.key}
+            label={row.label}
+            value={typeof scores[row.key] === 'number' ? scores[row.key] : 0}
+            previous={prevScores?.[row.key]}
+          />
+        ))}
+      </div>
       <div className="wr-verdict">
         {(() => {
           let verdictCls = 'pbadge-free'
@@ -943,18 +1084,15 @@ function WriteDiffBlock({
   onShare?: () => void
 }) {
   const [feedbackState, setFeedbackState] = useState<'none'|'up'|'down'>('none')
+  const canCollectFeedback = isUuidLike(jobId) && Boolean(chatId)
+
   const handleFeedback = useCallback(async (rating: 'up'|'down') => {
-    if (feedbackState !== 'none') return  // locked after first vote
+    if (feedbackState !== 'none' || !canCollectFeedback || !chatId) return
     setFeedbackState(rating)
-    if (!jobId || !chatId) return
     try {
-      await fetch('/api/writeright/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, chatId, rating, mode, tone })
-      })
+      await apiPost('/api/writeright/feedback', { jobId, chatId, rating, mode, tone })
     } catch { /* ignore */ }
-  }, [feedbackState, jobId, chatId, mode, tone])
+  }, [canCollectFeedback, chatId, feedbackState, jobId, mode, tone])
   
   const [beforeExpanded, setBeforeExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -993,36 +1131,37 @@ function WriteDiffBlock({
   const beforeStats = textStats(before)
   const afterStats = textStats(renderAfterText)
   const wordDelta = afterStats.words - beforeStats.words
-  const deltaStr = wordDelta === 0 ? '' : wordDelta > 0 ? `(+${wordDelta})` : `(${wordDelta})`
-  const deltaColor = wordDelta <= 0 ? 'var(--success)' : 'var(--error)'
+  const deltaStr = wordDelta === 0 ? '' : wordDelta > 0 ? `+${wordDelta}` : `${wordDelta}`
   const suggestionChips = (suggestions ?? []).map((chip) => chip.trim()).filter(Boolean).slice(0, 3)
 
   const beforeReadability = computeReadability(before)
   const afterReadability = computeReadability(renderAfterText)
 
   return (
-    <div className="wr-diff-container">
-      <div className="wr-diff-before">
-        <div className="wr-diff-header">
-          <span className="wr-diff-label" style={{ color: 'var(--error)' }}>Before</span>
+    <div className={`wr-diff-container${streaming ? ' streaming' : ''}`}>
+      {!streaming && (
+        <div className="wr-diff-before">
+          <div className="wr-diff-header">
+            <span className="wr-diff-label before">Before</span>
+          </div>
+          <div className={`wr-diff-text${isLong && !beforeExpanded ? ' collapsed' : ''}`}>
+            {before}
+          </div>
+          {isLong && (
+            <button className="wr-diff-expand-btn" onClick={() => setBeforeExpanded((v) => !v)}>
+              {beforeExpanded
+                ? <><ChevronUp size={11} /> Show less</>
+                : <><ChevronDown size={11} /> Show all ({before.length} chars)</>
+              }
+            </button>
+          )}
         </div>
-        <div className={`wr-diff-text${isLong && !beforeExpanded ? ' collapsed' : ''}`}>
-          {before}
-        </div>
-        {isLong && (
-          <button className="wr-diff-expand-btn" onClick={() => setBeforeExpanded((v) => !v)}>
-            {beforeExpanded
-              ? <><ChevronUp size={11} style={{ display: 'inline', verticalAlign: 'middle' }} /> Show less</>
-              : <><ChevronDown size={11} style={{ display: 'inline', verticalAlign: 'middle' }} /> Show all ({before.length} chars)</>
-            }
-          </button>
-        )}
-      </div>
+      )}
 
-      <div className={`wr-diff-after${copied ? ' wr-just-copied' : ''}`}>
+      <div className={`wr-diff-after${copied ? ' wr-just-copied' : ''}${streaming ? ' streaming' : ''}`}>
         <div className="wr-diff-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="wr-diff-label" style={{ color: 'var(--success)' }}>After</span>
+          <div className="wr-diff-title-row">
+            <span className="wr-diff-label after">{streaming ? 'Writing live' : 'After'}</span>
             {!streaming && (
               <button
                 className={`wr-diff-toggle${showDiff ? ' active' : ''}`}
@@ -1030,11 +1169,12 @@ function WriteDiffBlock({
                 aria-pressed={showDiff}
                 aria-label={showDiff ? 'Show clean version' : 'Show word diff'}
               >
-                {showDiff ? 'Show clean' : 'Show diff'}
+                <RefreshCcw size={11} />
+                {showDiff ? 'Clean' : 'Diff'}
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="wr-diff-actions">
             {onSaveTemplate && (
               <button className="wr-copy-btn wr-template-save-btn" onClick={onSaveTemplate}>
                 <BookmarkPlus size={11} /> Save
@@ -1061,12 +1201,15 @@ function WriteDiffBlock({
           )}
         </div>
         <div className="wr-diff-meta">
-          <span>{afterStats.words} words {deltaStr && <span style={{ color: deltaColor }}>{deltaStr}</span>}</span>
+          <span>
+            {afterStats.words} words
+            {deltaStr && <span className={`wr-word-delta${wordDelta <= 0 ? ' good' : ' up'}`}> {deltaStr}</span>}
+          </span>
           <span>~{afterStats.readSecs}s read</span>
         </div>
         {!streaming && (
           <div className="wr-readability-row">
-            <span className="wr-readability-label" style={{ background: 'transparent', color: 'var(--text-3)', padding: 0 }}>Readability:</span>
+            <span className="wr-readability-title">Readability:</span>
             <span className={`wr-readability-label ${beforeReadability.cls}`}>{beforeReadability.label} ({beforeReadability.score})</span>
             <span className="wr-readability-arrow-svg" aria-hidden="true">
               <ArrowRight size={12} />
@@ -1087,15 +1230,17 @@ function WriteDiffBlock({
       {!streaming && <ScoreCard scores={scores} prevScores={prevScores} />}
 
       {!streaming && (
-        <div className="chat-insight" style={{ marginTop: 8 }}>
-          <strong style={{ color: 'var(--text-1)', fontWeight: 600 }}>Why: </strong>
+        <div className="chat-insight wr-result-insight">
+          <strong>Why: </strong>
           {explanation}
         </div>
       )}
 
       {!streaming && teaching && teaching.mistakes.length > 0 && (
-        <div className="wr-teaching">
-          <p className="wr-teaching-title">What was changed &amp; why</p>
+        <details className="wr-teaching">
+          <summary className="wr-teaching-title">
+            {teaching.mistakes.length} correction{teaching.mistakes.length === 1 ? '' : 's'}
+          </summary>
           {teaching.mistakes.map((mistake, i) => (
             <div
               key={`${mistake}-${i}`}
@@ -1117,7 +1262,7 @@ function WriteDiffBlock({
               </div>
             </div>
           ))}
-        </div>
+        </details>
       )}
 
       {!streaming && followUp && (
@@ -1137,15 +1282,15 @@ function WriteDiffBlock({
               onClick={() => onSuggest?.(chip)}
               disabled={!onSuggest}
             >
-              {chip}
+              → {chip}
             </button>
           ))}
         </div>
       )}
 
-      {!streaming && jobId && chatId && (
+      {!streaming && canCollectFeedback && chatId && (
         <div className="wr-feedback-bar">
-          <span style={{ flex: 1 }}>How was this result?</span>
+          <span className="wr-feedback-label">How was this result?</span>
           <button
             className={`wr-fb-btn ${feedbackState === 'up' ? 'active up' : ''}`}
             onClick={() => handleFeedback('up')}
@@ -1199,7 +1344,7 @@ function SaveTemplateModal({
   return (
     <div className="wr-share-modal-overlay" onClick={onClose}>
       <div className="wr-share-modal" onClick={(e) => e.stopPropagation()}>
-        <h3 className="wr-shortcuts-title" style={{ fontSize: 20, marginBottom: 12 }}>Save As Template</h3>
+        <h3 className="wr-shortcuts-title wr-modal-title">Save As Template</h3>
         <input
           className="wr-search-input"
           value={name}
@@ -1208,7 +1353,7 @@ function SaveTemplateModal({
           placeholder="Template name"
           autoFocus
         />
-        <div className="wr-share-actions" style={{ marginTop: 14 }}>
+        <div className="wr-share-actions wr-modal-actions">
           <button className="wr-rant-dismiss" onClick={onClose}>Cancel</button>
           <button
             className="wr-send-btn"
@@ -1381,14 +1526,14 @@ function ShareModal({
   return (
     <div className="wr-share-modal-overlay" onClick={onClose}>
       <div className="wr-share-modal" onClick={(e) => e.stopPropagation()}>
-        <h3 className="wr-shortcuts-title" style={{ fontSize: 20, marginBottom: 10 }}>Share Card</h3>
+        <h3 className="wr-shortcuts-title wr-modal-title">Share Card</h3>
         <div className="wr-share-canvas-wrap">
-          <canvas ref={canvasRef} style={{ width: '100%', height: 'auto', display: 'block' }} />
+          <canvas ref={canvasRef} className="wr-share-canvas" />
         </div>
         {shareUrl && (
-          <div className="wr-followup" style={{ marginTop: 0 }}>
+          <div className="wr-followup wr-share-link-box">
             <div className="wr-followup-icon">🔗</div>
-            <p className="wr-followup-text" style={{ fontStyle: 'normal' }}>{shareUrl}</p>
+            <p className="wr-followup-text wr-share-link-text">{shareUrl}</p>
           </div>
         )}
         <div className="wr-share-actions">
@@ -1497,12 +1642,12 @@ function StatsPanel({
   return (
     <div className="wr-stats-panel">
       <button className="wr-stats-toggle" onClick={onToggle}>
-        <span><BarChart3 size={12} style={{ display: 'inline', marginRight: 6 }} /> Stats</span>
+        <span className="wr-stats-toggle-label"><BarChart3 size={12} /> Stats</span>
         <span>{open ? '−' : '+'}</span>
       </button>
       {open && (
         <>
-          {loading && <p className="wr-stat-label" style={{ marginTop: 6 }}>Loading stats…</p>}
+          {loading && <p className="wr-stat-label wr-stat-loading">Loading stats…</p>}
           {!loading && stats && (
             <>
               <div className="wr-stats-grid">
@@ -1548,8 +1693,8 @@ function StatsPanel({
                 })}
               </div>
               {writingProfile && writingProfile.top_mistakes.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <div className="wr-shortcuts-group-label" style={{ marginBottom: 4 }}>Your writing patterns</div>
+                <div className="wr-profile-block">
+                  <div className="wr-shortcuts-group-label">Your writing patterns</div>
                   <div className="wr-profile-tags">
                     {writingProfile.top_mistakes.map(m => (
                       <span key={m} className="wr-profile-tag">{m}</span>
@@ -1559,7 +1704,7 @@ function StatsPanel({
               )}
               {stats.avg_clarity_by_day && stats.avg_clarity_by_day.some(v => v > 0) && (
                 <div>
-                  <div className="wr-shortcuts-group-label" style={{ marginTop: 10, marginBottom: 4 }}>
+                  <div className="wr-shortcuts-group-label wr-clarity-title">
                     Writing clarity trend
                   </div>
                   <div className="wr-sparkline wr-clarity-sparkline">
@@ -1601,6 +1746,9 @@ function TemplatesDrawer({
   onDelete: (templateId: string) => void
   onRename: (templateId: string, nextName: string) => void
 }) {
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+
   const grouped = templates.reduce<Record<WritingMode, TemplateRow[]>>(
     (acc, item) => {
       acc[item.mode] = [...acc[item.mode], item]
@@ -1612,26 +1760,54 @@ function TemplatesDrawer({
   return (
     <div className={`wr-drawer${open ? ' open' : ''}`}>
       <div className="wr-drawer-header">
-        <span style={{ fontWeight: 600 }}>Templates</span>
+        <span className="wr-drawer-title">Templates</span>
         <button className="wr-rant-dismiss" onClick={onClose}>Close</button>
       </div>
       {(['email', 'paragraph', 'linkedin', 'whatsapp'] as const).map((mode) => (
         <div key={mode}>
-          <p className="wr-shortcuts-group-label" style={{ margin: '10px 12px 4px' }}>{mode}</p>
+          <p className="wr-shortcuts-group-label wr-template-group-label">{mode}</p>
           {grouped[mode].map((template) => (
             <div key={template.id} className="wr-template-item" onClick={() => onUse(template)}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                <p className="wr-template-name">{template.name}</p>
+              <div className="wr-template-row">
+                {editingTemplateId === template.id ? (
+                  <input
+                    className="wr-template-name-input"
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setEditingTemplateId(null)
+                        setEditingName('')
+                      }
+                      if (e.key === 'Enter') {
+                        const nextName = editingName.trim()
+                        if (nextName) onRename(template.id, nextName)
+                        setEditingTemplateId(null)
+                        setEditingName('')
+                      }
+                    }}
+                    onBlur={() => {
+                      const nextName = editingName.trim()
+                      if (nextName && nextName !== template.name) onRename(template.id, nextName)
+                      setEditingTemplateId(null)
+                      setEditingName('')
+                    }}
+                    autoFocus
+                  />
+                ) : (
+                  <p className="wr-template-name">{template.name}</p>
+                )}
                 <span className="wr-use-badge">{template.use_count} uses</span>
               </div>
               <p className="wr-template-meta">{template.tone} • {template.content.slice(0, 70)}{template.content.length > 70 ? '…' : ''}</p>
-              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <div className="wr-template-actions">
                 <button
                   className="wr-rant-dismiss"
                   onClick={(e) => {
                     e.stopPropagation()
-                    const renamed = window.prompt('Rename template', template.name)
-                    if (renamed && renamed.trim()) onRename(template.id, renamed.trim())
+                    setEditingTemplateId(template.id)
+                    setEditingName(template.name)
                   }}
                 >
                   <Pencil size={11} /> Rename
@@ -1737,17 +1913,28 @@ function VersionTimeline({
     if (confirmId === v.versionNum) {
       // Second click — confirm restore
       if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
+      confirmTimerRef.current = null
       setConfirmId(null)
       onRestore(v.text)
     } else {
       // First click — enter confirm mode
       if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
       setConfirmId(v.versionNum)
-      confirmTimerRef.current = setTimeout(() => setConfirmId(null), 3000)
+      confirmTimerRef.current = setTimeout(() => {
+        confirmTimerRef.current = null
+        setConfirmId(null)
+      }, 3000)
     }
   }, [confirmId, onRestore])
 
-  useEffect(() => () => { if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current) }, [])
+  useEffect(() => {
+    return () => {
+      if (confirmTimerRef.current) {
+        clearTimeout(confirmTimerRef.current)
+        confirmTimerRef.current = null
+      }
+    }
+  }, [])
 
   return (
     <div
@@ -1758,25 +1945,24 @@ function VersionTimeline({
       aria-hidden={!open}
     >
       <div className="wr-drawer-header">
-        <span style={{ fontWeight: 600, fontSize: 13 }}>Version History</span>
+        <span className="wr-drawer-title">Version History</span>
         <button className="wr-rant-dismiss" onClick={onClose}>Close</button>
       </div>
       <div>
         {versions.map((v) => (
           <div key={v.versionNum} className="wr-version-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="wr-version-head">
               <span className="wr-version-num">Version {v.versionNum}</span>
               <span className="wr-version-meta">{v.words} words</span>
             </div>
             <div className="wr-version-meta">
               {new Date(v.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
-            <div className="wr-version-preview" style={{ marginTop: 6, marginBottom: 10 }}>
+            <div className="wr-version-preview">
               {v.text.slice(0, 60)}{v.text.length > 60 ? '…' : ''}
             </div>
             <button
-              className={`wr-rant-dismiss${confirmId === v.versionNum ? ' wr-restore-confirm-btn' : ''}`}
-              style={{ width: '100%', justifyContent: 'center' }}
+              className={`wr-rant-dismiss wr-version-restore${confirmId === v.versionNum ? ' wr-restore-confirm-btn' : ''}`}
               onClick={() => handleRestoreClick(v)}
               aria-label={confirmId === v.versionNum ? 'Click again to confirm restore' : 'Restore this version'}
             >
@@ -1823,31 +2009,6 @@ const DAILY_CHALLENGES = [
   { title: 'Send a cold outreach', desc: 'Write a warm opening for a potential new client.' },
 ] as const
 
-// ── NEW: [INPUT-4] Smart Quick Actions Bar ──
-function QuickActionsBar({ text, onAction }: { text: string; onAction: (prompt: string) => void }) {
-  const chips = useMemo(() => {
-    const result: Array<{ label: string; prompt: string }> = []
-    if (!text.trim() || text.length < 10) return result
-    if (/\?/.test(text)) result.push({ label: 'Make this a clear question', prompt: text })
-    if (text.split(/[.!?]+/).filter(s => s.trim()).length >= 3) result.push({ label: 'TL;DR this', prompt: text })
-    if (/[!]{2,}|[A-Z]{3,}/.test(text)) result.push({ label: 'Cool this down', prompt: text })
-    if (text.length > 200) result.push({ label: 'Tighten to 50 words', prompt: text })
-    return result.slice(0, 4)
-  }, [text])
-  if (chips.length === 0) return null
-  return (
-    <div className="wr-quick-actions">
-      {chips.map((c, i) => (
-        <button key={i} className="wr-quick-chip" onClick={() => onAction(c.prompt)} type="button" aria-label={c.label}>
-          {c.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-
-
 // ── NEW: [LOOP-1] Confetti burst helper ──
 function spawnConfetti(target: HTMLElement) {
   const rect = target.getBoundingClientRect()
@@ -1868,57 +2029,50 @@ function spawnConfetti(target: HTMLElement) {
   setTimeout(() => container.remove(), 800)
 }
 
-// ── NEW: [LOOP-2] Daily Goal Ring SVG ──
-function DailyGoalRing({ current, goal }: { current: number; goal: number }) {
-  const pct = Math.min(current / goal, 1)
-  const circumference = 2 * Math.PI * 14
-  const offset = circumference * (1 - pct)
-  return (
-    <svg className="wr-goal-ring" viewBox="0 0 36 36" aria-label={`${current} of ${goal} daily goal`}>
-      <circle className="wr-goal-ring-bg" cx="18" cy="18" r="14" />
-      <circle
-        className="wr-goal-ring-fill"
-        cx="18" cy="18" r="14"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        transform="rotate(-90 18 18)"
-      />
-      <text x="18" y="18" textAnchor="middle" dominantBaseline="central" fill="var(--text-1)" fontSize="10" fontWeight="600">
-        {current}
-      </text>
-    </svg>
-  )
-}
-
 const MILESTONES: Record<number, string> = { 5: '🏆 5 texts improved! You\u2019re warming up.', 10: '⚡ 10x writer! Building momentum.', 25: '🔥 25 improvements — you\u2019re on fire!', 50: '👑 50 texts! Writing mastery unlocked.' }
 
 
 export default function WriteRightPage() {
+  const { getToken } = useAuth()
   const { toasts, dismiss, showError } = useErrorToast()
   const [input, setInput] = useState('')
   const [tone, setTone] = useState<ToneOption>('Professional')
   const [intensity, setIntensity] = useState(3)
   const [mode, setMode] = useState<WritingMode>('email')
   const [outputLang, setOutputLang] = useState<OutputLang>('en')
-  const [messages, setMessages] = useState<(Message & { jobResult?: AIJobResult; timestamp?: number })[]>([])
+  const [messages, setMessages] = useState<WriteRightMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [hasStarted, setHasStarted] = useState(false)
   const [chatId, setChatId] = useState<string | null>(null)
   const [lastSubmittedText, setLastSubmittedText] = useState<string | null>(null)
   const [lastImprovedText, setLastImprovedText] = useState('')
   const [lastResultMeta, setLastResultMeta] = useState<{ mode: WritingMode; tone: ToneOption; chatId: string; jobId: string } | null>(null)
+  const [resultAnnouncement, setResultAnnouncement] = useState('')
 
   const [chats, setChats] = useState<ChatListItem[]>([])
   
   const [writingProfile, setWritingProfile] = useState<{ top_mistakes: string[], improvement_count: number } | null>(null)
+  const [draftSaveWarning, setDraftSaveWarning] = useState<string | null>(null)
   
   
   // Draft Auto-save
   useEffect(() => {
     if (chatId && input) {
-      const t = setTimeout(() => localStorage.setItem(`wr:draft:${chatId}`, input), 2000)
+      const t = setTimeout(() => {
+        try {
+          if (JSON.stringify(input).length >= 50_000) {
+            setDraftSaveWarning('Draft too large to auto-save locally.')
+            return
+          }
+          localStorage.setItem(`wr:draft:${chatId}`, input)
+          setDraftSaveWarning(null)
+        } catch {
+          setDraftSaveWarning('Draft could not be auto-saved locally.')
+        }
+      }, 2000)
       return () => clearTimeout(t)
     }
+    setDraftSaveWarning(null)
   }, [input, chatId])
   useEffect(() => {
     if (chatId) {
@@ -1974,13 +2128,6 @@ export default function WriteRightPage() {
   // ENHANCE-06: Keyboard shortcut discovery toast
   const [showShortcutTip, setShowShortcutTip] = useState(false)
 
-  const momentumMsg = useMemo(() => {
-    if (sessionCount === 0) return null
-    if (sessionCount === 1) return '1 text improved today'
-    if (sessionCount < 4) return `${sessionCount} texts improved`
-    return `${sessionCount} on a roll 🔥`
-  }, [sessionCount])
-
   // GAME-1: Achievement milestone banner
   const [achievementBanner, setAchievementBanner] = useState<string | null>(null)
   useEffect(() => {
@@ -1991,16 +2138,18 @@ export default function WriteRightPage() {
     }
   }, [sessionCount])
 
-  // F-11: Prompt Builder
+  // F-11: Writing brief
   const [builderOpen, setBuilderOpen] = useState(false)
   const [builderObj, setBuilderObj] = useState({ audience: '', purpose: '', points: '' })
 
   const [versionPanelOpen, setVersionPanelOpen] = useState(false)
   const aiVersions = useMemo(() => {
     return messages
-      .filter((m) => m.role === 'ai' && typeof m.jobResult === 'object')
+      .filter((m): m is Extract<WriteRightMessage, { role: 'ai'; kind: 'result' }> => (
+        m.role === 'ai' && m.kind === 'result'
+      ))
       .map((m, idx) => {
-        const text = m.jobResult?.improved_text || ''
+        const text = m.jobResult.improved_text || ''
         return {
           versionNum: idx + 1,
           timestamp: m.timestamp || Date.now(),
@@ -2011,11 +2160,10 @@ export default function WriteRightPage() {
       .reverse()
   }, [messages])
 
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chats')
   const [templatesDrawerOpen, setTemplatesDrawerOpen] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
-  const { loading: searchLoading, results: searchResults } = useWriterightSearch(searchQuery, sidebarTab === 'chats')
+  const { loading: searchLoading, results: searchResults } = useWriterightSearch(searchQuery, true)
 
   const [statsOpen, setStatsOpen] = useState(false)
   const [statsLoading, setStatsLoading] = useState(false)
@@ -2044,6 +2192,7 @@ export default function WriteRightPage() {
   const abortRef = useRef<AbortController | null>(null)
   const loadingStartRef = useRef<number | null>(null)
   const submitRef = useRef<(text?: string, forcedTone?: ToneOption) => Promise<void>>(async () => {})
+  const pendingSubmissionRef = useRef<{ signature: string; key: string } | null>(null)
 
   const {
     templates,
@@ -2075,7 +2224,7 @@ export default function WriteRightPage() {
 
   const loadChats = useCallback(async () => {
     try {
-      const res = await apiGet<ListChatsResponse>('/api/writeright/chat')
+      const res = await apiGet<ListChatsResponse>('/api/writeright/chat?page=0&limit=20')
       setChats(res.chats || [])
     } catch (err) {
       console.error('Failed to load chats', err)
@@ -2176,7 +2325,6 @@ export default function WriteRightPage() {
         mode: saveTemplatePayload.mode,
         tone: saveTemplatePayload.tone,
       })
-      setSidebarTab('templates')
       setTemplatesDrawerOpen(true)
       setSaveModalOpen(false)
     } catch (err) {
@@ -2189,11 +2337,8 @@ export default function WriteRightPage() {
     setShareModalOpen(true)
   }, [])
 
-  // renderAiBlock creates JSX stored in messages[].content.
-  // Its deps (openSaveTemplateModal, openShareModal) are stable useCallbacks
-  // with empty dep arrays, so identity changes only happen on first render.
-  // Do not add unstable deps here without auditing all callers.
-  const renderAiBlock = useCallback((opts: {
+  const buildAiResultMessage = useCallback((opts: {
+    id?: string
     before: string
     result: AIJobResult
     jobId?: string | null
@@ -2202,46 +2347,23 @@ export default function WriteRightPage() {
     tone: ToneOption
     outputLang: OutputLang
     prevScores?: AIQualityScores
-  }) => {
-    const { before, result, jobId, chatId: chatIdArg, mode: blockMode, tone: blockTone, outputLang: blockOutputLang, prevScores: blockPrevScores } = opts
-    const explanationParts: string[] = []
-    if (result.teaching?.mistakes?.length > 0) {
-      explanationParts.push(result.teaching.mistakes[0])
-      if (result.teaching.explanations?.length > 0) {
-        explanationParts.push(result.teaching.explanations[0])
-      }
+  }): WriteRightMessage => {
+    const { id, before, result, jobId, chatId: chatIdArg, mode: blockMode, tone: blockTone, outputLang: blockOutputLang, prevScores: blockPrevScores } = opts
+    return {
+      id: id ?? makeClientId('ai'),
+      role: 'ai',
+      kind: 'result',
+      before,
+      jobResult: result,
+      jobId,
+      chatId: chatIdArg,
+      mode: blockMode,
+      tone: blockTone,
+      outputLang: blockOutputLang,
+      prevScores: blockPrevScores,
+      timestamp: Date.now(),
     }
-    const explanation = explanationParts.join(' — ') || 'AI-improved version of your text.'
-
-    return (
-      <WriteDiffBlock
-        before={before}
-        after={result.improved_text}
-        explanation={explanation}
-        teaching={result.teaching}
-        followUp={result.follow_up}
-        suggestions={result.suggestions}
-        scores={result.scores}
-        prevScores={blockPrevScores}
-        englishVersion={result.english_version}
-        outputLang={blockOutputLang}
-        jobId={jobId ?? undefined}
-        chatId={chatIdArg ?? undefined}
-        mode={blockMode}
-        tone={blockTone}
-        onSuggest={(suggestion) => { void submitRef.current(suggestion) }}
-        onSaveTemplate={() => openSaveTemplateModal(result.improved_text, blockMode, blockTone)}
-        onShare={jobId && chatIdArg ? () => openShareModal({
-          before,
-          after: result.improved_text,
-          mode: blockMode,
-          tone: blockTone,
-          chatId: chatIdArg,
-          jobId,
-        }) : undefined}
-      />
-    )
-  }, [openSaveTemplateModal, openShareModal])
+  }, [])
 
   const handleModeChange = useCallback((newMode: WritingMode) => {
     if (newMode === mode && !chatId) return
@@ -2256,8 +2378,10 @@ export default function WriteRightPage() {
     if (wasStarted) {
       const modeLabel = MODES.find((m) => m.id === newMode)?.label ?? newMode
       setMessages([{
+        id: makeClientId('notice'),
         role: 'ai',
-        content: <div className="wr-mode-divider">Switched to {modeLabel} mode</div>,
+        kind: 'notice',
+        content: `Switched to ${modeLabel} mode`,
       }])
       setHasStarted(true)
     }
@@ -2269,50 +2393,64 @@ export default function WriteRightPage() {
       setChatId(id)
       const res = await apiGet<{ messages: ChatMessageRow[] }>(`/api/writeright/chat/${id}/messages`)
       let latestImproved = ''
-      let latestJob: string | null = null
+      let latestMeta: { mode: WritingMode; tone: ToneOption; chatId: string; jobId: string } | null = null
+      let lastBeforeText = ''
 
-      const reconstructed: Message[] = res.messages.map((m) => {
+      const reconstructed: WriteRightMessage[] = res.messages.map((m) => {
+        const metadata = (m.metadata ?? {}) as Record<string, unknown>
         if (m.role === 'user') {
-          return { role: 'user', content: m.content }
+          lastBeforeText = typeof metadata.original_text === 'string' ? metadata.original_text : m.content
+          return {
+            id: m.id,
+            role: 'user',
+            content: m.content,
+            timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
+          }
         }
 
         try {
           const parsed = JSON.parse(m.content) as AIJobResult
           latestImproved = typeof parsed.improved_text === 'string' ? parsed.improved_text : latestImproved
-          const metadata = (m.metadata ?? {}) as Record<string, unknown>
           const jobId = typeof metadata.job_id === 'string' ? metadata.job_id : null
-          latestJob = jobId ?? latestJob
           const savedMode = (typeof metadata.mode === 'string' ? metadata.mode : chatMode) as WritingMode
           const savedTone = (typeof metadata.tone === 'string' ? metadata.tone : tone) as ToneOption
           const savedOutputLang = (typeof metadata.output_language === 'string' ? metadata.output_language : 'en') as OutputLang
-          return {
-            role: 'ai',
-            jobResult: parsed,
-            timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
-            content: renderAiBlock({
-              before: 'Previous draft (context collapsed)',
-              result: parsed,
-              jobId,
-              chatId: id,
-              mode: savedMode,
-              tone: savedTone,
-              outputLang: savedOutputLang,
-            }),
+          if (isUuidLike(jobId)) {
+            latestMeta = { mode: savedMode, tone: savedTone, chatId: id, jobId }
           }
+          const resultMessage = buildAiResultMessage({
+            id: m.id,
+            before: lastBeforeText || 'Previous draft',
+            result: parsed,
+            jobId,
+            chatId: id,
+            mode: savedMode,
+            tone: savedTone,
+            outputLang: savedOutputLang,
+          })
+          resultMessage.timestamp = m.created_at ? new Date(m.created_at).getTime() : Date.now()
+          return resultMessage
         } catch {
-          return { role: 'ai', content: m.content }
+          return {
+            id: m.id,
+            role: 'ai',
+            kind: 'notice',
+            content: m.content,
+            timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
+          }
         }
       })
 
       setMessages(reconstructed)
       if (latestImproved) setLastImprovedText(latestImproved)
+      setLastResultMeta(latestMeta)
       setHasStarted(true)
       setSearchQuery('')
       scrollBottom()
     } catch (err) {
       console.error('Failed to load chat messages', err)
     }
-  }, [renderAiBlock, scrollBottom, tone])
+  }, [buildAiResultMessage, scrollBottom, tone])
 
   const deleteChat = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
@@ -2353,8 +2491,7 @@ export default function WriteRightPage() {
   const handleExport = useCallback(async () => {
     setIsExporting(true)
     try {
-      const res = await fetch('/api/writeright/export')
-      const data = await res.json() as { chats?: ExportChat[] }
+      const data = await apiGet<{ chats?: ExportChat[] }>('/api/writeright/export')
       
       const iframe = document.createElement('iframe')
       iframe.style.display = 'none'
@@ -2410,6 +2547,19 @@ export default function WriteRightPage() {
 
     const toneToUse = forcedTone ?? tone
     const submitOutputLang: OutputLang = (mode === 'email' || mode === 'whatsapp') ? outputLang : 'en'
+    const submissionSignature = JSON.stringify([
+      chatId ?? 'new',
+      msg,
+      toneToUse,
+      mode,
+      intensity,
+      submitOutputLang,
+    ])
+    const idempotencyKey = pendingSubmissionRef.current?.signature === submissionSignature
+      ? pendingSubmissionRef.current.key
+      : makeClientId('idem')
+    pendingSubmissionRef.current = { signature: submissionSignature, key: idempotencyKey }
+
     setLastSubmittedText(msg)
     setLoading(true)
     loadingStartRef.current = Date.now()
@@ -2422,7 +2572,12 @@ export default function WriteRightPage() {
     if (taRef.current) taRef.current.style.height = 'auto'
 
     setHasStarted(true)
-    setMessages((prev) => [...prev, { role: 'user', content: msg }])
+    setMessages((prev) => [...prev, {
+      id: makeClientId('user'),
+      role: 'user',
+      content: msg,
+      timestamp: Date.now(),
+    }])
     scrollBottom()
 
     try {
@@ -2448,6 +2603,10 @@ export default function WriteRightPage() {
         mode,
         intensity,
         output_language: submitOutputLang,
+      }, {
+        headers: {
+          'X-Idempotency-Key': idempotencyKey,
+        },
       })
 
       let result: AIJobResult
@@ -2457,7 +2616,7 @@ export default function WriteRightPage() {
         result = submitRes.result
       } else {
         resolvedJobId = submitRes.jobId
-        result = await streamJobResult(submitRes.jobId, controller.signal, {
+        result = await streamJobResult(submitRes.jobId, controller.signal, getToken, {
           onToken: (chunk) => {
             setStreamingText((prev) => `${prev}${chunk}`)
           },
@@ -2465,10 +2624,14 @@ export default function WriteRightPage() {
       }
 
       // ENHANCE-02: Extract prevScores from previous AI message for delta
-      const prevAiMsg = [...messages].reverse().find(m => m.role === 'ai' && m.jobResult?.scores)
-      const prevScores = prevAiMsg?.jobResult?.scores ?? undefined
+      const prevAiMsg = [...messages]
+        .reverse()
+        .find((m): m is Extract<WriteRightMessage, { role: 'ai'; kind: 'result' }> => (
+          m.role === 'ai' && m.kind === 'result' && Boolean(m.jobResult.scores)
+        ))
+      const prevScores = prevAiMsg?.jobResult.scores ?? undefined
 
-      const aiContent = renderAiBlock({
+      const resultMessage = buildAiResultMessage({
         before: msg,
         result,
         jobId: resolvedJobId,
@@ -2480,15 +2643,13 @@ export default function WriteRightPage() {
       })
 
       setLastImprovedText(result.improved_text); localStorage.removeItem(`wr:draft:${activeChatId}`)
-      if (activeChatId && resolvedJobId) {
+      setResultAnnouncement(result.scores?.verdict
+        ? `WriteRight finished. Verdict: ${result.scores.verdict}`
+        : 'WriteRight finished improving your draft.')
+      if (activeChatId && isUuidLike(resolvedJobId)) {
         setLastResultMeta({ mode, tone: toneToUse, chatId: activeChatId, jobId: resolvedJobId })
       }
-      setMessages((prev) => [...prev, {
-        role: 'ai',
-        jobResult: result,
-        timestamp: Date.now(),
-        content: aiContent
-      }])
+      setMessages((prev) => [...prev, resultMessage])
       setStreamingText('')
       setStreamingBefore('')
       scrollBottom()
@@ -2510,12 +2671,10 @@ export default function WriteRightPage() {
         setMessages((prev) => [
           ...prev,
           {
+            id: makeClientId('notice'),
             role: 'ai',
-            content: (
-              <div className="wr-mode-divider" style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                Cancelled
-              </div>
-            ),
+            kind: 'notice',
+            content: 'Cancelled',
           },
         ])
         return
@@ -2529,19 +2688,15 @@ export default function WriteRightPage() {
       setMessages(items => items.slice(0, -1))
       const retryText = lastSubmittedText ?? msg
       setMessages((prev) => [...prev, {
+        id: makeClientId('error'),
         role: 'ai',
-        content: (
-          <InlineError
-            message={errorMessage}
-            onRetry={() => {
-              setMessages((items) => items.slice(0, -1))
-              void submitRef.current(retryText)
-            }}
-          />
-        ),
+        kind: 'error',
+        content: errorMessage,
+        retryText,
       }])
       scrollBottom()
     } finally {
+      pendingSubmissionRef.current = null
       setLoading(false)
       loadingStartRef.current = null
       setStreamingText('')
@@ -2552,13 +2707,14 @@ export default function WriteRightPage() {
     input,
     intensity,
     isRecording,
+    getToken,
     lastSubmittedText,
     loadChats,
     loading,
     messages,
     mode,
     outputLang,
-    renderAiBlock,
+    buildAiResultMessage,
     scrollBottom,
     sessionCount,
     stopRecording,
@@ -2734,81 +2890,54 @@ export default function WriteRightPage() {
         <div className="wr-sidebar">
           <div className="wr-sidebar-header">
             <div className="wr-sidebar-brand">
-              <span className="wr-sidebar-brand-icon">✦</span>
-              <span style={{ fontFamily: 'var(--font-serif)', fontSize: 18 }}>WriteRight</span>
+              <span className="wr-sidebar-brand-icon" aria-hidden="true" />
+              <span>WriteRight</span>
+              {stats && stats.streak.current >= 2 && (
+                <span className="wr-streak-badge">{stats.streak.current}d</span>
+              )}
             </div>
-            {stats && stats.streak.current >= 1 && (
-              <div className="wr-streak-badge">
-                🔥 {stats.streak.current}-day streak
-              </div>
-            )}
             {(!stats || stats.streak.current === 0) && (
-              <div style={{ fontSize: 11, color: 'var(--text-3)', cursor: 'pointer' }}
+              <button
+                type="button"
+                className="wr-sidebar-streak-start"
                 onClick={() => { setInput(`Challenge: ${todayChallenge.desc}`); taRef.current?.focus() }}
               >
                 Start your streak →
-              </div>
+              </button>
             )}
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button className="wr-sidebar-new" style={{ flex: 1 }} onClick={() => handleModeChange('email')}>
+            <div className="wr-sidebar-actions">
+              <button className="wr-sidebar-new" onClick={() => handleModeChange('email')}>
                 <Plus size={14} /> New Chat
               </button>
-              <button className="wr-sidebar-new" style={{ width: 'auto', padding: '0 12px' }} onClick={handleExport} disabled={isExporting}>
+              <button className="wr-sidebar-export" onClick={handleExport} disabled={isExporting} aria-label="Export writing history">
                 {isExporting ? '...' : <Download size={14} />}
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-              <button
-                className={`wr-mode-btn${sidebarTab === 'chats' ? ' active' : ''}`}
-                style={{ flex: 1, justifyContent: 'center' }}
-                onClick={() => setSidebarTab('chats')}
-              >
-                Chats
-              </button>
-              <button
-                className={`wr-mode-btn${sidebarTab === 'templates' ? ' active' : ''}`}
-                style={{ flex: 1, justifyContent: 'center' }}
-                onClick={() => {
-                  setSidebarTab('templates')
-                  setTemplatesDrawerOpen(true)
-                }}
-              >
-                <LayoutTemplate size={12} /> Templates
               </button>
             </div>
           </div>
 
-          {sidebarTab === 'chats' && (
-            <div className="wr-search-bar">
-              <div style={{ position: 'relative' }}>
-                <Search size={14} style={{ position: 'absolute', left: 10, top: 9, color: 'var(--text-3)' }} />
-                <input
-                  className="wr-search-input"
-                  placeholder="Search history..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ paddingLeft: 32, paddingRight: 30 }}
-                />
-                {searchQuery.trim() && (
-                  <button
-                    className="wr-file-badge-remove"
-                    style={{ position: 'absolute', right: 10, top: 8 }}
-                    onClick={() => setSearchQuery('')}
-                    aria-label="Clear search"
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
+          <div className="wr-search-bar">
+            <div className="wr-search-wrap">
+              <Search size={14} className="wr-search-icon" />
+              <input
+                className="wr-search-input"
+                placeholder="Search history..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery.trim() && (
+                <button className="wr-search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
+                  <X size={12} />
+                </button>
+              )}
             </div>
-          )}
+          </div>
 
           <div className="wr-sidebar-list">
-            {sidebarTab === 'chats' && searchQuery.trim() && (
+            {searchQuery.trim() && (
               <>
-                {searchLoading && <p className="wr-template-meta" style={{ padding: '8px 10px' }}>Searching…</p>}
+                {searchLoading && <p className="wr-template-meta wr-sidebar-empty">Searching…</p>}
                 {!searchLoading && searchResults.length === 0 && (
-                  <p className="wr-template-meta" style={{ padding: '8px 10px' }}>No matching chats.</p>
+                  <p className="wr-template-meta wr-sidebar-empty">No matching chats.</p>
                 )}
                 {!searchLoading && searchResults.map((result) => (
                   <div
@@ -2823,55 +2952,77 @@ export default function WriteRightPage() {
               </>
             )}
 
-            {sidebarTab === 'chats' && !searchQuery.trim() && chats.map((c) => (
-              <div
-                key={c.id}
-                className={`wr-sidebar-item${chatId === c.id ? ' active' : ''}`}
-                data-mode={c.mode}
-                onClick={() => { void selectChat(c.id, c.mode) }}
-              >
-                <div className="wr-sidebar-item-title">{c.title || 'New Conversation'}</div>
-                <div className="wr-sidebar-item-meta">
-                  <span className="wr-sidebar-mode">{c.mode}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {c.message_count > 0 && (
-                      <span className="wr-msg-count">{c.message_count}</span>
-                    )}
-                    <span className="wr-sidebar-time">
-                      {new Date(c.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                    </span>
-                  </div>
-                </div>
-                <button className="wr-sidebar-del" onClick={(e) => { void deleteChat(e, c.id) }} aria-label="Delete chat">
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
+            {!searchQuery.trim() && (
+              <>
+                <details className="wr-sidebar-section" open>
+                  <summary>Chats</summary>
+                  {chats.length === 0 && (
+                    <p className="wr-sidebar-empty">Your writing sessions will appear here.</p>
+                  )}
+                  {chats.map((c) => (
+                    <div
+                      key={c.id}
+                      className={`wr-sidebar-item${chatId === c.id ? ' active' : ''}`}
+                      data-mode={c.mode}
+                      onClick={() => { void selectChat(c.id, c.mode) }}
+                    >
+                      <div className="wr-sidebar-item-title">{c.title || 'New Conversation'}</div>
+                      <div className="wr-sidebar-item-meta">
+                        <span className="wr-sidebar-mode" aria-label={`${c.mode} mode`} />
+                        <div className="wr-sidebar-meta-right">
+                          {c.message_count > 0 && (
+                            <span className="wr-msg-count">{c.message_count}</span>
+                          )}
+                          <span className="wr-sidebar-time">
+                            {new Date(c.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          </span>
+                        </div>
+                      </div>
+                      <button className="wr-sidebar-del" onClick={(e) => { void deleteChat(e, c.id) }} aria-label="Delete chat">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </details>
 
-            {sidebarTab === 'templates' && templates.map((template) => (
-              <div
-                key={template.id}
-                className="wr-sidebar-item"
-                data-mode={template.mode}
-                onClick={() => {
-                  setInput(template.content.slice(0, CHAR_MAX))
-                  setMode(template.mode)
-                  setTone(template.tone)
-                  void markUsed(template.id)
-                  taRef.current?.focus()
-                }}
-              >
-                <div className="wr-sidebar-item-title">{template.name}</div>
-                <div className="wr-sidebar-item-meta">
-                  <span className="wr-sidebar-mode">{template.mode}</span>
-                  <span className="wr-use-badge">{template.use_count}</span>
-                </div>
-              </div>
-            ))}
+                <details className="wr-sidebar-section" open>
+                  <summary>Templates</summary>
+                  {templates.length === 0 && (
+                    <p className="wr-sidebar-empty">No templates saved yet.</p>
+                  )}
+                  {templates.map((template) => (
+                    <div
+                      key={template.id}
+                      className="wr-sidebar-item"
+                      data-mode={template.mode}
+                      onClick={() => {
+                        setInput(template.content.slice(0, CHAR_MAX))
+                        setMode(template.mode)
+                        setTone(template.tone)
+                        void markUsed(template.id)
+                        taRef.current?.focus()
+                      }}
+                    >
+                      <div className="wr-sidebar-item-title">{template.name}</div>
+                      <div className="wr-sidebar-item-meta">
+                        <span className="wr-sidebar-mode" aria-label={`${template.mode} mode`} />
+                        <span className="wr-use-badge">{template.use_count}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    className="wr-sidebar-template-manage"
+                    onClick={() => setTemplatesDrawerOpen(true)}
+                  >
+                    Manage templates
+                  </button>
+                </details>
+              </>
+            )}
           </div>
-          {sidebarTab === 'chats' && !searchQuery.trim() && chats.length === 1 && (
+          {!searchQuery.trim() && chats.length === 1 && (
             <div className="wr-sidebar-onboard">
-              <p>📂 Your history is saved here.</p>
+              <p>Your history is saved here.</p>
               <p>Each chat is a writing session you can revisit.</p>
             </div>
           )}
@@ -2886,7 +3037,7 @@ export default function WriteRightPage() {
         </div>
       )}
 
-      <div className={sidebarVisible ? 'wr-workspace-main' : ''} style={{ flex: 1, position: 'relative' }}>
+      <div className={sidebarVisible ? 'wr-workspace-main' : 'wr-workspace-main solo'}>
         <VersionTimeline
           open={versionPanelOpen}
           versions={aiVersions}
@@ -2901,70 +3052,71 @@ export default function WriteRightPage() {
           <div className="chat-scroll-inner">
             {!hasStarted && (
               <div className="chat-empty">
-                <div className="wr-module-orb" aria-hidden="true">
-                  <span className="wr-module-orb-inner">✍️</span>
-                </div>
                 <h1 className="wr-hero-title">WriteRight</h1>
-                <p className="wr-hero-tagline">Write like you mean it.</p>
-                
-                {!challengeDismissed && (
-                <div className={`wr-daily-chip${challengeDone ? ' done' : ''}`}>
-                  <div style={{ fontSize: 22 }}>{challengeDone ? '✅' : '✨'}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h4>Daily Challenge: {todayChallenge.title}</h4>
-                    <p>{todayChallenge.desc}</p>
-                    {!challengeDone && (
+                <p className="wr-hero-tagline">Improve your writing instantly.</p>
+
+                <section className="wr-empty-composer" aria-label="WriteRight composer">
+                  <div className="wr-empty-mode-tabs">
+                    {MODES.map((m) => (
                       <button
-                        className="wr-daily-accept-btn"
-                        onClick={() => {
-                          setInput(`Challenge: ${todayChallenge.desc}`)
-                          setChallengeDone(true)
-                          try { localStorage.setItem('wr:c:' + todayKey, '1') } catch {}
-                        }}
+                        key={m.id}
+                        className={`wr-mode-btn${mode === m.id ? ' active' : ''}`}
+                        onClick={() => handleModeChange(m.id)}
                       >
-                        Accept challenge →
+                        <m.Icon size={14} />
+                        {m.label}
                       </button>
-                    )}
-                    {challengeDone && (
-                      <span style={{ fontSize: 11, color: 'var(--success)', fontWeight: 600 }}>
-                        ✓ Done for today!
-                      </span>
+                    ))}
+                  </div>
+                  <div className="wr-empty-textarea-wrap">
+                    <textarea
+                      ref={taRef}
+                      className="chat-textarea"
+                      placeholder={MODE_PLACEHOLDERS[mode]}
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onInput={(e) => {
+                        const t = e.currentTarget
+                        t.style.height = 'auto'
+                        t.style.height = `${Math.min(t.scrollHeight, 200)}px`
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          void submitRef.current()
+                        }
+                      }}
+                      rows={5}
+                      maxLength={CHAR_MAX}
+                    />
+                    {charDisplay && (
+                      <p className={`wr-char-count${charClass ? ` ${charClass}` : ''}`}>
+                        {charDisplay}
+                      </p>
                     )}
                   </div>
-                  <button
-                    className="wr-daily-dismiss-btn"
-                    aria-label="Dismiss daily challenge"
-                    onClick={() => {
-                      setChallengeDismissed(true)
-                      try { localStorage.setItem('wr:cd:' + todayKey, '1') } catch {}
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-                )}
-
-                <div className="chat-caps-grid">
-                  {CAPABILITIES.map((c) => (
-                    <div key={c.title} className="chat-cap-card">
-                      <div className="chat-cap-icon"><c.Icon size={15} strokeWidth={1.8} /></div>
-                      <p className="chat-cap-title">{c.title}</p>
-                      <p className="chat-cap-desc">{c.desc}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="wr-mode-bar">
-                  {MODES.map((m) => (
+                  <div className="wr-empty-tone-row">
+                    {TONES.map((t) => (
+                      <button key={t} className={`tone-pill${tone === t ? ' active' : ''}`} onClick={() => setTone(t)}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="wr-empty-actions">
                     <button
-                      key={m.id}
-                      className={`wr-mode-btn${mode === m.id ? ' active' : ''}`}
-                      onClick={() => handleModeChange(m.id)}
+                      className="wr-send-btn"
+                      onClick={() => { void submitRef.current() }}
+                      disabled={!input.trim() || loading}
+                      aria-label="Improve text"
                     >
-                      <m.Icon size={13} style={{ color: mode === m.id ? m.color : undefined }} />
-                      {m.label}
+                      {loading
+                        ? <>{[0, 1, 2].map((i) => <span key={i} className="dot-thinking" style={{ animationDelay: `${i * 0.2}s` }} />)}</>
+                        : <><Wand2 size={14} strokeWidth={2.2} /> Improve</>
+                      }
                     </button>
-                  ))}
-                </div>
+                  </div>
+                </section>
+
                 <div className="chat-prompts-grid">
                   {[...MODE_PROMPTS[mode]].sort((a,b) => (chipCounts[b.title] || 0) - (chipCounts[a.title] || 0)).map((p) => {
                     const isNew = (chipCounts[p.title] || 0) === 0
@@ -2988,26 +3140,66 @@ export default function WriteRightPage() {
                         void submitRef.current(p.full)
                       }}
                     >
-                      <span className="chat-prompt-chip-title" style={{ position: 'relative' }}>
+                      <span className="chat-prompt-chip-title">
                         {p.title}
                         {isNew && <span className="wr-new-dot" aria-hidden="true" />}
-                        <ArrowUpRight size={13} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+                        <ArrowUpRight size={13} />
                       </span>
                       <span className="chat-prompt-chip-sub">{p.sub}</span>
                     </button>
                   )})}
                 </div>
+
+                {!challengeDismissed && (
+                  <div className={`wr-daily-chip${challengeDone ? ' done' : ''}`}>
+                    <div className="wr-daily-copy">
+                      <h4>Daily Challenge: {todayChallenge.title}</h4>
+                      <p>{todayChallenge.desc}</p>
+                    </div>
+                    {!challengeDone ? (
+                      <button
+                        className="wr-daily-accept-btn"
+                        onClick={() => {
+                          setInput(`Challenge: ${todayChallenge.desc}`)
+                          setChallengeDone(true)
+                          try { localStorage.setItem('wr:c:' + todayKey, '1') } catch {}
+                        }}
+                      >
+                        Use prompt
+                      </button>
+                    ) : (
+                      <span className="wr-daily-done">Done for today</span>
+                    )}
+                    <button
+                      className="wr-daily-dismiss-btn"
+                      aria-label="Dismiss daily challenge"
+                      onClick={() => {
+                        setChallengeDismissed(true)
+                        try { localStorage.setItem('wr:cd:' + todayKey, '1') } catch {}
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
             {hasStarted && (
               <div className="chat-messages">
+                <div
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className="wr-sr-only"
+                >
+                  {resultAnnouncement}
+                </div>
                 {messages.map((m, i) => {
                   const isLastAi = m.role === 'ai' && i === messages.map((msg) => msg.role).lastIndexOf('ai')
                   return (
-                    <React.Fragment key={i}>
+                    <React.Fragment key={m.id}>
                       {isLastAi && aiVersions.length >= 2 && (
-                        <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 12px' }}>
+                        <div className="wr-version-cta">
                           <button
                             className="wr-version-btn"
                             onClick={() => setVersionPanelOpen(true)}
@@ -3016,10 +3208,78 @@ export default function WriteRightPage() {
                           </button>
                         </div>
                       )}
-                      {m.role === 'user'
-                        ? <UserMessage content={m.content} />
-                        : <AIMessage content={m.content} emoji="✍️" moduleColor="var(--mod-write)" />
-                      }
+                      {m.role === 'user' && (
+                        <UserMessage content={m.content} />
+                      )}
+                      {m.role === 'ai' && m.kind === 'result' && (
+                        <AIMessage
+                          content={(
+                            <WriteDiffBlock
+                              before={m.before}
+                              after={m.jobResult.improved_text}
+                              explanation={(() => {
+                                const explanationParts: string[] = []
+                                if (m.jobResult.teaching?.mistakes?.length) {
+                                  explanationParts.push(m.jobResult.teaching.mistakes[0])
+                                }
+                                if (m.jobResult.teaching?.explanations?.length) {
+                                  explanationParts.push(m.jobResult.teaching.explanations[0])
+                                }
+                                return explanationParts.join(' — ') || 'AI-improved version of your text.'
+                              })()}
+                              teaching={m.jobResult.teaching}
+                              followUp={m.jobResult.follow_up}
+                              suggestions={m.jobResult.suggestions}
+                              scores={m.jobResult.scores}
+                              prevScores={m.prevScores}
+                              englishVersion={m.jobResult.english_version}
+                              outputLang={m.outputLang}
+                              jobId={m.jobId}
+                              chatId={m.chatId}
+                              mode={m.mode}
+                              tone={m.tone}
+                              onSuggest={(suggestion) => { void submitRef.current(suggestion) }}
+                              onSaveTemplate={() => openSaveTemplateModal(m.jobResult.improved_text, m.mode, m.tone)}
+                              onShare={isUuidLike(m.jobId) && typeof m.chatId === 'string' ? () => openShareModal({
+                                before: m.before,
+                                after: m.jobResult.improved_text,
+                                mode: m.mode,
+                                tone: m.tone,
+                                chatId: m.chatId!,
+                                jobId: m.jobId!,
+                              }) : undefined}
+                            />
+                          )}
+                          emoji="✍️"
+                          moduleColor="var(--mod-write)"
+                        />
+                      )}
+                      {m.role === 'ai' && m.kind === 'notice' && (
+                        <AIMessage
+                          content={
+                            m.content === 'Cancelled' || m.content.startsWith('Switched to ')
+                              ? <div className="wr-mode-divider">{m.content}</div>
+                              : m.content
+                          }
+                          emoji="✍️"
+                          moduleColor="var(--mod-write)"
+                        />
+                      )}
+                      {m.role === 'ai' && m.kind === 'error' && (
+                        <AIMessage
+                          content={(
+                            <InlineError
+                              message={m.content}
+                              onRetry={() => {
+                                setMessages((items) => items.filter((item) => item.id !== m.id))
+                                void submitRef.current(m.retryText)
+                              }}
+                            />
+                          )}
+                          emoji="✍️"
+                          moduleColor="var(--mod-write)"
+                        />
+                      )}
                     </React.Fragment>
                   )
                 })}
@@ -3046,342 +3306,327 @@ export default function WriteRightPage() {
           </div>
         </div>
 
-        <div className="chat-input-bar">
-          {loading && (
-            <div className="wr-progress-bar" aria-hidden="true">
-              <div className="wr-progress-fill" />
-            </div>
-          )}
-          <div className="chat-input-bar-inner">
-            {hasStarted && (
-              <div className="wr-mode-bar" style={{ marginBottom: 8 }}>
-                {MODES.map((m) => (
-                  <button
-                    key={m.id}
-                    className={`wr-mode-btn${mode === m.id ? ' active' : ''}`}
-                    onClick={() => handleModeChange(m.id)}
-                    style={{ fontSize: 12, padding: '5px 12px' }}
-                  >
-                    <m.Icon size={12} style={{ color: mode === m.id ? m.color : undefined }} />
-                    {m.label}
-                  </button>
-                ))}
+        {hasStarted && (
+          <div className="chat-input-bar">
+            {loading && (
+              <div className="wr-progress-bar" aria-hidden="true">
+                <div className="wr-progress-fill" />
               </div>
             )}
-
-            <div className="wr-tone-bar">
-              <span className="wr-tone-label">Tone:</span>
-              {TONES.map((t) => {
-                const ToneIcon = {
-                  Professional: Briefcase,
-                  Friendly: Smile,
-                  Concise: Zap,
-                  Academic: GraduationCap,
-                  Assertive: Target,
-                }[t]
-                return (
-                  <div key={t} className="wr-tone-tooltip-wrap">
-                    <button className={`tone-pill${tone === t ? ' active' : ''}`} onClick={() => setTone(t)}>
-                      {ToneIcon && <span className="wr-tone-pill-icon"><ToneIcon size={10} /></span>}
-                      {t}
-                    </button>
-                    <div className="wr-tone-tooltip">{TONE_DESCRIPTIONS[t]}</div>
-                    <TonePreviewTooltip text={input} tone={t} />
+            <div className="chat-input-bar-inner">
+              {shouldShowRantBanner && (
+                <div className="wr-rant-banner" role="alert">
+                  <div className="wr-rant-body">
+                    <p className="wr-rant-headline">This reads heated.</p>
+                    <p className="wr-rant-subtitle">Keep it as-is, or cool it down to a friendlier professional tone.</p>
                   </div>
-                )
-              })}
-              {(mode === 'email' || mode === 'whatsapp') && (
-                <select
-                  className="wr-lang-select"
-                  value={outputLang}
-                  onChange={(e) => setOutputLang(e.target.value as OutputLang)}
-                  aria-label="Translate output language"
-                >
-                  {OUTPUT_LANG_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
+                  <div className="wr-rant-actions-row">
+                    <button type="button" className="wr-rant-dismiss" onClick={() => setRantDismissed(true)}>
+                      Keep as-is
+                    </button>
+                    <button
+                      type="button"
+                      className="wr-rant-cool"
+                      onClick={() => {
+                        setRantDismissed(true)
+                        void submitRef.current(undefined, 'Friendly')
+                      }}
+                      disabled={loading || !input.trim()}
+                    >
+                      <Smile size={12} />
+                      Cool it down
+                    </button>
+                  </div>
+                </div>
               )}
-            </div>
 
-            <div className="wr-intensity-row">
-              <span className="wr-intensity-label">Rewrite Intensity:</span>
-              <input
-                type="range"
-                className="wr-intensity-slider"
-                min="1"
-                max="5"
-                step="1"
-                value={intensity}
-                onChange={(e) => setIntensity(Number(e.target.value))}
-                style={{ '--slider-pct': `${(intensity - 1) * 25}%` } as React.CSSProperties}
-                aria-valuenow={intensity}
-                aria-valuemin={1}
-                aria-valuemax={5}
-              />
-              <span className="wr-intensity-value">
-                {intensity === 1 ? '1. Preserve style' :
-                 intensity === 2 ? '2. Light touch' :
-                 intensity === 3 ? '3. Standard' :
-                 intensity === 4 ? '4. Improve actively' :
-                 '5. Full rewrite'}
-              </span>
-            </div>
-
-            {shouldShowRantBanner && (
-              <div className="wr-rant-banner" role="alert">
-                <div className="wr-rant-body">
-                  <p className="wr-rant-headline">😤 Looks like you&apos;re venting.</p>
-                  <p className="wr-rant-subtitle">Send anyway, or let us cool this down to a professional tone?</p>
+              {(fileBadge || fileError || draftSaveWarning) && (
+                <div className="wr-input-alerts">
+                  {fileBadge && (
+                    <div className="wr-file-badge">
+                      <span>{fileBadge.loading ? `Extracting ${fileBadge.name}…` : fileBadge.name}</span>
+                      <button className="wr-file-badge-remove" onClick={() => setFileBadge(null)} aria-label="Remove file badge">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  )}
+                  {fileError && <div className="wr-error-msg"><span>{fileError}</span></div>}
+                  {draftSaveWarning && <div className="wr-error-msg"><span>{draftSaveWarning}</span></div>}
                 </div>
-                <div className="wr-rant-actions-row">
-                  <button type="button" className="wr-rant-dismiss" onClick={() => setRantDismissed(true)}>
-                    Keep as-is
-                  </button>
-                  <button
-                    type="button"
-                    className="wr-rant-cool"
-                    onClick={() => {
-                      setRantDismissed(true)
-                      void submitRef.current(undefined, 'Friendly')
-                    }}
-                    disabled={loading || !input.trim()}
+              )}
+
+              <div className="wr-tone-bar">
+                {TONES.map((t) => {
+                  const ToneIcon = {
+                    Professional: Briefcase,
+                    Friendly: Smile,
+                    Concise: Zap,
+                    Academic: GraduationCap,
+                    Assertive: Target,
+                  }[t]
+                  return (
+                    <div key={t} className="wr-tone-tooltip-wrap">
+                      <button className={`tone-pill${tone === t ? ' active' : ''}`} onClick={() => setTone(t)}>
+                        {ToneIcon && <span className="wr-tone-pill-icon"><ToneIcon size={10} /></span>}
+                        {t}
+                      </button>
+                      <div className="wr-tone-tooltip">{TONE_DESCRIPTIONS[t]}</div>
+                      <TonePreviewTooltip text={input} tone={t} />
+                    </div>
+                  )
+                })}
+                {(mode === 'email' || mode === 'whatsapp') && (
+                  <select
+                    className="wr-lang-select"
+                    value={outputLang}
+                    onChange={(e) => setOutputLang(e.target.value as OutputLang)}
+                    aria-label="Translate output language"
                   >
-                    <Smile size={12} />
-                    Cool it down
-                  </button>
-                </div>
+                    {OUTPUT_LANG_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                )}
               </div>
-            )}
 
-            {fileBadge && (
-              <div className="wr-file-badge">
-                <span>{fileBadge.loading ? `Extracting ${fileBadge.name}…` : fileBadge.name}</span>
-                <button className="wr-file-badge-remove" onClick={() => setFileBadge(null)} aria-label="Remove file badge">
-                  <X size={12} />
-                </button>
-              </div>
-            )}
-
-            {fileError && (
-              <div className="wr-error-msg" style={{ marginBottom: 8 }}>
-                <span>{fileError}</span>
-              </div>
-            )}
-
-            {/* NEW: [INPUT-4] Smart Quick Actions */}
-            <QuickActionsBar text={input} onAction={(prompt) => { void submitRef.current(prompt) }} />
-
-            {/* NEW: [LOOP-2/3] Momentum + Goal Ring */}
-            {sessionCount > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <DailyGoalRing current={sessionCount} goal={5} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span className="wr-momentum-badge">
-                    {sessionCount < 5 ? `${sessionCount}/5 daily goal` : `${sessionCount} on a roll 🔥`}
-                  </span>
-                  {momentumMsg && <span style={{ fontSize: 10, color: 'var(--text-3)' }}>{momentumMsg}</span>}
-                </div>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 8 }}>
-              <button 
-                type="button" 
-                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', fontSize: 11, padding: '4px 8px', borderRadius: 16, color: 'var(--text-2)', cursor: 'pointer' }}
-                onClick={() => setBuilderOpen(!builderOpen)}
-              >
-                {builderOpen ? 'Close Builder' : '✨ Prompt Builder'}
-              </button>
-            </div>
-
-            {builderOpen && (
-              <div className="wr-builder-panel">
-                <p className="wr-builder-heading">✨ Prompt Builder</p>
-                <input
-                  className="wr-builder-field"
-                  placeholder="Target Audience (e.g., Engineers, Clients)"
-                  value={builderObj.audience}
-                  onChange={(e) => setBuilderObj({ ...builderObj, audience: e.target.value })}
-                />
-                <input
-                  className="wr-builder-field"
-                  placeholder="Primary Purpose (e.g., Persuade, Inform)"
-                  value={builderObj.purpose}
-                  onChange={(e) => setBuilderObj({ ...builderObj, purpose: e.target.value })}
-                />
-                <input
-                  className="wr-builder-field full"
-                  placeholder="Key Points (comma separated)"
-                  value={builderObj.points}
-                  onChange={(e) => setBuilderObj({ ...builderObj, points: e.target.value })}
-                />
-                <button
-                  type="button"
-                  style={{ gridColumn: 'span 2', background: 'var(--mod-write)', color: '#fff', border: 'none', padding: '6px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
-                  onClick={() => {
-                    const hasContent = builderObj.audience.trim() ||
-                                      builderObj.purpose.trim() ||
-                                      builderObj.points.trim()
-                    if (!hasContent) return
-                    const prompt = `Audience: ${builderObj.audience}\nPurpose: ${builderObj.purpose}\nPoints to cover:\n- ${builderObj.points.split(',').join('\n- ')}`
-                    setInput(prompt)
-                    setBuilderOpen(false)
-                    setBuilderObj({ audience: '', purpose: '', points: '' })
+              <div className="chat-input-box">
+                <textarea
+                  ref={taRef}
+                  className="chat-textarea"
+                  placeholder={MODE_PLACEHOLDERS[mode]}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onInput={(e) => {
+                    const t = e.currentTarget
+                    t.style.height = 'auto'
+                    t.style.height = `${Math.min(t.scrollHeight, 200)}px`
                   }}
-                >
-                  Build & Fill
-                </button>
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      void submitRef.current()
+                    }
+                  }}
+                  rows={3}
+                  maxLength={CHAR_MAX}
+                />
+
+                {charDisplay && (
+                  <p className={`wr-char-count${charClass ? ` ${charClass}` : ''}`}>
+                    {charDisplay}
+                  </p>
+                )}
               </div>
-            )}
 
-            <div className="chat-input-box">
-              <textarea
-                ref={taRef}
-                className="chat-textarea"
-                placeholder={MODE_PLACEHOLDERS[mode]}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onInput={(e) => {
-                  const t = e.currentTarget
-                  t.style.height = 'auto'
-                  t.style.height = `${Math.min(t.scrollHeight, 320)}px`
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void submitRef.current()
-                  }
-                }}
-                rows={3}
-                maxLength={CHAR_MAX}
-                style={{ padding: '16px 20px', minHeight: '80px' }}
-              />
-
-              {charDisplay && (
-                <p className={`wr-char-count${charClass ? ` ${charClass}` : ''}`}>
-                  {charDisplay}
-                </p>
-              )}
-
-              <div className="chat-input-footer">
-                <div className="chat-tools-left">
-                  {voiceSupported && (
-                    <>
-                      <button
-                        type="button"
-                        className="chat-tool-btn"
-                        aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
-                        aria-pressed={isRecording}
-                        onClick={toggleRecording}
-                      >
-                        {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
-                      </button>
-                      <button
-                        type="button"
-                        className="wr-lang-pill"
-                        onClick={cycleVoiceLang}
-                        aria-label="Change voice input language"
-                      >
-                        {VOICE_LANGS.find((lang) => lang.id === voiceLang)?.label ?? 'AUTO'}
-                      </button>
-                    </>
-                  )}
-
+              {builderOpen && (
+                <div className="wr-builder-panel">
+                  <p className="wr-builder-heading">Brief</p>
                   <input
-                    ref={fileInputRef}
-                    type="file"
-                    hidden
-                    accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    onChange={(e) => {
-                      const file = e.currentTarget.files?.[0]
-                      if (file) void handleFileExtract(file)
-                      e.currentTarget.value = ''
-                    }}
+                    className="wr-builder-field"
+                    placeholder="Audience"
+                    value={builderObj.audience}
+                    onChange={(e) => setBuilderObj({ ...builderObj, audience: e.target.value })}
                   />
-
-                  <button className="chat-tool-btn" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
-                    <Paperclip size={16} />
-                  </button>
-                  <button
-                    className="chat-tool-btn"
-                    aria-label="Paste or attach image (coming soon)"
-                    title="Image input — coming soon"
-                    onClick={() => {
-                      const btn = document.activeElement as HTMLButtonElement
-                      if (btn) {
-                        btn.setAttribute('data-tooltip', 'Coming soon!')
-                        setTimeout(() => btn.removeAttribute('data-tooltip'), 2000)
-                      }
-                    }}
-                    style={{ opacity: 0.45, cursor: 'default' }}
-                  >
-                    <ImagePlus size={16} />
-                  </button>
-
-                  {isRecording && (
-                    <div className="wr-recording-indicator" aria-live="polite">
-                      <span className="wr-recording-dot" />
-                      Recording
-                    </div>
-                  )}
-                </div>
-
-                <div className="chat-tools-right">
+                  <input
+                    className="wr-builder-field"
+                    placeholder="Purpose"
+                    value={builderObj.purpose}
+                    onChange={(e) => setBuilderObj({ ...builderObj, purpose: e.target.value })}
+                  />
+                  <input
+                    className="wr-builder-field full"
+                    placeholder="Key points, comma separated"
+                    value={builderObj.points}
+                    onChange={(e) => setBuilderObj({ ...builderObj, points: e.target.value })}
+                  />
                   <button
                     type="button"
-                    className="wr-shortcut-btn"
-                    aria-label="Keyboard Shortcuts"
-                    onClick={() => setShowShortcutsModal(true)}
+                    className="wr-builder-fill"
+                    onClick={() => {
+                      const hasContent = builderObj.audience.trim() ||
+                                        builderObj.purpose.trim() ||
+                                        builderObj.points.trim()
+                      if (!hasContent) return
+                      const prompt = `Audience: ${builderObj.audience}\nPurpose: ${builderObj.purpose}\nPoints to cover:\n- ${builderObj.points.split(',').join('\n- ')}`
+                      setInput(prompt)
+                      setBuilderOpen(false)
+                      setBuilderObj({ audience: '', purpose: '', points: '' })
+                    }}
                   >
-                    ?
-                    <div className="wr-shortcut-hint">
-                      Ctrl+Enter  Submit<br />
-                      Escape      Cancel<br />
-                      Ctrl+K      Focus<br />
-                      1-4         Change Mode<br />
-                      T           Cycle tone<br />
-                      N           New chat<br />
-                      Ctrl+S      Save output<br />
-                      Ctrl+Shift+C Copy output
-                    </div>
-                  </button>
-                  <button
-                    className="wr-send-btn"
-                    onClick={() => { void submitRef.current() }}
-                    disabled={!input.trim() || loading}
-                    aria-label="Improve text"
-                  >
-                    {loading
-                      ? <>{[0, 1, 2].map((i) => <span key={i} className="dot-thinking" style={{ animationDelay: `${i * 0.2}s` }} />)}</>
-                      : hasStarted && messages.some(m => m.role === 'ai') && input.trim().length < 100 && !input.trim().includes('\n')
-                        ? <><RefreshCcw size={13} strokeWidth={2.2} /> Refine</>
-                        : <><Send size={13} strokeWidth={2.2} /> Improve</>
-                    }
+                    Fill draft
                   </button>
                 </div>
+              )}
+
+              <div className="wr-input-footer-row">
+                <div className="wr-mode-bar compact">
+                  {MODES.map((m) => (
+                    <button
+                      key={m.id}
+                      className={`wr-mode-btn${mode === m.id ? ' active' : ''}`}
+                      onClick={() => handleModeChange(m.id)}
+                    >
+                      <m.Icon size={12} />
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="chat-input-footer">
+                  <div className="chat-tools-left">
+                    {voiceSupported && (
+                      <>
+                        <button
+                          type="button"
+                          className="chat-tool-btn"
+                          aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
+                          aria-pressed={isRecording}
+                          onClick={toggleRecording}
+                        >
+                          {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
+                        </button>
+                        <button
+                          type="button"
+                          className="wr-lang-pill"
+                          onClick={cycleVoiceLang}
+                          aria-label="Change voice input language"
+                        >
+                          {VOICE_LANGS.find((lang) => lang.id === voiceLang)?.label ?? 'AUTO'}
+                        </button>
+                      </>
+                    )}
+
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      hidden
+                      accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={(e) => {
+                        const file = e.currentTarget.files?.[0]
+                        if (file) void handleFileExtract(file)
+                        e.currentTarget.value = ''
+                      }}
+                    />
+
+                    <button className="chat-tool-btn" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
+                      <Paperclip size={16} />
+                    </button>
+                    <button
+                      className="chat-tool-btn is-muted"
+                      aria-label="Paste or attach image (coming soon)"
+                      title="Image input — coming soon"
+                      onClick={() => {
+                        const btn = document.activeElement as HTMLButtonElement
+                        if (btn) {
+                          btn.setAttribute('data-tooltip', 'Coming soon!')
+                          setTimeout(() => btn.removeAttribute('data-tooltip'), 2000)
+                        }
+                      }}
+                    >
+                      <ImagePlus size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      className={`chat-tool-btn${builderOpen ? ' active' : ''}`}
+                      onClick={() => setBuilderOpen((prev) => !prev)}
+                      aria-expanded={builderOpen}
+                      aria-label="Open writing brief"
+                    >
+                      <LayoutTemplate size={16} />
+                    </button>
+                    <div className="wr-depth-menu">
+                      <button type="button" className="chat-tool-btn" aria-label="Rewrite depth">
+                        <Settings2 size={16} />
+                      </button>
+                      <div className="wr-intensity-popover">
+                        <div className="wr-intensity-head">
+                          <span>Depth</span>
+                          <strong>
+                            {intensity === 1 ? 'Preserve' :
+                             intensity === 2 ? 'Light' :
+                             intensity === 3 ? 'Standard' :
+                             intensity === 4 ? 'Active' :
+                             'Full'}
+                          </strong>
+                        </div>
+                        <input
+                          type="range"
+                          className="wr-intensity-slider"
+                          min="1"
+                          max="5"
+                          step="1"
+                          value={intensity}
+                          onChange={(e) => setIntensity(Number(e.target.value))}
+                          style={{ '--slider-pct': `${(intensity - 1) * 25}%` } as React.CSSProperties}
+                          aria-valuenow={intensity}
+                          aria-valuemin={1}
+                          aria-valuemax={5}
+                        />
+                        <div className="wr-intensity-extremes">
+                          <span>Safe</span>
+                          <span>Full rewrite</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {isRecording && (
+                      <div className="wr-recording-indicator" aria-live="polite">
+                        <span className="wr-recording-dot" />
+                        Recording
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="chat-tools-right">
+                    <button
+                      type="button"
+                      className="wr-shortcut-btn"
+                      aria-label="Keyboard Shortcuts"
+                      onClick={() => setShowShortcutsModal(true)}
+                    >
+                      ?
+                      <div className="wr-shortcut-hint">
+                        Ctrl+Enter  Submit<br />
+                        Escape      Cancel<br />
+                        Ctrl+K      Focus<br />
+                        1-4         Change Mode<br />
+                        T           Cycle tone<br />
+                        N           New chat<br />
+                        Ctrl+S      Save output<br />
+                        Ctrl+Shift+C Copy output
+                      </div>
+                    </button>
+                    <button
+                      className="wr-send-btn"
+                      onClick={() => { void submitRef.current() }}
+                      disabled={!input.trim() || loading}
+                      aria-label="Improve text"
+                    >
+                      {loading
+                        ? <>{[0, 1, 2].map((i) => <span key={i} className="dot-thinking" style={{ animationDelay: `${i * 0.2}s` }} />)}</>
+                        : <><Wand2 size={13} strokeWidth={2.2} /> Improve</>
+                      }
+                    </button>
+                  </div>
+                </div>
               </div>
+
+              {showShortcutTip && (
+                <button
+                  className="wr-shortcut-tip-toast"
+                  onClick={() => {
+                    setShowShortcutTip(false)
+                    try { localStorage.setItem('wr:shortcut-tip', '1') } catch {}
+                  }}
+                  type="button"
+                >
+                  Tip: press <kbd>T</kbd> to cycle tones · <kbd>1-4</kbd> switches modes
+                  <span className="wr-tip-dismiss">got it ×</span>
+                </button>
+              )}
             </div>
-
-            {showShortcutTip && (
-              <div
-                className="wr-shortcut-tip-toast"
-                onClick={() => {
-                  setShowShortcutTip(false)
-                  try { localStorage.setItem('wr:shortcut-tip', '1') } catch {}
-                }}
-                role="status"
-              >
-                ⌨️ Tip: Press <kbd>T</kbd> to cycle tones · <kbd>1-4</kbd> switch modes
-                <span className="wr-tip-dismiss">got it ×</span>
-              </div>
-            )}
-
-            <p className="chat-disclaimer">
-              WriteRight can make mistakes. Always review important communications before sending.
-            </p>
           </div>
-        </div>
+        )}
 
         <TemplatesDrawer
           open={templatesDrawerOpen}
@@ -3419,7 +3664,7 @@ export default function WriteRightPage() {
             className={`wr-toast wr-toast-${t.type || 'info'}`}
           >
             <span>{t.msg}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="wr-toast-actions">
               {['QUEUE_ERROR', 'STREAM_ERROR'].includes(t.code || '') && (
                 <button
                   className="wr-toast-action"

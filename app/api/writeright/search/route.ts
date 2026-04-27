@@ -42,6 +42,14 @@ function snippetForQuery(content: string, query: string): string {
   return `${start > 0 ? "…" : ""}${snippet}${end < normalized.length ? "…" : ""}`;
 }
 
+function sanitizeSearchQuery(query: string): string {
+  return query
+    .replace(/'/g, "''")
+    .replace(/[|&!()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export async function GET(req: Request) {
   return withErrorHandler(req, async () => {
     return withSpan("api.writeright.search.get", async () => {
@@ -78,7 +86,10 @@ export async function GET(req: Request) {
       if (!parsed.success) {
         throw createApiError("VALIDATION_ERROR", "Invalid query", 400, { issues: parsed.error.issues });
       }
-      const query = parsed.data.query;
+      const query = sanitizeSearchQuery(parsed.data.query);
+      if (!query) {
+        return NextResponse.json({ results: [] });
+      }
 
       addSpanAttributes({ "writeright.search.length": query.length });
 
@@ -89,14 +100,14 @@ export async function GET(req: Request) {
           .select("id, title, mode, updated_at")
           .eq("user_id", userId)
           .is("deleted_at", null)
-          .textSearch("title", `'${query}'`, { type: 'websearch' })
+          .textSearch("title", query, { type: 'websearch' })
           .order("updated_at", { ascending: false })
           .limit(SEARCH_LIMIT),
         supabase
           .from("writeright_messages")
           .select("chat_id, content, created_at")
           .eq("user_id", userId)
-          .textSearch("content", `'${query}'`, { type: 'websearch' })
+          .textSearch("content", query, { type: 'websearch' })
           .order("created_at", { ascending: false })
           .limit(SEARCH_LIMIT),
       ]);
