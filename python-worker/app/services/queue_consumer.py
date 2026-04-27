@@ -99,6 +99,17 @@ async def _publish_result(
     await redis_client.expire(key, STATUS_TTL_SECS)
 
 
+async def _publish_stream_status(
+    redis_client: aioredis.Redis,
+    job_id: str,
+    stage: str,
+) -> None:
+    """Publish structured status chunk to pub/sub channel for live SSE forwarding."""
+    channel = f"{JOB_STREAM_PREFIX}{job_id}"
+    payload = json.dumps({"stage": stage})
+    await redis_client.publish(channel, payload)
+
+
 async def _publish_stream_chunk(
     redis_client: aioredis.Redis,
     job_id: str,
@@ -222,8 +233,15 @@ async def _process_job_safe(
                 delta=chunk,
             )
 
+        async def on_status(stage: str) -> None:
+            await _publish_stream_status(
+                redis_client=redis_client,
+                job_id=job.id,
+                stage=stage,
+            )
+
         result = await asyncio.wait_for(
-            process_job(job, on_stream_chunk=on_stream_chunk),
+            process_job(job, on_stream_chunk=on_stream_chunk, on_status=on_status),
             timeout=float(settings.job_timeout_seconds),
         )
 

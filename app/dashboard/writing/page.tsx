@@ -214,6 +214,7 @@ interface SharePayload {
 
 interface StreamJobHandlers {
   onToken?: (chunk: string) => void
+  onStatus?: (stage: string, message: string) => void
 }
 
 interface SpeechRecognitionAlternativeLike {
@@ -858,7 +859,7 @@ const THINKING_MESSAGES = [
 ] as const
 
 // ── CHANGED: [UI-6] Brain Wave Loading Animation ──
-function WriteRightThinking({ startTime }: { startTime: number | null }) {
+function WriteRightThinking({ startTime, customMessage }: { startTime: number | null; customMessage?: string }) {
   const [elapsed, setElapsed] = useState(0)
   const [msgIndex, setMsgIndex] = useState(0)
 
@@ -2181,6 +2182,7 @@ export default function WriteRightPage() {
   const [sharePayload, setSharePayload] = useState<SharePayload | null>(null)
 
   const [streamingText, setStreamingText] = useState('')
+  const [pipelineMessage, setPipelineMessage] = useState('')
   const [streamingBefore, setStreamingBefore] = useState('')
 
   const [fileBadge, setFileBadge] = useState<{ name: string; loading: boolean } | null>(null)
@@ -3284,7 +3286,7 @@ export default function WriteRightPage() {
                   )
                 })}
 
-                {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} />}
+                {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} customMessage={pipelineMessage} />}
 
                 {loading && streamingText && (
                   <AIMessage
