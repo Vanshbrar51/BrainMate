@@ -393,21 +393,48 @@ def _update_streak_and_achievements_sync(
     if current_streak >= 7:
         achievements.add("streak_7")
 
+    if not achievements:
+        return
+
+    # 3) Batch insert achievements
+    # To avoid duplicates and respect the unique constraint, we first check existing achievements
+    # for this user. Then we only insert the new ones.
+    try:
+        existing_res = (
+            client.table("writeright_achievements")
+            .select("achievement")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        existing_set = {r["achievement"] for r in (existing_res.data or [])}
+    except Exception:
+        logger.warning("Failed to fetch existing achievements for user_id=%s", user_id)
+        existing_set = set()
+
+    new_achievements = achievements - existing_set
+    if not new_achievements:
+        return
+
     now_iso = datetime.now(timezone.utc).isoformat()
-    for achievement in achievements:
-        try:
-            (
-                client.table("writeright_achievements")
-                .insert({
-                    "user_id": user_id,
-                    "achievement": achievement,
-                    "earned_at": now_iso,
-                })
-                .execute()
-            )
-        except Exception:
-            # Duplicate inserts are expected due unique(user_id, achievement).
-            continue
+    to_insert = [
+        {
+            "user_id": user_id,
+            "achievement": a,
+            "earned_at": now_iso,
+        }
+        for a in new_achievements
+    ]
+
+    try:
+        client.table("writeright_achievements").insert(to_insert).execute()
+    except Exception:
+        # Fallback to individual inserts if batch fails (e.g. race condition)
+        logger.warning("Batch achievement insert failed for user_id=%s, falling back", user_id)
+        for ach in to_insert:
+            try:
+                client.table("writeright_achievements").insert(ach).execute()
+            except Exception:
+                continue
 
 
 async def update_streak_and_achievements(
