@@ -2114,14 +2114,18 @@ export default function WriteRightPage() {
 
   // BUG-05: Daily challenge dismiss + completion state
   const todayKey = Math.floor(Date.now() / 86400000).toString()
-  const [challengeDone, setChallengeDone] = useState(() => {
-    try { return localStorage.getItem('wr:c:' + todayKey) === '1' }
-    catch { return false }
-  })
-  const [challengeDismissed, setChallengeDismissed] = useState(() => {
-    try { return localStorage.getItem('wr:cd:' + todayKey) === '1' }
-    catch { return false }
-  })
+  const [challengeDone, setChallengeDone] = useState(false)
+  const [challengeDismissed, setChallengeDismissed] = useState(false)
+
+  useEffect(() => {
+    try {
+      setChallengeDone(localStorage.getItem('wr:c:' + todayKey) === '1')
+      setChallengeDismissed(localStorage.getItem('wr:cd:' + todayKey) === '1')
+    } catch {
+      setChallengeDone(false)
+      setChallengeDismissed(false)
+    }
+  }, [todayKey])
 
   // ENHANCE-04: Writing momentum indicator
   const [sessionCount, setSessionCount] = useState(0)
@@ -2646,6 +2650,10 @@ export default function WriteRightPage() {
       })
 
       setLastImprovedText(result.improved_text); localStorage.removeItem(`wr:draft:${activeChatId}`)
+      if (msg.startsWith('Challenge:')) {
+        setChallengeDone(true)
+        try { localStorage.setItem('wr:c:' + todayKey, '1') } catch {}
+      }
       setResultAnnouncement(result.scores?.verdict
         ? `WriteRight finished. Verdict: ${result.scores.verdict}`
         : 'WriteRight finished improving your draft.')
@@ -2723,6 +2731,8 @@ export default function WriteRightPage() {
     stopRecording,
     tone,
     showError,
+    todayKey,
+    setChallengeDone,
   ])
 
   useEffect(() => {
@@ -3164,8 +3174,7 @@ export default function WriteRightPage() {
                         className="wr-daily-accept-btn"
                         onClick={() => {
                           setInput(`Challenge: ${todayChallenge.desc}`)
-                          setChallengeDone(true)
-                          try { localStorage.setItem('wr:c:' + todayKey, '1') } catch {}
+                          taRef.current?.focus()
                         }}
                       >
                         Use prompt
