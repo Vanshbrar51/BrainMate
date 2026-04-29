@@ -2331,8 +2331,9 @@ export default function WriteRightPage() {
       setSaveModalOpen(false)
     } catch (err) {
       console.error('Failed to save template', err)
+      showError('Failed to save template. Please try again.')
     }
-  }, [createTemplate, saveTemplatePayload])
+  }, [createTemplate, saveTemplatePayload, showError])
 
   const openShareModal = useCallback((payload: SharePayload) => {
     setSharePayload(payload)
