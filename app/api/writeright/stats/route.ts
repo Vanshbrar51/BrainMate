@@ -9,6 +9,13 @@ import {
 } from "@/lib/tracing";
 
 type StatsResponse = {
+  token_usage?: {
+    total_tokens: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    by_model: Array<{ model: string; tokens: number }>;
+    estimated_cost_usd: number;
+  };
   streak: {
     current: number;
     longest: number;
@@ -50,7 +57,8 @@ export async function GET() {
     }
 
     const supabase = getSupabaseAdmin();
-    const [{ data: streakRow }, { count: usageCount }, { data: jobs }, { data: weekUsage }, { data: achievementsRows }, { data: clarityJobs }] = await Promise.all([
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const [{ data: streakRow }, { count: usageCount }, { data: jobs }, { data: weekUsage }, { data: achievementsRows }, { data: clarityJobs }, { data: tokenUsageRows }] = await Promise.all([
       supabase
         .from("writeright_streaks")
         .select("current_streak, longest_streak, last_activity_date")
@@ -85,6 +93,11 @@ export async function GET() {
         .gte("created_at", new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString())
         .not("output", "is", null)
         .limit(200),
+      supabase
+        .from("writeright_usage")
+        .select("prompt_tokens, completion_tokens, total_tokens, model")
+        .eq("user_id", userId)
+        .gte("created_at", thirtyDaysAgo),
     ]);
 
     const modeCounter = new Map<string, number>();
@@ -120,7 +133,33 @@ export async function GET() {
       }
     }
 
+    const token_usage = {
+      total_tokens: 0,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      by_model: [] as Array<{ model: string; tokens: number }>,
+      estimated_cost_usd: 0,
+    };
+    if (tokenUsageRows && tokenUsageRows.length > 0) {
+      const modelMap = new Map<string, number>();
+      let flashTokens = 0;
+      let proTokens = 0;
+      for (const row of tokenUsageRows) {
+        token_usage.total_tokens += row.total_tokens || 0;
+        token_usage.prompt_tokens += row.prompt_tokens || 0;
+        token_usage.completion_tokens += row.completion_tokens || 0;
+        const model = row.model || "unknown";
+        modelMap.set(model, (modelMap.get(model) || 0) + (row.total_tokens || 0));
+
+        if (model.includes("flash")) flashTokens += (row.total_tokens || 0);
+        else if (model.includes("pro")) proTokens += (row.total_tokens || 0);
+      }
+      token_usage.by_model = Array.from(modelMap.entries()).map((entry) => ({ model: entry[0], tokens: entry[1] }));
+      token_usage.estimated_cost_usd = (flashTokens * 0.0000015) + (proTokens * 0.000015);
+    }
+
     const response: StatsResponse = {
+      token_usage,
       streak: {
         current: streakRow?.current_streak ?? 0,
         longest: streakRow?.longest_streak ?? 0,

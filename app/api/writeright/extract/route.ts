@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { PDFParse } from "pdf-parse";
+import * as pdfParseModule from "pdf-parse";
+const PDFParse = ((pdfParseModule as Record<string, unknown>).default || pdfParseModule) as (data: Buffer) => Promise<{text: string}>;
 import * as mammoth from "mammoth";
 import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
 import {
@@ -115,8 +116,8 @@ export async function POST(req: Request) {
       extracted = sanitizeExtractedText(bytes.toString("utf-8"));
     } else if (realType === "application/pdf") {
       try {
-        const parser = new PDFParse({ data: bytes });
-        const data = await parser.getText();
+        const data = await PDFParse(bytes);
+        //
         extracted = sanitizeExtractedText(data.text);
       } catch {
         extracted = extractPdfFallback(bytes);

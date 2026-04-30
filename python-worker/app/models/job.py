@@ -107,6 +107,7 @@ class WritingJob(BaseModel):
     tone: str
     mode: str
     output_language: str = "en"
+    input_language: str = "auto"
     intensity: int = 3
     attempt: int = 0
     status: str = "pending"

@@ -78,6 +78,16 @@ class ModelRouter:
         """Close the HTTP client."""
         await self._client.aclose()
 
+    TASK_TEMPERATURES = {
+        "write_improvement": 0.7,
+        "follow_up": 0.4,
+        "translation": 0.2,
+        "json_repair": 0.1,
+    }
+
+    def _select_temperature(self, task_type: str) -> float:
+        return self.TASK_TEMPERATURES.get(task_type, 0.7)
+
     def _select_model(self, task_type: str) -> str:
         """Returns model string for task. Override via TASK_MODEL_MAP env var (JSON)."""
         return self._task_model_map.get(task_type, settings.default_model)
@@ -121,7 +131,7 @@ class ModelRouter:
             "model": model,
             "messages": messages,
             "max_tokens": effective_max_tokens,
-            "temperature": 0.7,
+            "temperature": self._select_temperature(task_type),
             # response_format is intentionally omitted: nvidia/nemotron-3-super does not
             # support json_object mode. JSON output is enforced via the system prompt instead.
         }
@@ -238,7 +248,7 @@ class ModelRouter:
             "model": model,
             "messages": messages,
             "max_tokens": effective_max_tokens,
-            "temperature": 0.7,
+            "temperature": self._select_temperature(task_type),
             "stream": True,
         }
 
@@ -336,3 +346,73 @@ class ModelRouter:
                     f"Google AI Studio streaming HTTP error: {exc}") from exc
 
         raise ModelError("Exhausted all streaming retries")
+
+    async def route_with_fallback(
+        self,
+        task_type: Literal["write_improvement", "follow_up", "translation"],
+        messages: list[dict[str, str]],
+        max_tokens: int = 0,
+        traceparent: str | None = None,
+    ) -> ModelResponse:
+        try:
+            return await self.route(task_type, messages, max_tokens, traceparent)
+        except (ModelTimeoutError, ModelError) as primary_err:
+            if settings.enable_anthropic_fallback and settings.anthropic_api_key:
+                logger.warning("Primary provider failed, attempting Anthropic fallback: %s", str(primary_err))
+                return await self._route_anthropic(task_type, messages, max_tokens, traceparent)
+            raise
+
+    async def _route_anthropic(
+        self,
+        task_type: str,
+        messages: list[dict[str, str]],
+        max_tokens: int = 0,
+        traceparent: str | None = None,
+    ) -> ModelResponse:
+        effective_max_tokens = max_tokens or settings.max_output_tokens
+        headers = {
+            "x-api-key": settings.anthropic_api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        if traceparent:
+            headers["traceparent"] = traceparent
+
+        system_prompt = ""
+        anthropic_messages = []
+        for msg in messages:
+            if msg["role"] == "system":
+                system_prompt += msg["content"] + "
+"
+            else:
+                anthropic_messages.append({"role": msg["role"], "content": msg["content"]})
+
+        payload = {
+            "model": settings.anthropic_fallback_model,
+            "max_tokens": effective_max_tokens,
+            "temperature": self._select_temperature(task_type),
+            "messages": anthropic_messages,
+        }
+        if system_prompt:
+            payload["system"] = system_prompt.strip()
+
+        try:
+            response = await self._client.post(
+                f"{settings.anthropic_base_url}/messages",
+                headers=headers,
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = data.get("content", [{"text": ""}])[0].get("text", "")
+            usage = data.get("usage", {})
+            return ModelResponse(
+                content=content,
+                model=settings.anthropic_fallback_model,
+                prompt_tokens=usage.get("input_tokens", 0),
+                completion_tokens=usage.get("output_tokens", 0),
+                finish_reason=data.get("stop_reason", ""),
+                raw_response=data,
+            )
+        except Exception as e:
+            raise ModelError(f"Anthropic fallback failed: {e}") from e

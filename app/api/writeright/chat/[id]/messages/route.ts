@@ -5,6 +5,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { withErrorHandler } from "@/lib/writeright-errors";
 import {
   withSpan,
   addSpanAttributes,
@@ -25,7 +26,8 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  return withSpan("api.writeright.chat.messages.list", async () => {
+  return withErrorHandler(_req, async () => {
+    return withSpan("api.writeright.chat.messages.list", async () => {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json(
@@ -89,4 +91,5 @@ export async function GET(
 
     return NextResponse.json({ messages: messages ?? [] });
   });
+});
 }

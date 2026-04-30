@@ -485,6 +485,29 @@ async def _generate_critique_and_revision(
         logger.warning(f"Critique pass failed, returning original draft: {e}")
         return draft_result
 
+
+def _is_processable_input(text: str) -> tuple[bool, str]:
+    """Returns (can_process, rejection_reason)."""
+    stripped = text.strip()
+
+    # Too short
+    if len(stripped) < 10:
+        return False, "Text is too short to improve meaningfully."
+
+    # Only numbers/symbols
+    alpha_ratio = sum(c.isalpha() for c in stripped) / max(len(stripped), 1)
+    if alpha_ratio < 0.3:
+        return False, "Text appears to contain mostly numbers or symbols."
+
+    # Looks like code (more than 3 lines starting with def/function/class/import/const)
+    import re as regex
+    code_lines = sum(1 for line in stripped.split('\n')
+                     if regex.match(r'^\s*(def |class |function |import |const |let |var |\{|\})', line))
+    if code_lines >= 3:
+        return False, "This looks like code. WriteRight is for natural language writing only."
+
+    return True, ""
+
 async def process_job(
     job: WritingJob,
     on_stream_chunk: Callable[[str, str], Awaitable[None]] | None = None,
@@ -546,6 +569,24 @@ async def process_job(
             f"Failed to fetch profile for {
                 job.user_id} (continuing without profile)")
 
+    can_process, reason = _is_processable_input(job.content)
+    if not can_process:
+        from app.models.job import AIResult, TeachingBlock, ScoreBlock
+        return AIResult(
+            improved_text=job.content,
+            teaching=TeachingBlock(
+                mistakes=[reason],
+                better_versions=["Please provide natural language text to improve."],
+                explanations=["WriteRight is designed for emails, paragraphs, LinkedIn posts, and WhatsApp messages."]
+            ),
+            follow_up="Try pasting an email draft or a paragraph you've written.",
+            suggestions=["Try an email draft", "Try a LinkedIn post", "Try a paragraph"],
+            scores=ScoreBlock(clarity=0, tone=0, impact=0, verdict="Needs more work"),
+            model="quality_gate",
+            prompt_tokens=0,
+            completion_tokens=0,
+        )
+
     if on_status:
         await on_status("drafting")
 
@@ -556,7 +597,7 @@ async def process_job(
         on_stream_chunk=on_stream_chunk,
     )
 
-    if ENABLE_CRITIQUE_PIPELINE:
+    if settings.enable_critique_pipeline:
         if on_status:
             await on_status("critiquing")
         result = await _generate_critique_and_revision(result, job)

@@ -322,6 +322,13 @@ def _looks_like_reply_chain(text: str) -> bool:
                for pattern in patterns)
 
 
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate: ~4 chars per token for English, ~2 for CJK."""
+    cjk_count = sum(1 for c in text if '一' <= c <= '鿿')
+    other_count = len(text) - cjk_count
+    return (cjk_count // 2) + (other_count // 4)
+
 def format_history(
     messages: list[dict],  # type: ignore[type-arg]
     max_messages: int = 10,
@@ -352,6 +359,21 @@ def format_history(
 # ---------------------------------------------------------------------------
 # Prompt Builder
 # ---------------------------------------------------------------------------
+
+
+def detect_script(text: str) -> str:
+    """Detect writing system from character ranges — no ML needed."""
+    devanagari = sum(1 for c in text if 'ऀ' <= c <= 'ॿ')
+    arabic = sum(1 for c in text if '؀' <= c <= 'ۿ')
+    latin = sum(1 for c in text if c.isalpha() and c.isascii())
+    total = len([c for c in text if c.strip()])
+    if total == 0:
+        return "en"
+    if devanagari / total > 0.15:
+        return "hi"
+    if arabic / total > 0.15:
+        return "ar"
+    return "en"
 
 def build_messages(
     user_text: str,
@@ -392,8 +414,18 @@ def build_messages(
             intensity_instruction.format(tone=tone)
 
     if profile:
-        profile_str = ", ".join(profile)
-        system_prompt += f"\n\nPERSONALISED CONTEXT: This user repeatedly makes these mistakes: {profile_str}. Pay extra attention to fixing these patterns."
+        profile_str = "\n".join(f"- {m}" for m in profile[:5])
+        system_prompt += f"""
+
+PERSONALISED COACHING CONTEXT:
+Based on this user's history, they frequently make these specific errors:
+{profile_str}
+
+Treat these as your primary targets. When you find any of these patterns:
+1. Always flag them in the teaching.mistakes array
+2. Always provide the specific better_versions replacement
+3. Give special emphasis to WHY this pattern persists among Indian English writers
+This user has been coached on these before — they need a direct, specific fix, not a generic explanation."""
 
     if _looks_like_reply_chain(sanitized):
         system_prompt += (
@@ -414,6 +446,11 @@ def build_messages(
             f"The improved_text field must be in {output_language_clean}. "
             "Add english_version with the English improved text before translation."
         )
+
+    detected_lang = detect_script(sanitized)
+    if detected_lang != "en":
+        system_prompt += f"\n\nInput language detected as {detected_lang}. Preserve native speaker patterns that are correct. Only fix actual errors, not differences from English."
+
 
     # 4. Format history
     history_messages = format_history(history, max_history)
@@ -445,6 +482,22 @@ def build_messages(
         {"role": "user", "content": selected["input"]},
         {"role": "assistant", "content": selected["output"]},
     ]
+
+    system_budget = _estimate_tokens(system_prompt)
+    user_budget = _estimate_tokens(user_content)
+    few_shot_budget = sum(_estimate_tokens(m["content"]) for m in few_shot_messages)
+
+    remaining_budget = max_input_tokens - system_budget - user_budget - few_shot_budget - 200  # safety margin
+
+    # Trim history from oldest end until it fits
+    trimmed_history = []
+    for msg in reversed(history_messages):
+        msg_tokens = _estimate_tokens(msg["content"])
+        if remaining_budget - msg_tokens >= 0:
+            trimmed_history.insert(0, msg)
+            remaining_budget -= msg_tokens
+
+    history_messages = trimmed_history
 
     # 7. Construct final messages array
     messages: list[dict[str, str]] = [
