@@ -88,15 +88,11 @@ export async function GET(
             } catch {
               // no-op
             }
-            try {
-              if (activeSubscriber.status !== "end") {
-                await activeSubscriber.quit();
-              }
-            } catch {
+            if (activeSubscriber.status !== "end" && activeSubscriber.status !== "close") {
               try {
-                activeSubscriber.disconnect();
+                await activeSubscriber.quit();
               } catch {
-                // no-op
+                try { activeSubscriber.disconnect(); } catch { /* no-op */ }
               }
             }
           };

@@ -6,6 +6,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { withErrorHandler } from "@/lib/writeright-errors";
 import {
   withSpan,
   addSpanAttributes,
@@ -31,7 +32,8 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  return withSpan("api.writeright.chat.get", async () => {
+  return withErrorHandler(_req, async () => {
+    return withSpan("api.writeright.chat.get", async () => {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json(
@@ -97,6 +99,7 @@ export async function GET(
 
     return NextResponse.json({ chat: result });
   });
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +110,8 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  return withSpan("api.writeright.chat.delete", async () => {
+  return withErrorHandler(_req, async () => {
+    return withSpan("api.writeright.chat.delete", async () => {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json(
@@ -160,5 +164,62 @@ export async function DELETE(
     addSpanEvent("chat.deleted", { chat_id: chatId });
 
     return NextResponse.json({ ok: true });
+  });
+});
+}
+
+
+// ---------------------------------------------------------------------------
+// PATCH /api/writeright/chat/[id] — Rename chat
+// ---------------------------------------------------------------------------
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return withErrorHandler(req, async () => {
+    return withSpan("api.writeright.chat.patch", async () => {
+      const { userId } = await auth();
+      if (!userId) {
+        return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+      }
+
+      const { id: chatId } = await params;
+
+      if (!validateUuid(chatId)) {
+        return NextResponse.json({ error: "Invalid chat ID", code: "INVALID_ID" }, { status: 400 });
+      }
+
+      let body;
+      try {
+        body = await req.json();
+      } catch {
+        return NextResponse.json({ error: "Invalid JSON", code: "INVALID_BODY" }, { status: 400 });
+      }
+
+      if (typeof body.title !== "string" || !body.title.trim()) {
+         return NextResponse.json({ error: "Valid title required", code: "INVALID_TITLE" }, { status: 400 });
+      }
+
+      const title = body.title.trim().substring(0, 200);
+
+      addSpanAttributes({ "user.id": userId, "writeright.chat_id": chatId, "writeright.new_title": title });
+
+      const supabase = getSupabaseAdmin();
+      const { data: chat, error } = await supabase
+        .from("writeright_chats")
+        .update({ title })
+        .eq("id", chatId)
+        .eq("user_id", userId)
+        .select()
+        .single();
+
+      if (error || !chat) {
+        console.error("[api.writeright.chat] PATCH failed:", { error: error?.message, ...traceLogFields() });
+        return NextResponse.json({ error: "Failed to update chat", code: "DB_ERROR" }, { status: 500 });
+      }
+
+      return NextResponse.json({ chat });
+    });
   });
 }

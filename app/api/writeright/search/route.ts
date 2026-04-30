@@ -86,12 +86,13 @@ export async function GET(req: Request) {
       if (!parsed.success) {
         throw createApiError("VALIDATION_ERROR", "Invalid query", 400, { issues: parsed.error.issues });
       }
-      const query = sanitizeSearchQuery(parsed.data.query);
-      if (!query) {
+      const { query: rawQuery } = parsed.data;
+      const safeQuery = sanitizeSearchQuery(rawQuery);
+      if (!safeQuery) {
         return NextResponse.json({ results: [] });
       }
 
-      addSpanAttributes({ "writeright.search.length": query.length });
+      addSpanAttributes({ "writeright.search.length": safeQuery.length });
 
       const supabase = getSupabaseAdmin();
       const [titleMatchesRes, messageMatchesRes] = await Promise.all([
@@ -100,14 +101,14 @@ export async function GET(req: Request) {
           .select("id, title, mode, updated_at")
           .eq("user_id", userId)
           .is("deleted_at", null)
-          .textSearch("title", query, { type: 'websearch' })
+          .textSearch("title", safeQuery, { type: 'websearch' })
           .order("updated_at", { ascending: false })
           .limit(SEARCH_LIMIT),
         supabase
           .from("writeright_messages")
           .select("chat_id, content, created_at")
           .eq("user_id", userId)
-          .textSearch("content", query, { type: 'websearch' })
+          .textSearch("content", safeQuery, { type: 'websearch' })
           .order("created_at", { ascending: false })
           .limit(SEARCH_LIMIT),
       ]);
@@ -167,7 +168,7 @@ export async function GET(req: Request) {
         resultsByChatId.set(chatId, {
           chatId,
           chatTitle: meta.title,
-          messageSnippet: snippetForQuery(row.content ?? "", query),
+          messageSnippet: snippetForQuery(row.content ?? "", safeQuery),
           mode: meta.mode,
           updatedAt: meta.updatedAt,
         });
@@ -178,7 +179,7 @@ export async function GET(req: Request) {
         resultsByChatId.set(row.id, {
           chatId: row.id,
           chatTitle: row.title ?? "Untitled Chat",
-          messageSnippet: `Title matches "${query}"`,
+          messageSnippet: `Title matches "${safeQuery}"`,
           mode: row.mode ?? "email",
           updatedAt: row.updated_at ?? new Date(0).toISOString(),
         });

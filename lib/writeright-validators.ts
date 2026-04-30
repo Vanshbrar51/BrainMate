@@ -84,7 +84,7 @@ export const TemplateCreateSchema = z.object({
 });
 
 export const TemplateRenameSchema = z.object({
-  name: z.string().min(1, "Name is required").max(200, "Name too long"),
+  name: z.string().trim().min(1, "Name is required").max(200, "Name too long"),
 });
 
 // Type exports for consumer convenience

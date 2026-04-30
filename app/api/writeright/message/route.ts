@@ -6,6 +6,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { getOrCreateUserQuota } from "@/app/api/writeright/quota/route";
 import {
   enqueueWriteRightJob,
   checkRateLimit,
@@ -170,7 +171,24 @@ export async function POST(req: Request) {
         }
       }
 
-      // 5. Rate limit check
+      // 5. Quota check
+      const supabase = getSupabaseAdmin();
+      const quota = await getOrCreateUserQuota(userId, supabase);
+      if (quota.usage.requests_today >= quota.limits.requests_per_day) {
+        throw createApiError("QUOTA_EXCEEDED", "Daily limit reached. Upgrade for more.", 402, {
+          headers: { "X-Quota-Reset": quota.resets_at }
+        });
+      }
+      if (text.length > quota.limits.max_chars_per_request) {
+        throw createApiError("TEXT_TOO_LONG", `Text exceeds your plan limit of ${quota.limits.max_chars_per_request} characters.`, 400);
+      }
+
+      // Enforce usage daily limits fallback
+      try {
+        await supabase.rpc('increment_wr_daily_usage', { p_user_id: userId, p_chars: text.length });
+      } catch (err) {}
+
+      // 5.5 Rate limit check
       const limit = getMaxRequestsPerMinute();
       let rateLimitHeaders: Record<string, string> = {};
       try {
@@ -198,8 +216,6 @@ export async function POST(req: Request) {
         // Graceful fallback: allow request if rate limit check itself fails
         rateLimitHeaders = buildRateLimitHeaders(limit, limit);
       }
-
-      const supabase = getSupabaseAdmin();
 
       // 6. Verify chat belongs to user
       const { data: chat, error: chatError } = await supabase
