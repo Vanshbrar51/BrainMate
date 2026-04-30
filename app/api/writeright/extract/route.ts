@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import * as pdfParseModule from "pdf-parse";
-const PDFParse = (pdfParseModule as Record<string, unknown>).default || pdfParseModule;
+const PDFParse = ((pdfParseModule as Record<string, unknown>).default || pdfParseModule) as (data: Buffer) => Promise<{text: string}>;
 import * as mammoth from "mammoth";
 import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
 import {

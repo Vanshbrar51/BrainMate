@@ -21,12 +21,16 @@ logger = logging.getLogger("writeright.prompt_builder")
 # ---------------------------------------------------------------------------
 
 INJECTION_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"ignore\s+(previous|all|prior)\s+instructions", re.IGNORECASE),
+    re.compile(
+        r"ignore\s+(?:(?:previous|all|prior)\s+)*instructions",
+        re.IGNORECASE),
     re.compile(r"you\s+are\s+now", re.IGNORECASE),
     re.compile(r"new\s+persona", re.IGNORECASE),
     re.compile(r"system\s*:", re.IGNORECASE),
     re.compile(r"<\s*system\s*>", re.IGNORECASE),
-    re.compile(r"act\s+as\s+(a\s+)?(?!writing|communication)", re.IGNORECASE),
+    re.compile(
+        r"act\s+as\s+(?!a\s+(?:writing|communication)|writing|communication)",
+        re.IGNORECASE),
     re.compile(r"forget\s+(everything|all|your)", re.IGNORECASE),
     re.compile(r"override\s+(your|the)\s+(instructions|prompt|rules)", re.IGNORECASE),
     re.compile(r"disregard\s+all\s+above", re.IGNORECASE),

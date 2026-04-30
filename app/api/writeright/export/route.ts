@@ -100,7 +100,7 @@ export async function GET(req: Request) {
             if (msg.role === "user") {
               lines.push(`**You:** ${msg.content}`);
             } else {
-              let result: Record<string, unknown> = { improved_text: msg.content, scores: null };
+              let result: Record<string, any> = { improved_text: msg.content, scores: null };
               try {
                 result = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
               } catch(e) {}

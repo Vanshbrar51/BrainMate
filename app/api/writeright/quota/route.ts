@@ -63,7 +63,7 @@ function quotaCacheKey(userId: string): string {
   return ns("writeright", "quota", userId);
 }
 
-export async function getOrCreateUserQuota(userId: string, supabase: unknown): Promise<QuotaResponse> {
+export async function getOrCreateUserQuota(userId: string, supabase: any): Promise<QuotaResponse> {
   const [settingsRes, dailyUsageRes] = await Promise.all([
     supabase.from("writeright_user_settings").select("tier").eq("user_id", userId).maybeSingle(),
     supabase.from("writeright_daily_usage").select("request_count, char_count").eq("user_id", userId).eq("usage_date", new Date().toISOString().split("T")[0]).maybeSingle(),
