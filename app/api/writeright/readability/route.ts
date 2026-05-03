@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { withSpan, traceLogFields } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 
@@ -47,6 +48,11 @@ function calculateFleschKincaid(text: string) {
 export async function POST(req: Request) {
   return withErrorHandler(req, async () => {
     return withSpan("api.writeright.readability", async () => {
+      const { userId } = await auth();
+      if (!userId) {
+        throw createApiError("UNAUTHORIZED", "Not authenticated", 401);
+      }
+
       let body;
       try {
         body = await req.json();
