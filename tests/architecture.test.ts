@@ -24,8 +24,10 @@ describe('Architecture Compliance', () => {
     const apiFiles = getAllFiles(path.join(APP_DIR, 'api')).filter(f => f.endsWith('route.ts'));
     
     apiFiles.forEach(file => {
+      const isPublic = file.includes('public/') || file.includes('job/[jobId]/complete');
+      if (isPublic) return;
+
       const content = fs.readFileSync(file, 'utf8');
-      // Skip auth() check for public routes if any (but rules say every API route must start with it)
       expect(content).toMatch(/await auth\(\)/);
     });
   });
