@@ -106,7 +106,7 @@ export async function GET(
               try {
                 activeSubscriber.disconnect();
               } catch {
-                /* final fallback */
+                /* no-op */
               }
             }
           };

@@ -43,6 +43,7 @@ LOCK_PREFIX = "writeright:lock:"
 DEAD_LETTER_KEY = "writeright:jobs:dead"  # F-BE-12
 LOCK_TTL_SECS = settings.job_timeout_seconds * 3
 STATUS_TTL_SECS = 3600
+DEAD_LETTER_KEY = "writeright:jobs:dead"
 
 # Lua script: atomically pop one job whose score (scheduled time) <= now
 # Note: Next.js enqueues with Date.now() which is exactly Python's
@@ -226,13 +227,29 @@ async def _process_job_safe(
         await _set_job_status(redis_client, job.id, "processing")
 
         # 3. Process with timeout
-        async def on_stream_chunk(chunk: str, _full_text: str) -> None:
-            await _publish_stream_chunk(
-                redis_client=redis_client,
-                job_id=job.id,
-                chunk=chunk,
-                delta=chunk,
-            )
+        _token_buffer = ""
+        _word_count_published = 0
+
+        async def on_stream_chunk(chunk: str, full_text: str) -> None:
+            nonlocal _token_buffer, _word_count_published
+            _token_buffer += chunk
+
+            import re
+            if '"improved_text": "' in full_text and _word_count_published < 500:
+                match = re.search(r'"improved_text":\s*"((?:[^"\\]|\\.)*)', full_text)
+                if match:
+                    so_far = match.group(1).replace('\\"', '"').replace('\\n', '\n')
+                    words_so_far = so_far.split()
+                    if len(words_so_far) > _word_count_published:
+                        new_words = words_so_far[_word_count_published:]
+                        word_chunk = " ".join(new_words) + " "
+                        await _publish_stream_chunk(
+                            redis_client=redis_client,
+                            job_id=job.id,
+                            chunk=word_chunk,
+                            delta=word_chunk,
+                        )
+                        _word_count_published = len(words_so_far)
 
         async def on_status(stage: str) -> None:
             await _publish_stream_status(
@@ -320,6 +337,14 @@ async def _handle_failure(
             "error": error,
             "status": "failed",
         })
+
+        dead_letter_entry = {
+            **job.model_dump(),
+            "failed_at": time.time(),
+            "final_error": error[:500],
+        }
+        await redis_client.zadd(DEAD_LETTER_KEY, {json.dumps(dead_letter_entry): time.time()})
+        await redis_client.expire(DEAD_LETTER_KEY, 7 * 24 * 3600)
 
         # Update Supabase
         try:

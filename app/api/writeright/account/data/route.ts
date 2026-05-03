@@ -6,6 +6,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { getRedisPool, ns, isCircuitOpen } from "@/lib/redis";
 import {
   withSpan,
   addSpanAttributes,
@@ -63,6 +64,23 @@ export async function DELETE(req: Request) {
         user_id: userId,
         ...traceLogFields(),
       });
+
+      if (!isCircuitOpen()) {
+        try {
+          const redis = getRedisPool();
+          await redis.del(
+            ns("writeright", "ratelimit", userId),
+            ns("writeright", "stats", userId),
+            ns("writeright", "profile", userId),
+            ns("writeright", "quota", userId),
+          );
+        } catch (err) {
+          console.error("[api.writeright.account.data] Redis delete failed", {
+            error: err instanceof Error ? err.message : String(err),
+            ...traceLogFields(),
+          });
+        }
+      }
 
       return NextResponse.json(
         {

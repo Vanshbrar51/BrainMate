@@ -8,6 +8,14 @@ import { logRequest } from "./writeright-logger";
 
 // ── NEW: [BE-1] Complete ErrorCode union ──
 export type ErrorCode =
+  | "CONFIRMATION_REQUIRED"
+  | "QUOTA_EXCEEDED"
+  | "TEXT_TOO_LONG"
+  | "MISSING_SECRET"
+  | "EXPIRED_TOKEN"
+  | "INVALID_TOKEN"
+  | "INVALID_CHAT_ID"
+  | "INVALID_JOB_ID"
   | "UNAUTHORIZED"
   | "INVALID_BODY"
   | "VALIDATION_ERROR"

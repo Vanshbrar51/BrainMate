@@ -79,15 +79,54 @@ export async function GET(req: Request) {
           role: msg.role,
           content: msg.content,
           timestamp: msg.created_at,
-          metadata: msg.metadata,
+          metadata: msg.metadata as Record<string, unknown>,
         });
       });
+
+
+      const grouped = Object.values(chatsMap);
+
+      if (format === "markdown") {
+        const lines: string[] = [
+          "# WriteRight Export",
+          `_Exported on ${new Date().toLocaleDateString()}_`,
+          "",
+        ];
+        for (const chat of grouped) {
+          lines.push(`## ${chat.title}`);
+          lines.push(`_Mode: ${((chat.messages?.[0]?.metadata as Record<string, unknown>)?.mode as string) || "email"} · ${chat.messages.length} exchanges_`);
+          lines.push("");
+          for (const msg of chat.messages) {
+            if (msg.role === "user") {
+              lines.push(`**You:** ${msg.content}`);
+            } else {
+              let result: Record<string, any> = { improved_text: msg.content, scores: null };
+              try {
+                result = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
+              } catch(e) {}
+              lines.push(`**WriteRight:** ${result.improved_text || msg.content}`);
+              if (result.scores) {
+                lines.push(`> Clarity ${result.scores.clarity}/10 · Tone ${result.scores.tone}/10 · Impact ${result.scores.impact}/10`);
+              }
+            }
+            lines.push("");
+          }
+          lines.push("---");
+          lines.push("");
+        }
+        return new Response(lines.join("\n"), {
+          headers: {
+            "Content-Type": "text/markdown; charset=utf-8",
+            "Content-Disposition": `attachment; filename="writeright-export-${Date.now()}.md"`,
+          },
+        });
+      }
 
       const exportManifest = {
         user: userId,
         generated_at: new Date().toISOString(),
         format,
-        chats: Object.values(chatsMap),
+        chats: grouped,
       };
 
       return NextResponse.json(exportManifest, { status: 200 });
