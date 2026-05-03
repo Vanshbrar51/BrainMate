@@ -82,21 +82,31 @@ export async function GET(
             subscriber = null;
             if (!activeSubscriber) return;
             try {
-              if (activeSubscriber.status !== "end") {
+              if (
+                activeSubscriber.status !== "end" &&
+                activeSubscriber.status !== "close" &&
+                activeSubscriber.status !== "reconnecting"
+              ) {
                 await activeSubscriber.unsubscribe(channel);
               }
             } catch {
               // no-op
             }
+            // BUG-10 FIX: guard quit() against "close" and "reconnecting" states
+            // (some ioredis versions throw synchronously in those states)
             try {
-              if (activeSubscriber.status !== "end") {
+              if (
+                activeSubscriber.status !== "end" &&
+                activeSubscriber.status !== "close" &&
+                activeSubscriber.status !== "reconnecting"
+              ) {
                 await activeSubscriber.quit();
               }
             } catch {
               try {
                 activeSubscriber.disconnect();
               } catch {
-                // no-op
+                /* final fallback */
               }
             }
           };

@@ -511,8 +511,48 @@ impl InMemoryRedis {
         Ok(if state.remove(key).is_some() { 1 } else { 0 })
     }
 
-    async fn evalsha_i64(&self, _key: &str, _args: Vec<String>) -> Result<Vec<i64>, RedisLayerError> {
+    async fn evalsha_i64(&self, key: &str, args: Vec<String>) -> Result<Vec<i64>, RedisLayerError> {
         self.ensure_available()?;
+        let mut state = self.state.lock().await;
+
+        // Specialized handler for the rate limit Lua script
+        if key.starts_with("rate_limit:") && args.len() == 3 {
+            let burst: f64 = args[0].parse().unwrap_or(0.0);
+            let refill_per_sec: f64 = args[1].parse().unwrap_or(0.0);
+            let now: f64 = args[2].parse().unwrap_or(0.0);
+
+            let mut tokens = burst;
+            let mut last_refill = now;
+
+            if let Some(entry) = state.get(key) {
+                if let Some(delim) = entry.value.find('|') {
+                    tokens = entry.value[..delim].parse().unwrap_or(burst);
+                    last_refill = entry.value[delim + 1..].parse().unwrap_or(now);
+                }
+            }
+
+            let elapsed = (now - last_refill).max(0.0);
+            tokens = (tokens + (elapsed * refill_per_sec)).min(burst);
+
+            if tokens >= 1.0 {
+                tokens -= 1.0;
+                state.insert(
+                    key.to_string(),
+                    MemoryValue {
+                        value: format!("{}|{}", tokens, now),
+                        expires_at: Some(
+                            Instant::now() + Duration::from_secs((burst / refill_per_sec) as u64 * 2),
+                        ),
+                    },
+                );
+                return Ok(vec![1, 0]);
+            } else {
+                let wait_secs = ((1.0 - tokens) / refill_per_sec).ceil() as i64;
+                return Ok(vec![0, wait_secs]);
+            }
+        }
+
+        // Default behavior for other scripts (mock "Success")
         Ok(vec![1, 0])
     }
 }

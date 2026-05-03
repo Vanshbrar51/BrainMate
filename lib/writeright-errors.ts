@@ -20,10 +20,13 @@ export type ErrorCode =
   | "CHAT_NOT_FOUND"
   | "NOT_FOUND"
   | "RATE_LIMITED"
+  | "QUOTA_EXCEEDED"
   | "DB_ERROR"
   | "QUEUE_ERROR"
   | "TIMEOUT"
   | "STREAM_ERROR"
+  | "MISSING_SECRET"
+  | "WORKER_ERROR"
   | "INTERNAL_ERROR";
 
 // ── NEW: [BE-1] User-facing error copy table ──
@@ -45,6 +48,7 @@ const USER_MESSAGES: Partial<Record<ErrorCode, string>> = {
   NOT_FOUND: "The requested resource was not found.",
   INVALID_BODY: "Invalid request format.",
   INVALID_KEYS: "Invalid request parameters.",
+  WORKER_ERROR: "The AI worker encountered an error. Please try again.",
 };
 
 export class WriteRightError extends Error {

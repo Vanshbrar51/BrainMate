@@ -44,4 +44,6 @@ eslint_output.txt
 .agent/
 
 #
-.secrets
+.secrets/
+
+GEMINI.md

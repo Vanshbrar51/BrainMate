@@ -18,12 +18,11 @@ import re
 import logging
 import asyncio
 
-ENABLE_CRITIQUE_PIPELINE = False
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.config import settings
+from app.config import get_settings
 from app.models.job import WritingJob, AIResult, TeachingBlock, ScoreBlock
 from app.services.prompt_builder import build_messages
 from app.services.model_router import ModelRouter
@@ -38,7 +37,9 @@ from app.services.supabase_client import (
     get_recent_mistakes,
     update_writing_profile,
     update_chat_title,
+    match_voice_examples,
 )
+from app.services.embedding_service import get_embedding_service
 
 logger = logging.getLogger("writeright.ai_worker")
 
@@ -322,6 +323,7 @@ async def _repair_json_response(
     """AI-02: One-shot repair call to fix malformed JSON.
 
     Returns the repaired content string, or None if repair fails.
+    Uses temperature=0.1 (json_repair task) to minimize creative divergence.
     """
     try:
         repair_msgs = [
@@ -329,8 +331,9 @@ async def _repair_json_response(
              "content": "Fix the broken JSON below. Return ONLY the corrected raw JSON, no markdown."},
             {"role": "user", "content": f"Broken JSON:\n{raw[:2000]}"},
         ]
+        # BUG-09 FIX: use "json_repair" task type → temperature=0.1
         repair_response = await router.route(
-            task_type="write_improvement",
+            task_type="json_repair",
             messages=repair_msgs,
             max_tokens=1500,
         )
@@ -338,6 +341,7 @@ async def _repair_json_response(
     except Exception:
         logger.warning("JSON repair call failed")
         return None
+
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +369,30 @@ async def analyze_writing_profile(user_id: str) -> None:
         logger.exception("Failed to analyze writing profile")
 
 # ---------------------------------------------------------------------------
+# Input Quality Gate (F-BE-11)
+# ---------------------------------------------------------------------------
+
+def _quality_gate(text: str) -> tuple[bool, str]:
+    """Return (ok, reason) before calling the model.
+
+    Rejects inputs that are too short, non-linguistic, or code-heavy.
+    These would produce meaningless improvements and waste LLM tokens.
+    """
+    stripped = text.strip()
+    if len(stripped) < 10:
+        return False, "Text is too short to improve meaningfully."
+    alpha_ratio = sum(c.isalpha() for c in stripped) / max(len(stripped), 1)
+    if alpha_ratio < 0.25:
+        return False, "Text appears to contain mostly numbers or symbols."
+    code_line_pattern = re.compile(
+        r'^\s*(def |class |function |import |const |let |var |#include|<\?php)', re.MULTILINE
+    )
+    if len(code_line_pattern.findall(stripped)) >= 3:
+        return False, "This looks like code. WriteRight works with natural language only."
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
 # Job Processor
 # ---------------------------------------------------------------------------
 
@@ -375,6 +403,20 @@ async def _generate_draft(
     profile: list[str],
     on_stream_chunk: Callable[[str, str], Awaitable[None]] | None = None,
 ) -> tuple[AIResult, dict[str, bool]]:
+    # 2.7. Retrieve Brand Voice style DNA (RAG)
+    voice_examples = []
+    try:
+        # Only retrieve style if user has provided examples
+        emb_service = get_embedding_service()
+        # Use a lightweight embedding for retrieval
+        query_emb = await emb_service.get_embedding(job.content)
+        matches = await match_voice_examples(job.user_id, query_emb, count=2)
+        voice_examples = [m["content"] for m in matches]
+        if voice_examples:
+            logger.info("Injected %d Brand Voice examples for user %s", len(voice_examples), job.user_id)
+    except Exception:
+        logger.warning("Brand Voice retrieval failed (non-fatal)")
+
     # 3. Build prompt
     messages, prompt_metadata = build_messages(
         user_text=job.content,
@@ -383,6 +425,7 @@ async def _generate_draft(
         output_language=job.output_language,
         history=history,
         profile=profile,
+        voice_examples=voice_examples,
         intensity=job.intensity,
         max_history=10,
         max_input_tokens=settings.max_input_tokens,
@@ -487,6 +530,7 @@ async def _generate_critique_and_revision(
 
 async def process_job(
     job: WritingJob,
+    settings_instance: Settings,
     on_stream_chunk: Callable[[str, str], Awaitable[None]] | None = None,
     on_status: Callable[[str], Awaitable[None]] | None = None,
 ) -> AIResult:
@@ -549,6 +593,30 @@ async def process_job(
     if on_status:
         await on_status("drafting")
 
+    # F-BE-11: Quality gate — short-circuit before calling the model
+    ok, gate_reason = _quality_gate(job.content)
+    if not ok:
+        logger.info(
+            '{"event": "job.quality_gate", "job_id": "%s", "reason": "%s"}',
+            job.id, gate_reason,
+        )
+        return AIResult(
+            improved_text=job.content,
+            teaching=TeachingBlock(
+                mistakes=[gate_reason],
+                better_versions=["Please provide a natural language text to improve."],
+                explanations=[
+                    "WriteRight is designed for emails, LinkedIn posts, paragraphs, and WhatsApp messages."
+                ],
+            ),
+            follow_up="Try pasting an email draft or a paragraph you\u2019ve written.",
+            suggestions=["Try an email draft", "Try a LinkedIn post", "Try a paragraph"],
+            scores=ScoreBlock(clarity=0, tone=0, impact=0, verdict="Needs more work"),
+            model="quality_gate",
+            prompt_tokens=0,
+            completion_tokens=0,
+        )
+
     result, prompt_metadata = await _generate_draft(
         job=job,
         history=history,
@@ -556,7 +624,7 @@ async def process_job(
         on_stream_chunk=on_stream_chunk,
     )
 
-    if ENABLE_CRITIQUE_PIPELINE:
+    if settings.enable_critique_pipeline:
         if on_status:
             await on_status("critiquing")
         result = await _generate_critique_and_revision(result, job)
@@ -609,7 +677,8 @@ async def process_job(
     except Exception:
         logger.warning("Failed to record usage (non-fatal)")
 
-    # 9. Streaks + achievements (non-fatal)
+    # 9. Streaks + achievements — now primarily handled by DB trigger fn_update_writeright_streak()
+    # on writeright_usage INSERT. Python-side call kept as a fallback / for achievement logic.
     try:
         await update_streak_and_achievements(
             user_id=job.user_id,
@@ -621,18 +690,24 @@ async def process_job(
     except Exception:
         logger.warning("Failed to update streak/achievements (non-fatal)")
 
-    # Triggers F-04 logic asynchronously
-    asyncio.create_task(analyze_writing_profile(job.user_id))
+    # F-BE-08: Writing profile analysis — now handled by DB trigger fn_update_writeright_profile().
+    # The asyncio.create_task() fire-and-forget pattern is replaced by the DB trigger,
+    # which is atomic and cannot be silently cancelled on worker restart.
+    logger.info(
+        '{"event": "job.profile_update", "job_id": "%s", "note": "handled_by_db_trigger"}',
+        job.id,
+    )
 
-    # F-07: Generate Chat Title intelligently
-    def _trigger_title_gen():
+    # F-07 / BUG-04: Generate Chat Title — guarded inside update_chat_title() in supabase_client.py.
+    # Only overwrites auto-generated titles (those starting with 📝 or "Untitled Chat").
+    def _trigger_title_gen() -> None:
         words = result.improved_text.split()
         if len(words) > 0:
             short_text = " ".join(words[:5]) + "..."
             asyncio.create_task(
                 update_chat_title(
                     job.chat_id,
-                    f"📝 {short_text}"))
+                    f"\U0001f4dd {short_text}"))
 
     _trigger_title_gen()
 

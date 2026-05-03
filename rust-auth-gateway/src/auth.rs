@@ -845,27 +845,27 @@ fn extract_remote_ip(
     trust_x_forwarded_for: bool,
     trusted_proxy_cidrs: &[ipnet::IpNet],
 ) -> String {
-    if let Some(edge_id) = request
-        .headers()
-        .get("x-waf-client-id")
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
-        return edge_id.to_string();
-    }
-
     let socket_ip = request
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|info| info.0.ip());
 
-    if trust_x_forwarded_for {
-        let is_trusted_proxy = socket_ip
-            .map(|ip| trusted_proxy_cidrs.iter().any(|cidr| cidr.contains(&ip)))
-            .unwrap_or(false);
+    let is_trusted_proxy = socket_ip
+        .map(|ip| trusted_proxy_cidrs.iter().any(|cidr| cidr.contains(&ip)))
+        .unwrap_or(false);
 
-        if is_trusted_proxy {
+    if is_trusted_proxy {
+        if let Some(edge_id) = request
+            .headers()
+            .get("x-waf-client-id")
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
+            return edge_id.to_string();
+        }
+
+        if trust_x_forwarded_for {
             if let Some(forwarded) = request.headers().get("x-forwarded-for") {
                 if let Ok(raw) = forwarded.to_str() {
                     // Walk the X-Forwarded-For chain RIGHT-TO-LEFT.

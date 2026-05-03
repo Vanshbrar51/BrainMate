@@ -140,24 +140,33 @@ async def save_ai_message(
 def _update_chat_title_sync(chat_id: str, new_title: str) -> None:
     client = get_supabase()
     try:
-        # Check current title
-        client.table("writeright_chats").select(
-            "title").eq("id", chat_id).single().execute()
-
-        # Very simple heuristic: if it contains "Untitled" or is very short or is raw, we can overwrite.
-        # But per simplified F-07 spec, we just overwrite if it's the first message or if requested.
-        # Here we just blindly update as the worker heuristic decides.
-        response = client.table("writeright_chats").update(
-            {"title": new_title, "updated_at": "now()"}).eq("id", chat_id).execute()
-        if not response.data:
-            logger.warning("No chat updated for id %s", chat_id)
+        # BUG-04 FIX: Read the current title before overwriting.
+        # Only overwrite if the title is still auto-generated.
+        result = client.table("writeright_chats").select("title").eq("id", chat_id).single().execute()
+        if not result.data:
+            return
+        current = result.data.get("title", "")
+        # Auto-generated titles: start with 📝, are "Untitled Chat", or are raw long text
+        is_auto = (
+            current.startswith("\U0001f4dd ")
+            or current == "Untitled Chat"
+            or len(current) > 80
+        )
+        if not is_auto:
+            # User has renamed this chat — preserve it
+            logger.info("Skipping title update for chat %s (user-renamed: %r)", chat_id, current[:40])
+            return
+        client.table("writeright_chats").update(
+            {"title": new_title, "updated_at": "now()"}
+        ).eq("id", chat_id).execute()
     except Exception as e:
         logger.error("Failed to update chat title for %s: %s", chat_id, e)
 
 
 async def update_chat_title(chat_id: str, new_title: str) -> None:
-    """Update title for the given chat ID."""
+    """Update title for the given chat ID, only if not user-renamed."""
     await asyncio.to_thread(_update_chat_title_sync, chat_id, new_title)
+
 
 
 # ---------------------------------------------------------------------------
@@ -562,3 +571,99 @@ async def update_writing_profile(
         await asyncio.to_thread(_update_writing_profile_sync, user_id, mistakes, count)
     except Exception:
         logger.exception("Failed to update writing profile")
+
+
+# ---------------------------------------------------------------------------
+# Brand Voice (RAG)
+# ---------------------------------------------------------------------------
+
+def _save_voice_example_sync(
+    user_id: str,
+    content: str,
+    embedding: list[float],
+) -> dict[str, Any]:
+    result = (
+        get_supabase()
+        .table("writeright_brand_voice")
+        .insert({
+            "user_id": user_id,
+            "content": content,
+            "embedding": embedding,
+        })
+        .execute()
+    )
+    if not result.data:
+        raise ValueError("Insert brand voice example failed")
+    return cast(dict[str, Any], result.data[0])
+
+
+async def save_voice_example(
+    user_id: str,
+    content: str,
+    embedding: list[float],
+) -> dict[str, Any]:
+    """Save a new stylistic example with its embedding."""
+    return await asyncio.to_thread(_save_voice_example_sync, user_id, content, embedding)
+
+
+def _match_voice_examples_sync(
+    user_id: str,
+    embedding: list[float],
+    count: int = 2,
+) -> list[dict[str, Any]]:
+    # Use the RPC function defined in migration 0017
+    result = (
+        get_supabase()
+        .rpc("match_brand_voice", {
+            "query_embedding": embedding,
+            "match_threshold": 0.5,
+            "match_count": count,
+            "p_user_id": user_id,
+        })
+        .execute()
+    )
+    return cast(list[dict[str, Any]], result.data or [])
+
+
+async def match_voice_examples(
+    user_id: str,
+    embedding: list[float],
+    count: int = 2,
+) -> list[dict[str, Any]]:
+    """Perform vector similarity search for relevant style examples."""
+    try:
+        return await asyncio.to_thread(_match_voice_examples_sync, user_id, embedding, count)
+    except Exception:
+        logger.exception("Failed to match voice examples for user_id=%s", user_id)
+        return []
+
+
+def _get_voice_examples_sync(user_id: str) -> list[dict[str, Any]]:
+    result = (
+        get_supabase()
+        .table("writeright_brand_voice")
+        .select("id, content, created_at")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return cast(list[dict[str, Any]], result.data or [])
+
+
+async def get_voice_examples(user_id: str) -> list[dict[str, Any]]:
+    """List all voice examples for a user (embeddings omitted)."""
+    return await asyncio.to_thread(_get_voice_examples_sync, user_id)
+
+
+def _delete_voice_example_sync(user_id: str, example_id: str) -> None:
+    get_supabase() \
+        .table("writeright_brand_voice") \
+        .delete() \
+        .eq("id", example_id) \
+        .eq("user_id", user_id) \
+        .execute()
+
+
+async def delete_voice_example(user_id: str, example_id: str) -> None:
+    """Delete a voice example."""
+    await asyncio.to_thread(_delete_voice_example_sync, user_id, example_id)

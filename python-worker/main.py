@@ -24,8 +24,12 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.routers.health import router as health_router, set_health_dependencies
+from app.routers.morph import router as morph_router
+from app.routers.triage import router as triage_router
+from app.routers.voice import router as voice_router
 from app.services.queue_consumer import consume_jobs
 from app.services.ai_worker import close_model_router
+from app.services.embedding_service import close_embedding_service
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -155,8 +159,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning("Force-cancelling worker task: %s", task.get_name())
             task.cancel()
 
-    # Close model router HTTP client
+    # Close connections
     await close_model_router()
+    await close_embedding_service()
 
     # Close Redis
     if redis_client:
@@ -179,6 +184,9 @@ app = FastAPI(
 
 # Register routers
 app.include_router(health_router)
+app.include_router(morph_router)
+app.include_router(triage_router)
+app.include_router(voice_router)
 
 
 # Root endpoint

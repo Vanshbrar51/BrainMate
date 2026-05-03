@@ -1,3 +1,7 @@
+// app/api/writeright/share/route.ts — WriteRight public share link generation
+//
+// POST — Create a time-limited share link for a completed job result.
+
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { createHmac, randomUUID } from "crypto";
@@ -8,9 +12,14 @@ import {
   addSpanEvent,
   traceLogFields,
 } from "@/lib/tracing";
+import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
+import { ShareSchema } from "@/lib/writeright-validators";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SHARE_TTL_SECS = 7 * 24 * 60 * 60;
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const SHARE_TTL_SECS = 7 * 24 * 60 * 60; // 7 days
 
 function base64Url(input: string | Buffer): string {
   return Buffer.from(input)
@@ -29,89 +38,115 @@ function createShareToken(payload: Record<string, unknown>, secret: string): str
   return `${data}.${base64Url(signature)}`;
 }
 
+// ---------------------------------------------------------------------------
+// POST /api/writeright/share
+// ---------------------------------------------------------------------------
+
 export async function POST(req: Request) {
-  return withSpan("api.writeright.share.create", async () => {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: "Not authenticated", code: "UNAUTHORIZED" }, { status: 401 });
-    }
+  return withErrorHandler(req, async () => {
+    return withSpan("api.writeright.share.create", async () => {
+      const { userId } = await auth();
+      if (!userId) {
+        throw createApiError("UNAUTHORIZED", "Not authenticated", 401);
+      }
 
-    addSpanAttributes({ "user.id": userId });
+      addSpanAttributes({ "user.id": userId });
 
-    let body: { chatId?: string; jobId?: string };
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: "Invalid JSON body", code: "INVALID_BODY" }, { status: 400 });
-    }
+      let body: unknown;
+      try {
+        body = await req.json();
+      } catch {
+        throw createApiError("INVALID_BODY", "Invalid JSON body", 400);
+      }
 
-    const chatId = body.chatId?.trim() ?? "";
-    const jobId = body.jobId?.trim() ?? "";
+      const parsed = ShareSchema.safeParse(body);
+      if (!parsed.success) {
+        throw createApiError("VALIDATION_ERROR", "Invalid input", 400, {
+          issues: parsed.error.issues,
+        });
+      }
 
-    if (!UUID_RE.test(chatId)) {
-      return NextResponse.json({ error: "Invalid chatId", code: "INVALID_CHAT_ID" }, { status: 400 });
-    }
-    if (!UUID_RE.test(jobId)) {
-      return NextResponse.json({ error: "Invalid jobId", code: "INVALID_JOB_ID" }, { status: 400 });
-    }
+      const { chatId, jobId } = parsed.data;
 
-    const supabase = getSupabaseAdmin();
-    const { data: job, error: jobError } = await supabase
-      .from("writeright_ai_jobs")
-      .select("id, chat_id, user_id")
-      .eq("id", jobId)
-      .eq("chat_id", chatId)
-      .eq("user_id", userId)
-      .single();
+      const supabase = getSupabaseAdmin();
 
-    if (jobError || !job) {
-      return NextResponse.json({ error: "Job not found", code: "NOT_FOUND" }, { status: 404 });
-    }
+      const { data: job, error: jobError } = await supabase
+        .from("writeright_ai_jobs")
+        .select("id, chat_id, user_id, status")
+        .eq("id", jobId)
+        .eq("chat_id", chatId)
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .single();
 
-    const now = Math.floor(Date.now() / 1000);
-    const exp = now + SHARE_TTL_SECS;
-    const secret = process.env.WRITERIGHT_SHARE_JWT_SECRET || process.env.NEXTAUTH_SECRET;
-    if (!secret) {
-      console.error("[api.writeright.share] Missing share token secret", traceLogFields());
-      return NextResponse.json({ error: "Server misconfigured", code: "MISSING_SECRET" }, { status: 500 });
-    }
+      if (jobError || !job) {
+        throw createApiError("NOT_FOUND", "Job not found", 404);
+      }
 
-    const token = createShareToken(
-      {
-        sub: userId,
+      if (job.status !== "completed") {
+        throw createApiError(
+          "VALIDATION_ERROR",
+          "Can only share completed jobs",
+          400,
+        );
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+      const exp = now + SHARE_TTL_SECS;
+      const secret =
+        process.env.WRITERIGHT_SHARE_JWT_SECRET ||
+        process.env.NEXTAUTH_SECRET;
+
+      if (!secret) {
+        console.error("[api.writeright.share] Missing share token secret", traceLogFields());
+        throw createApiError(
+          "INTERNAL_ERROR",
+          "Server misconfigured — missing secret",
+          500,
+        );
+      }
+
+      const token = createShareToken(
+        {
+          sub: userId,
+          chat_id: chatId,
+          job_id: jobId,
+          iat: now,
+          exp,
+          jti: randomUUID(),
+        },
+        secret,
+      );
+
+      const expiresAtIso = new Date(exp * 1000).toISOString();
+
+      const { error: insertError } = await supabase.from("writeright_shares").insert({
+        user_id: userId,
         chat_id: chatId,
         job_id: jobId,
-        iat: now,
-        exp,
-        jti: randomUUID(),
-      },
-      secret,
-    );
-
-    const expiresAtIso = new Date(exp * 1000).toISOString();
-    const { error: insertError } = await supabase.from("writeright_shares").insert({
-      user_id: userId,
-      chat_id: chatId,
-      job_id: jobId,
-      token,
-      expires_at: expiresAtIso,
-      metadata: { source: "writeright_share_modal" },
-    });
-
-    if (insertError) {
-      console.error("[api.writeright.share] Insert failed", {
-        error: insertError.message,
-        ...traceLogFields(),
+        token,
+        expires_at: expiresAtIso,
+        metadata: { source: "writeright_share_modal" },
       });
-      return NextResponse.json({ error: "Failed to create share link", code: "DB_ERROR" }, { status: 500 });
-    }
 
-    addSpanEvent("writeright.share.created", { chat_id: chatId, job_id: jobId });
-    addSpanAttributes({ "writeright.chat_id": chatId, "writeright.job_id": jobId });
+      if (insertError) {
+        console.error("[api.writeright.share] Insert failed", {
+          error: insertError.message,
+          ...traceLogFields(),
+        });
+        throw createApiError("DB_ERROR", "Failed to create share link", 500);
+      }
 
-    const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://brainmateai.com";
-    const shareUrl = `${appBaseUrl.replace(/\/+$/, "")}/share/${token}`;
+      addSpanEvent("writeright.share.created", { chat_id: chatId, job_id: jobId });
+      addSpanAttributes({
+        "writeright.chat_id": chatId,
+        "writeright.job_id": jobId,
+      });
 
-    return NextResponse.json({ shareUrl, expiresAt: expiresAtIso }, { status: 201 });
+      const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://brainmateai.com";
+      const shareUrl = `${appBaseUrl.replace(/\/+$/, "")}/share/${token}`;
+
+      return NextResponse.json({ shareUrl, expiresAt: expiresAtIso }, { status: 201 });
+    });
   });
 }

@@ -27,6 +27,7 @@ import {
   X,
   BarChart3,
   LayoutTemplate,
+  Layout,
   Pencil,
   Download,
   ThumbsUp,
@@ -39,6 +40,10 @@ import {
   ArrowRight,
   Wand2,
   Settings2,
+  Calendar,
+  CheckSquare,
+  Fingerprint,
+  Loader2,
 } from 'lucide-react'
 import {
   UserMessage,
@@ -68,6 +73,17 @@ interface AIJobResult {
     mistakes: string[]
     better_versions: string[]
     explanations: string[]
+  }
+  extraction?: {
+    action_items: string[]
+    deadlines: string[]
+    monetary_values: string[]
+    meeting_request: {
+      found: boolean
+      title?: string
+      time?: string
+      intent?: string
+    }
   }
   follow_up: string
   suggestions?: string[]
@@ -133,6 +149,7 @@ type WriteRightMessage =
     chatId?: string | null
     mode: WritingMode
     tone: ToneOption
+    intensity: number
     outputLang: OutputLang
     prevScores?: AIQualityScores
     timestamp?: number
@@ -190,6 +207,27 @@ interface WriterightStats {
   weekly_counts: number[]
   achievements: string[]
   avg_clarity_by_day?: number[]
+}
+
+interface TriageItem {
+  id: string
+  subject: string
+  summary: string
+  urgency: 'High' | 'Medium' | 'Low'
+  category: string
+  smart_replies: string[]
+  action_items: string[]
+  original_segment: string
+}
+
+interface TriageResponse {
+  items: TriageItem[]
+}
+
+interface VoiceExample {
+  id: string
+  content: string
+  created_at: string
 }
 
 interface ShareResponse {
@@ -859,7 +897,7 @@ const THINKING_MESSAGES = [
 ] as const
 
 // ── CHANGED: [UI-6] Brain Wave Loading Animation ──
-function WriteRightThinking({ startTime, customMessage }: { startTime: number | null; customMessage?: string }) {
+function WriteRightThinking({ startTime }: { startTime: number | null }) {
   const [elapsed, setElapsed] = useState(0)
   const [msgIndex, setMsgIndex] = useState(0)
 
@@ -1045,11 +1083,156 @@ function ScoreCard({ scores, prevScores }: { scores?: AIQualityScores; prevScore
   )
 }
 
+function MeetingCard({ meeting }: { meeting: { title?: string; time?: string; intent?: string } }) {
+  const query = new URLSearchParams({
+    title: meeting.title || 'Meeting',
+    time: meeting.time || '',
+    description: meeting.intent || '',
+  }).toString()
+
+  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8081'
+  const icsUrl = `${gatewayUrl}/v1/tools/calendar.ics?${query}`
+
+  return (
+    <div className="wr-interactive-card wr-meeting-card" role="region" aria-label="Meeting invitation">
+      <div className="wr-interactive-icon" aria-hidden="true">
+        <Calendar size={18} />
+      </div>
+      <div className="wr-interactive-content">
+        <div className="wr-interactive-title">{meeting.title || 'Meeting Detected'}</div>
+        <div className="wr-interactive-detail">{meeting.time}</div>
+        {meeting.intent && <div className="wr-interactive-subtext">{meeting.intent}</div>}
+      </div>
+      <a 
+        href={icsUrl} 
+        className="wr-interactive-action-btn"
+        aria-label={`Add ${meeting.title || 'meeting'} to calendar`}
+      >
+        <Download size={14} /> Add to Calendar
+      </a>
+    </div>
+  )
+}
+
+function ActionChecklist({ items }: { items: string[] }) {
+  const [checked, setChecked] = useState<Record<number, boolean>>({})
+
+  const toggle = (idx: number) => {
+    setChecked(prev => ({ ...prev, [idx]: !prev[idx] }))
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent, idx: number) => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault()
+      toggle(idx)
+    }
+  }
+
+  return (
+    <div className="wr-interactive-card wr-checklist-card" role="region" aria-label="Action items checklist">
+      <div className="wr-interactive-icon" aria-hidden="true">
+        <CheckSquare size={18} />
+      </div>
+      <div className="wr-interactive-content">
+        <div className="wr-interactive-title">Action Items</div>
+        <div className="wr-checklist-items" role="list">
+          {items.map((item, idx) => (
+            <div
+              key={idx}
+              className={`wr-checklist-item${checked[idx] ? ' checked' : ''}`}
+              onClick={() => toggle(idx)}
+              onKeyDown={(e) => handleKeyDown(e, idx)}
+              role="checkbox"
+              aria-checked={checked[idx]}
+              tabIndex={0}
+            >
+              <div className="wr-checkbox" aria-hidden="true">
+                {checked[idx] && <Check size={10} />}
+              </div>
+              <span className="wr-checklist-text">{item}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TriageCard({ item, onStartDraft }: { item: TriageItem, onStartDraft: (draft: string) => void }) {
+  const urgencyColor = item.urgency === 'High' ? 'var(--wr-error)' : item.urgency === 'Medium' ? 'var(--wr-warning)' : 'var(--wr-accent)'
+  
+  return (
+    <div className="wr-triage-card">
+      <div className="wr-triage-card-header">
+        <div className="wr-triage-urgency" style={{ background: urgencyColor }}>{item.urgency}</div>
+        <div className="wr-triage-category">{item.category}</div>
+      </div>
+      <div className="wr-triage-subject">{item.subject}</div>
+      <div className="wr-triage-summary">{item.summary}</div>
+      
+      {item.action_items.length > 0 && (
+        <div className="wr-triage-actions">
+          <div className="wr-triage-actions-label">Next Steps:</div>
+          {item.action_items.map((ai, idx) => (
+            <div key={idx} className="wr-triage-action-item">• {ai}</div>
+          ))}
+        </div>
+      )}
+      
+      <div className="wr-triage-replies">
+        {item.smart_replies.map((reply, idx) => (
+          <button 
+            key={idx} 
+            className="wr-triage-reply-btn"
+            onClick={() => onStartDraft(reply)}
+            title={reply}
+          >
+            {idx === 0 ? 'Short' : idx === 1 ? 'Detailed' : 'Decline'}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TriageBoard({ items, onStartDraft }: { items: TriageItem[], onStartDraft: (draft: string) => void }) {
+  const high = items.filter(i => i.urgency === 'High')
+  const med = items.filter(i => i.urgency === 'Medium')
+  const low = items.filter(i => i.urgency === 'Low')
+
+  return (
+    <div className="wr-triage-board">
+      <div className="wr-triage-column">
+        <div className="wr-triage-col-head urgent">Urgent ({high.length})</div>
+        <div className="wr-triage-col-list">
+          {high.map(item => <TriageCard key={item.id} item={item} onStartDraft={onStartDraft} />)}
+          {high.length === 0 && <div className="wr-triage-empty">Clear!</div>}
+        </div>
+      </div>
+      <div className="wr-triage-column">
+        <div className="wr-triage-col-head important">Important ({med.length})</div>
+        <div className="wr-triage-col-list">
+          {med.map(item => <TriageCard key={item.id} item={item} onStartDraft={onStartDraft} />)}
+          {med.length === 0 && <div className="wr-triage-empty">Empty</div>}
+        </div>
+      </div>
+      <div className="wr-triage-column">
+        <div className="wr-triage-col-head later">Later ({low.length})</div>
+        <div className="wr-triage-col-list">
+          {low.map(item => <TriageCard key={item.id} item={item} onStartDraft={onStartDraft} />)}
+          {low.length === 0 && <div className="wr-triage-empty">Empty</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function WriteDiffBlock({
   before,
   after,
   explanation,
   teaching,
+  extraction,
   followUp,
   suggestions,
   scores,
@@ -1057,6 +1240,7 @@ function WriteDiffBlock({
   englishVersion,
   outputLang,
   streaming,
+  isMorphing,
   jobId,
   chatId,
   mode,
@@ -1069,6 +1253,7 @@ function WriteDiffBlock({
   after: string
   explanation: string
   teaching?: AIJobResult['teaching']
+  extraction?: AIJobResult['extraction']
   followUp?: string
   suggestions?: string[]
   scores?: AIQualityScores
@@ -1076,6 +1261,7 @@ function WriteDiffBlock({
   englishVersion?: string | null
   outputLang?: OutputLang
   streaming?: boolean
+  isMorphing?: boolean
   jobId?: string | null
   chatId?: string | null
   mode?: WritingMode
@@ -1139,7 +1325,7 @@ function WriteDiffBlock({
   const afterReadability = computeReadability(renderAfterText)
 
   return (
-    <div className={`wr-diff-container${streaming ? ' streaming' : ''}`}>
+    <div className={`wr-diff-container${streaming ? ' streaming' : ''}${isMorphing ? ' morphing' : ''}`}>
       {!streaming && (
         <div className="wr-diff-before">
           <div className="wr-diff-header">
@@ -1229,6 +1415,14 @@ function WriteDiffBlock({
       </div>
 
       {!streaming && <ScoreCard scores={scores} prevScores={prevScores} />}
+
+      {!streaming && extraction?.meeting_request?.found && (
+        <MeetingCard meeting={extraction.meeting_request} />
+      )}
+
+      {!streaming && extraction?.action_items && extraction.action_items.length > 0 && (
+        <ActionChecklist items={extraction.action_items} />
+      )}
 
       {!streaming && (
         <div className="chat-insight wr-result-insight">
@@ -1392,6 +1586,127 @@ function wrapCanvasText(
     lines[lines.length - 1] = `${lines[lines.length - 1]}…`
   }
   return lines
+}
+
+function BrandVoiceModal({
+  open,
+  onClose,
+}: {
+  open: boolean
+  onClose: () => void
+}) {
+  const [examples, setExamples] = useState<VoiceExample[]>([])
+  const [loading, setLoading] = useState(false)
+  const [saving, setBusy] = useState(false)
+  const [newContent, setNewContent] = useState('')
+  const { showError } = useErrorToast()
+
+  const loadExamples = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/writeright/voice')
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setExamples(data.examples || [])
+    } catch {
+      showError('Failed to load style examples.')
+    } finally {
+      setLoading(false)
+    }
+  }, [showError])
+
+  useEffect(() => {
+    if (open) loadExamples()
+  }, [open, loadExamples])
+
+  const handleAdd = async () => {
+    if (newContent.length < 20) {
+      showError('Example is too short. Please provide at least 20 characters.')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/writeright/voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: newContent }),
+      })
+      if (!res.ok) throw new Error()
+      setNewContent('')
+      loadExamples()
+    } catch {
+      showError('Failed to save example.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch(`/api/writeright/voice/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      loadExamples()
+    } catch {
+      showError('Failed to delete example.')
+    }
+  }
+
+  if (!open) return null
+
+  return (
+    <div className="wr-modal-overlay" onClick={onClose}>
+      <div className="wr-modal-content wr-voice-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="wr-modal-header">
+          <div className="wr-modal-header-icon"><Fingerprint size={20} /></div>
+          <div>
+            <h3 className="wr-modal-title">Brand Voice DNA</h3>
+            <p className="wr-modal-subtitle">Train the AI with your personal writing style.</p>
+          </div>
+          <button className="wr-modal-close" onClick={onClose} aria-label="Close modal"><X size={20} /></button>
+        </div>
+
+        <div className="wr-voice-input-section">
+          <textarea
+            className="wr-voice-textarea"
+            placeholder="Paste your best-written email or a piece of text that perfectly captures your professional voice..."
+            value={newContent}
+            onChange={(e) => setNewContent(e.target.value)}
+            maxLength={2000}
+          />
+          <div className="wr-voice-input-footer">
+            <span className="wr-char-count">{newContent.length} / 2000</span>
+            <button 
+              className="wr-send-btn" 
+              onClick={handleAdd}
+              disabled={saving || newContent.length < 20}
+            >
+              {saving ? <Loader2 className="wr-spin" size={14} /> : 'Add to DNA'}
+            </button>
+          </div>
+        </div>
+
+        <div className="wr-voice-list">
+          <h4 className="wr-voice-list-title">Active Style Examples ({examples.length})</h4>
+          {loading ? (
+            <div className="wr-voice-loading"><Loader2 className="wr-spin" /></div>
+          ) : examples.length === 0 ? (
+            <div className="wr-voice-empty">No examples added yet. Your AI will use a standard professional voice.</div>
+          ) : (
+            <div className="wr-voice-scroll">
+              {examples.map((ex) => (
+                <div key={ex.id} className="wr-voice-item">
+                  <div className="wr-voice-item-content">{ex.content}</div>
+                  <button className="wr-voice-delete" onClick={() => handleDelete(ex.id)} aria-label="Delete example">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function ShareModal({
@@ -2033,14 +2348,30 @@ function spawnConfetti(target: HTMLElement) {
 const MILESTONES: Record<number, string> = { 5: '🏆 5 texts improved! You\u2019re warming up.', 10: '⚡ 10x writer! Building momentum.', 25: '🔥 25 improvements — you\u2019re on fire!', 50: '👑 50 texts! Writing mastery unlocked.' }
 
 
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay)
+    return () => clearTimeout(handler)
+  }, [value, delay])
+  return debouncedValue
+}
+
 export default function WriteRightPage() {
   const { getToken } = useAuth()
   const { toasts, dismiss, showError } = useErrorToast()
   const [input, setInput] = useState('')
   const [tone, setTone] = useState<ToneOption>('Professional')
   const [intensity, setIntensity] = useState(3)
+  const debouncedIntensity = useDebounce(intensity, 600)
+  const debouncedTone = useDebounce(tone, 600)
+  const [isMorphing, setIsMorphing] = useState(false)
   const [mode, setMode] = useState<WritingMode>('email')
   const [outputLang, setOutputLang] = useState<OutputLang>('en')
+  const [isTriageMode, setIsTriageMode] = useState(false)
+  const [triageItems, setTriageItems] = useState<TriageItem[]>([])
+  const [triageLoading, setTriageLoading] = useState(false)
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false)
   const [messages, setMessages] = useState<WriteRightMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [hasStarted, setHasStarted] = useState(false)
@@ -2049,6 +2380,93 @@ export default function WriteRightPage() {
   const [lastImprovedText, setLastImprovedText] = useState('')
   const [lastResultMeta, setLastResultMeta] = useState<{ mode: WritingMode; tone: ToneOption; chatId: string; jobId: string } | null>(null)
   const [resultAnnouncement, setResultAnnouncement] = useState('')
+
+  const handleMorph = useCallback(async (
+    lastMsg: Extract<WriteRightMessage, { kind: 'result' }>, 
+    newTone: ToneOption, 
+    newIntensity: number
+  ) => {
+    setIsMorphing(true)
+    const originalText = lastMsg.before
+    const currentText = lastMsg.jobResult.improved_text
+
+    try {
+      const response = await fetch('/api/writeright/morph', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatId,
+          original_text: originalText,
+          current_text: currentText,
+          tone: newTone,
+          intensity: newIntensity,
+          mode,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Morph failed')
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No reader')
+
+      let morphedText = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = new TextDecoder().decode(value)
+        morphedText += chunk
+        
+        setMessages((prev) => {
+          const next = [...prev]
+          const last = next[next.length - 1]
+          if (last && last.role === 'ai' && last.kind === 'result') {
+            last.jobResult = { ...last.jobResult, improved_text: morphedText }
+            last.tone = newTone
+            last.intensity = newIntensity
+          }
+          return next
+        })
+      }
+    } catch (err) {
+      console.error('[WriteRight] Morphing error:', err)
+    } finally {
+      setIsMorphing(false)
+    }
+  }, [chatId, mode])
+
+  const handleTriage = useCallback(async () => {
+    if (!input.trim() || triageLoading) return
+    setTriageLoading(true)
+    try {
+      const res = await fetch('/api/writeright/triage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_text: input, chatId }),
+      })
+      if (!res.ok) throw new Error('Triage failed')
+      const data: TriageResponse = await res.json()
+      setTriageItems(data.items)
+    } catch (err) {
+      console.error('[WriteRight] Triage error:', err)
+      showError('Failed to triage messages. Please try again.')
+    } finally {
+      setTriageLoading(false)
+    }
+  }, [input, chatId, triageLoading, showError])
+
+  // ── MORPHING EFFECT ──
+  useEffect(() => {
+    if (!chatId || messages.length === 0) return
+
+    const lastMsg = messages[messages.length - 1]
+    if (lastMsg.role !== 'ai' || lastMsg.kind !== 'result') return
+
+    // Don't morph if settings match the last generation or if we're currently loading/morphing
+    if (lastMsg.intensity === debouncedIntensity && lastMsg.tone === debouncedTone) return
+    if (loading || isMorphing) return
+
+    void handleMorph(lastMsg, debouncedTone, debouncedIntensity)
+  }, [debouncedIntensity, debouncedTone, chatId, loading, isMorphing, messages, handleMorph])
 
   const [chats, setChats] = useState<ChatListItem[]>([])
   
@@ -2186,7 +2604,6 @@ export default function WriteRightPage() {
   const [sharePayload, setSharePayload] = useState<SharePayload | null>(null)
 
   const [streamingText, setStreamingText] = useState('')
-  const [pipelineMessage, setPipelineMessage] = useState('')
   const [streamingBefore, setStreamingBefore] = useState('')
 
   const [fileBadge, setFileBadge] = useState<{ name: string; loading: boolean } | null>(null)
@@ -2352,10 +2769,11 @@ export default function WriteRightPage() {
     chatId?: string | null
     mode: WritingMode
     tone: ToneOption
+    intensity: number
     outputLang: OutputLang
     prevScores?: AIQualityScores
   }): WriteRightMessage => {
-    const { id, before, result, jobId, chatId: chatIdArg, mode: blockMode, tone: blockTone, outputLang: blockOutputLang, prevScores: blockPrevScores } = opts
+    const { id, before, result, jobId, chatId: chatIdArg, mode: blockMode, tone: blockTone, intensity: blockIntensity, outputLang: blockOutputLang, prevScores: blockPrevScores } = opts
     return {
       id: id ?? makeClientId('ai'),
       role: 'ai',
@@ -2366,6 +2784,7 @@ export default function WriteRightPage() {
       chatId: chatIdArg,
       mode: blockMode,
       tone: blockTone,
+      intensity: blockIntensity,
       outputLang: blockOutputLang,
       prevScores: blockPrevScores,
       timestamp: Date.now(),
@@ -2422,6 +2841,7 @@ export default function WriteRightPage() {
           const savedMode = (typeof metadata.mode === 'string' ? metadata.mode : chatMode) as WritingMode
           const savedTone = (typeof metadata.tone === 'string' ? metadata.tone : tone) as ToneOption
           const savedOutputLang = (typeof metadata.output_language === 'string' ? metadata.output_language : 'en') as OutputLang
+          const savedIntensity = (typeof metadata.intensity === 'number' ? metadata.intensity : 3)
           if (isUuidLike(jobId)) {
             latestMeta = { mode: savedMode, tone: savedTone, chatId: id, jobId }
           }
@@ -2433,6 +2853,7 @@ export default function WriteRightPage() {
             chatId: id,
             mode: savedMode,
             tone: savedTone,
+            intensity: savedIntensity,
             outputLang: savedOutputLang,
           })
           resultMessage.timestamp = m.created_at ? new Date(m.created_at).getTime() : Date.now()
@@ -2645,6 +3066,7 @@ export default function WriteRightPage() {
         chatId: activeChatId,
         mode,
         tone: toneToUse,
+        intensity,
         outputLang: submitOutputLang,
         prevScores,
       })
@@ -3206,7 +3628,41 @@ export default function WriteRightPage() {
                 >
                   {resultAnnouncement}
                 </div>
-                {messages.map((m, i) => {
+
+                {isTriageMode ? (
+                  <div className="wr-triage-container">
+                    <div className="wr-triage-header">
+                      <div className="wr-triage-header-text">
+                        <h2 className="wr-triage-title">Inbox Zero Triage</h2>
+                        <p className="wr-triage-subtitle">AI-segmented view of your bulk emails and threads.</p>
+                      </div>
+                      <button 
+                        className="wr-triage-run-btn"
+                        onClick={handleTriage}
+                        disabled={triageLoading || !input.trim()}
+                      >
+                        {triageLoading ? 'Analyzing…' : 'Run Triage'}
+                      </button>
+                    </div>
+                    {triageItems.length > 0 ? (
+                      <TriageBoard 
+                        items={triageItems} 
+                        onStartDraft={(draft) => {
+                          setInput(draft)
+                          setIsTriageMode(false)
+                        }}
+                      />
+                    ) : (
+                      <div className="wr-triage-welcome">
+                        <div className="wr-triage-welcome-icon">📥</div>
+                        <h3>Ready to triage?</h3>
+                        <p>Paste your bulk emails or a long thread below and click &quot;Run Triage&quot;.</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {messages.map((m, i) => {
                   const isLastAi = m.role === 'ai' && i === messages.map((msg) => msg.role).lastIndexOf('ai')
                   return (
                     <React.Fragment key={m.id}>
@@ -3229,7 +3685,9 @@ export default function WriteRightPage() {
                             <WriteDiffBlock
                               before={m.before}
                               after={m.jobResult.improved_text}
+                              isMorphing={isMorphing && i === messages.length - 1}
                               explanation={(() => {
+
                                 const explanationParts: string[] = []
                                 if (m.jobResult.teaching?.mistakes?.length) {
                                   explanationParts.push(m.jobResult.teaching.mistakes[0])
@@ -3295,8 +3753,10 @@ export default function WriteRightPage() {
                     </React.Fragment>
                   )
                 })}
+              </>
+            )}
 
-                {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} customMessage={pipelineMessage} />}
+            {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} />}
 
                 {loading && streamingText && (
                   <AIMessage
@@ -3520,6 +3980,24 @@ export default function WriteRightPage() {
                       }}
                     />
 
+                    <button 
+                      className={`chat-tool-btn${isTriageMode ? ' active' : ''}`}
+                      aria-label="Inbox Triage Board"
+                      title="Bulk Inbox Triage"
+                      onClick={() => setIsTriageMode(!isTriageMode)}
+                    >
+                      <Layout size={16} />
+                    </button>
+
+                    <button 
+                      className="chat-tool-btn"
+                      aria-label="Brand Voice DNA"
+                      title="Train AI Voice"
+                      onClick={() => setVoiceModalOpen(true)}
+                    >
+                      <Fingerprint size={16} />
+                    </button>
+
                     <button className="chat-tool-btn" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
                       <Paperclip size={16} />
                     </button>
@@ -3664,11 +4142,17 @@ export default function WriteRightPage() {
         onClose={() => setSaveModalOpen(false)}
         onSave={(name) => { void saveTemplateFromModal(name) }}
       />
-      <ShareModal
-        open={shareModalOpen}
-        payload={sharePayload}
-        onClose={() => setShareModalOpen(false)}
+      <ShareModal 
+        open={shareModalOpen} 
+        payload={sharePayload} 
+        onClose={() => setShareModalOpen(false)} 
       />
+
+      <BrandVoiceModal
+        open={voiceModalOpen}
+        onClose={() => setVoiceModalOpen(false)}
+      />
+
       <div className="wr-toast-container">
         {toasts.map((t) => (
           <div

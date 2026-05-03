@@ -239,6 +239,64 @@ For EACH mistake found, the better_versions entry must be the EXACT replacement 
 Example — mistake: 'Kindly revert at the earliest', better_version: 'Please respond by Friday'"""
 
 
+MORPH_PROMPT = """You are a real-time text morphing engine.
+Your task is to take a piece of text and adjust its tone and intensity while preserving the original meaning.
+
+Context:
+- Tone: {tone}
+- Intensity Level: {intensity} ({intensity_desc})
+- Mode: {mode}
+
+Rules:
+- Respond ONLY with the rewritten text.
+- Do NOT use JSON.
+- Do NOT use markdown or backticks.
+- Preserve the core intent of the original text.
+- If intensity is 1, make MINIMAL changes.
+- If intensity is 5, feel free to completely restructure for maximum impact in the target tone.
+
+Original Text:
+{original_text}
+
+Current Text (for reference):
+{current_text}
+
+Rewritten Text:"""
+
+
+TRIAGE_PROMPT = """You are an Inbox Triage Engine.
+Your task is to take a bulk text dump of multiple emails, threads, or messages and segment them into individual actionable items.
+
+For each distinct message or thread segment found in the text:
+1. Extract a concise 'subject'.
+2. Provide a 1-line 'summary'.
+3. Assign an 'urgency' level: "High", "Medium", or "Low".
+4. Assign a 'category': "Work", "Client", "Internal", "Spam", or "Personal".
+5. Extract 2-3 specific 'action_items' as a list of strings.
+6. Provide 3 'smart_replies' (Short, Detailed, Decline) as a list of strings.
+7. Include the 'original_segment' of text that this analysis belongs to.
+
+You MUST respond with ONLY a valid JSON object matching this schema:
+{{
+  "items": [
+    {{
+      "subject": "string",
+      "summary": "string",
+      "urgency": "High | Medium | Low",
+      "category": "Work | Client | Internal | Spam | Personal",
+      "action_items": ["string"],
+      "smart_replies": ["string"],
+      "original_segment": "string"
+    }}
+  ]
+}}
+
+Bulk Text Dump:
+{raw_text}
+
+JSON Output:"""
+
+
 REFINEMENT_PREFIX = (
     "You are refining a previous response. "
     "The last improved version was:\n\n{prev_improved_text}\n\n"
@@ -360,6 +418,7 @@ def build_messages(
     output_language: str,
     history: list[dict],  # type: ignore[type-arg]
     profile: list[str] | None = None,
+    voice_examples: list[str] | None = None,
     intensity: int = 3,
     max_history: int = 10,
     max_input_tokens: int = 4096,
@@ -394,6 +453,13 @@ def build_messages(
     if profile:
         profile_str = ", ".join(profile)
         system_prompt += f"\n\nPERSONALISED CONTEXT: This user repeatedly makes these mistakes: {profile_str}. Pay extra attention to fixing these patterns."
+
+    # 3.5. Inject Brand Voice Style DNA (RAG)
+    if voice_examples:
+        dna_block = "\n\nUSER STYLE DNA (Mimic this vocabulary, cadence, and sign-offs):\n"
+        for i, example in enumerate(voice_examples):
+            dna_block += f"Example {i+1}: \"{example}\"\n"
+        system_prompt += dna_block
 
     if _looks_like_reply_chain(sanitized):
         system_prompt += (
@@ -454,3 +520,37 @@ def build_messages(
     messages.append({"role": "user", "content": user_content})
 
     return messages, metadata
+
+
+def build_morph_messages(
+    original_text: str,
+    current_text: str,
+    tone: str,
+    intensity: int,
+    mode: str,
+) -> list[dict[str, str]]:
+    """Build a simple messages array for the high-speed morphing task."""
+    intensity_desc = INTENSITY_CONTEXT.get(intensity, "Standard")
+    
+    prompt = MORPH_PROMPT.format(
+        tone=tone,
+        intensity=intensity,
+        intensity_desc=intensity_desc,
+        mode=mode,
+        original_text=original_text,
+        current_text=current_text,
+    )
+    
+    return [
+        {"role": "system", "content": "You are a professional writing assistant focused on tone and intensity adjustment."},
+        {"role": "user", "content": prompt}
+    ]
+
+
+def build_triage_messages(raw_text: str) -> list[dict[str, str]]:
+    """Build a simple messages array for the bulk triage task."""
+    prompt = TRIAGE_PROMPT.format(raw_text=raw_text)
+    return [
+        {"role": "system", "content": "You are a specialized Inbox Triage Engine that outputs only valid JSON."},
+        {"role": "user", "content": prompt}
+    ]

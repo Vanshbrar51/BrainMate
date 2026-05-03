@@ -2,7 +2,7 @@ use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::header,
     middleware,
     response::IntoResponse,
@@ -18,6 +18,7 @@ use brainmate_auth_gateway::{
 use http::header::HeaderName;
 use http::{HeaderValue, Method, StatusCode};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
+use serde::Deserialize;
 use serde_json::json;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -186,6 +187,7 @@ async fn main() -> Result<()> {
         .route("/healthz/live", get(livez))
         .route("/healthz/ready", get(readyz))
         .route("/healthz/redis", get(redis_healthz))
+        .route("/v1/tools/calendar.ics", get(calendar_ics))
         .merge(protected_routes)
         .layer(SetResponseHeaderLayer::if_not_present(
             header::X_CONTENT_TYPE_OPTIONS,
@@ -341,6 +343,67 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
     response
 }
 
+#[derive(Debug, Deserialize)]
+struct CalendarQuery {
+    pub title: String,
+    pub time: String,
+    pub description: Option<String>,
+}
+
+async fn calendar_ics(Query(query): Query<CalendarQuery>) -> impl IntoResponse {
+    let now = chrono::Utc::now();
+    let stamp = now.format("%Y%m%dT%H%M%SZ").to_string();
+
+    let uid = uuid::Uuid::new_v4();
+
+    // Production-grade ICS escaping (Backslash, Comma, Semicolon, and Newlines)
+    let escape = |s: &str| -> String {
+        s.replace('\\', "\\\\")
+            .replace(',', "\\,")
+            .replace(';', "\\;")
+            .replace('\n', "\\n")
+            .replace('\r', "")
+    };
+
+    let safe_title = escape(&query.title);
+    let safe_time = escape(&query.time);
+    let safe_desc = query
+        .description
+        .as_deref()
+        .map(escape)
+        .unwrap_or_default();
+
+    let ics = format!(
+        "BEGIN:VCALENDAR\r\n\
+         VERSION:2.0\r\n\
+         PRODID:-//BrainMate AI//WriteRight//EN\r\n\
+         CALSCALE:GREGORIAN\r\n\
+         BEGIN:VEVENT\r\n\
+         UID:{}@brainmateai.com\r\n\
+         DTSTAMP:{}\r\n\
+         DTSTART:{}\r\n\
+         SUMMARY:{}\r\n\
+         DESCRIPTION:Meeting Time: {}\\n\\n{}\r\n\
+         TRANSP:OPAQUE\r\n\
+         END:VEVENT\r\n\
+         END:VCALENDAR\r\n",
+        uid, stamp, stamp, safe_title, safe_time, safe_desc
+    );
+
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "text/calendar; charset=utf-8"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"meeting.ics\"",
+            ),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        ics,
+    )
+}
+
 fn build_cors_layer(config: &Config) -> Result<CorsLayer> {
     let mut cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
@@ -403,7 +466,7 @@ fn validate_security_posture(config: &Config, internal_api_tokens: &[String]) ->
         anyhow::bail!("REQUIRE_TLS=true but TLS_CERT_PATH/TLS_KEY_PATH are not fully configured");
     }
 
-    if !config.bind_addr.ip().is_loopback() && !(has_tls_cert && has_tls_key) {
+    if !(config.bind_addr.ip().is_loopback() || has_tls_cert && has_tls_key) {
         if config.enforce_tls_for_public_listener {
             anyhow::bail!(
                 "ENFORCE_TLS_FOR_PUBLIC_LISTENER=true but TLS certs are not configured. Set TLS_CERT_PATH and TLS_KEY_PATH, or set AUTH_GATEWAY_BIND_ADDR to a loopback address for local development."

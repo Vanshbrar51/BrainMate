@@ -40,6 +40,7 @@ JOB_STATUS_PREFIX = "writeright:job:"
 JOB_RESULT_PREFIX = "writeright:result:"
 JOB_STREAM_PREFIX = "writeright:stream:"
 LOCK_PREFIX = "writeright:lock:"
+DEAD_LETTER_KEY = "writeright:jobs:dead"  # F-BE-12
 LOCK_TTL_SECS = settings.job_timeout_seconds * 3
 STATUS_TTL_SECS = 3600
 
@@ -327,6 +328,18 @@ async def _handle_failure(
             logger.exception(
                 "Failed to update Supabase job status for %s", job.id)
 
+        # F-BE-12: Push to dead letter queue for monitoring
+        try:
+            dead_entry = {
+                **job.model_dump(),
+                "failed_at": time.time(),
+                "final_error": error[:500],
+            }
+            await redis_client.zadd(DEAD_LETTER_KEY, {json.dumps(dead_entry): time.time()})
+            await redis_client.expire(DEAD_LETTER_KEY, 7 * 24 * 3600)  # 7-day retention
+        except Exception:
+            logger.warning("Failed to write to dead letter queue for job %s (non-fatal)", job.id)
+
         logger.error(
             '{"event": "job.failed", "job_id": "%s", "attempts": %d, "error": "%s"}',
             job.id,
@@ -365,9 +378,10 @@ async def _handle_failure(
 
 
 def _input_hash_for_cache(job: WritingJob) -> str:
-    cache_material = f"{
-        job.content}:{
-        job.tone}:{
-            job.mode}:{
-                job.output_language or 'en'}"
+    # BUG-02 FIX: intensity is a first-class cache dimension.
+    # Omitting it caused intensity=1 submissions to return intensity=5 cached results.
+    cache_material = (
+        f"{job.content}:{job.tone}:{job.mode}:"
+        f"{job.output_language or 'en'}:{job.intensity}"
+    )
     return hashlib.sha256(cache_material.encode("utf-8")).hexdigest()

@@ -29,6 +29,7 @@ import { getInternalApiTokenCandidates } from "@/lib/internal-api-token";
 import { context } from "@opentelemetry/api";
 import { type Redis } from "ioredis";
 import { getRedisPool, isCircuitOpen } from "@/lib/redis";
+import { logEvent, logError } from "@/lib/writeright-logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -154,7 +155,7 @@ export async function enqueueReconciliation(
     const idemKey = `${IDEM_PREFIX}${entry.id}`;
     const exists = await redis.exists(idemKey);
     if (exists) {
-      console.log(`[reconciliation] Operation ${entry.id} already queued (idempotent skip)`);
+      logEvent("reconciliation.idempotent_skip", { id: entry.id });
       return;
     }
 
@@ -165,7 +166,10 @@ export async function enqueueReconciliation(
     const score = Date.now();
     await redis.zadd(PENDING_QUEUE, score, JSON.stringify(entry));
 
-    console.log(`[reconciliation] Enqueued operation: ${entry.op.type} (id: ${entry.id})`);
+    logEvent("reconciliation.enqueued", { 
+      type: entry.op.type, 
+      id: entry.id 
+    });
 
     // Metrics
     incrementMetric("reconciliation_enqueued_total", { type: entry.op.type });
@@ -265,9 +269,11 @@ export async function processPendingOperations(): Promise<number> {
         circuitState.failures = 0;
         incrementMetric("reconciliation_processed_total", { type: entry.op.type });
 
-        console.log(
-          `[reconciliation] Processed ${entry.op.type} (id: ${entry.id}, attempt: ${entry.attempt})`,
-        );
+        logEvent("reconciliation.processed", {
+          type: entry.op.type,
+          id: entry.id,
+          attempt: entry.attempt
+        });
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         entry.lastError = errorMsg;
@@ -303,9 +309,12 @@ export async function processPendingOperations(): Promise<number> {
           await redis.del(lockKey);
           incrementMetric("reconciliation_retried_total", { type: entry.op.type });
 
-          console.warn(
-            `[reconciliation] Retry ${entry.attempt}/${entry.maxAttempts} for ${entry.op.type} (id: ${entry.id}) in ${delay}ms`,
-          );
+          logEvent("reconciliation.retry_scheduled", {
+            type: entry.op.type,
+            id: entry.id,
+            attempt: entry.attempt,
+            delayMs: delay
+          });
         }
       }
     }
@@ -537,9 +546,11 @@ function incrementMetric(name: string, labels: Record<string, string>): void {
     .map(([k, v]) => `${k}="${v}"`)
     .join(",");
   const traceId = getActiveTraceId();
-  console.log(
-    `[metric] ${name}{${labelStr}} +1${traceId ? ` trace_id=${traceId}` : ""}`,
-  );
+  logEvent("metric.increment", {
+    name,
+    labels,
+    traceId
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -567,7 +578,7 @@ export async function startWorker(): Promise<void> {
     return;
   }
 
-  console.log("[reconciliation] Worker started");
+  logEvent("reconciliation.worker_started");
 
   const shutdown = { requested: false };
   if (typeof process !== "undefined" && process.on) {
@@ -579,7 +590,7 @@ export async function startWorker(): Promise<void> {
     try {
       const processed = await processPendingOperations();
       if (processed > 0) {
-        console.log(`[reconciliation] Processed ${processed} operations`);
+        logEvent("reconciliation.batch_processed", { count: processed });
       }
     } catch (err) {
       console.error("[reconciliation] Worker iteration error:", err);
@@ -589,7 +600,7 @@ export async function startWorker(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
 
-  console.log("[reconciliation] Worker shutting down");
+  logEvent("reconciliation.worker_shutdown");
 }
 
 // ---------------------------------------------------------------------------

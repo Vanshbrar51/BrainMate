@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Optional
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -27,6 +28,24 @@ class TeachingBlock(BaseModel):
         default_factory=list,
         description="Why each mistake is a problem",
     )
+
+
+class MeetingRequest(BaseModel):
+    """Structured meeting request data."""
+
+    found: bool = Field(default=False)
+    title: Optional[str] = None
+    time: Optional[str] = None
+    intent: Optional[str] = None
+
+
+class ExtractionBlock(BaseModel):
+    """Actionable data extracted from the text."""
+
+    action_items: list[str] = Field(default_factory=list)
+    deadlines: list[str] = Field(default_factory=list)
+    monetary_values: list[str] = Field(default_factory=list)
+    meeting_request: MeetingRequest = Field(default_factory=MeetingRequest)
 
 
 class ScoreBlock(BaseModel):
@@ -64,6 +83,10 @@ class AIResult(BaseModel):
     teaching: TeachingBlock = Field(
         default_factory=TeachingBlock,
         description="Teaching feedback about the user's writing",
+    )
+    extraction: ExtractionBlock = Field(
+        default_factory=ExtractionBlock,
+        description="Actionable data extracted from the text",
     )
     follow_up: str = Field(
         default="",
@@ -127,3 +150,61 @@ class ModelResponse(BaseModel):
     completion_tokens: int = 0
     finish_reason: str = ""
     raw_response: dict = Field(default_factory=dict)  # type: ignore[type-arg]
+
+
+class MorphRequest(BaseModel):
+    """Payload for real-time text morphing."""
+
+    original_text: str
+    current_text: str
+    tone: str
+    intensity: int
+    mode: str
+    traceparent: Optional[str] = None
+
+
+class TriageItem(BaseModel):
+    """A single analyzed item from a bulk triage request."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()) if 'uuid' in globals() else "")
+    subject: str
+    summary: str
+    urgency: str = Field(description="High | Medium | Low")
+    category: str = Field(description="Work | Client | Internal | Spam | Personal")
+    smart_replies: list[str] = Field(default_factory=list)
+    action_items: list[str] = Field(default_factory=list)
+    original_segment: str = Field(description="The original part of the text for this item")
+
+
+class TriageResponse(BaseModel):
+    """Response containing multiple triaged items."""
+
+    items: list[TriageItem]
+
+
+class TriageRequest(BaseModel):
+    """Payload for bulk text triage."""
+
+    raw_text: str
+    traceparent: Optional[str] = None
+
+
+class VoiceIngestRequest(BaseModel):
+    """Payload to ingest a new writing example."""
+
+    user_id: str
+    content: str
+
+
+class VoiceExample(BaseModel):
+    """Writing style example metadata."""
+
+    id: str
+    content: str
+    created_at: str
+
+
+class VoiceListResponse(BaseModel):
+    """List of writing examples."""
+
+    examples: list[VoiceExample]

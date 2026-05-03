@@ -1,13 +1,15 @@
 # python-worker/app/services/model_router.py — AI model abstraction layer
 #
 # Routes tasks to appropriate AI models via Google AI Studio (OpenAI compatibility API).
-# Currently supports Google AI Studio only, designed for future multi-provider support.
+# Currently supports Google AI Studio (primary) and Anthropic (fallback).
 #
 # Features:
+#   - Per-task temperature configuration (BUG-09 FIX)
 #   - Exponential backoff on 429 (rate limit)
 #   - Timeout handling with ModelTimeoutError
 #   - W3C trace context propagation
 #   - Partial JSON handling on finish_reason == "length"
+#   - Anthropic fallback (F-BE-13)
 
 from __future__ import annotations
 
@@ -51,11 +53,25 @@ class ModelError(Exception):
 # Model Router
 # ---------------------------------------------------------------------------
 
+# BUG-09 FIX: task-specific temperatures.
+# Using 0.7 for JSON repair was causing "creative" fixes that failed parsing.
+# Translation needs low temperature for consistency.
+_TASK_TEMPERATURES: dict[str, float] = {
+    "write_improvement": 0.7,
+    "follow_up": 0.4,
+    "translation": 0.2,
+    "json_repair": 0.1,
+}
+
+
+def _temperature_for_task(task_type: str) -> float:
+    return _TASK_TEMPERATURES.get(task_type, 0.7)
+
 
 class ModelRouter:
     """Routes tasks to appropriate AI models.
 
-    Currently supports Google AI Studio only, designed for future multi-provider support.
+    Currently supports Google AI Studio (primary) and Anthropic (fallback).
     """
 
     def __init__(self) -> None:
@@ -84,7 +100,7 @@ class ModelRouter:
 
     async def route(
         self,
-        task_type: Literal["write_improvement", "follow_up", "translation"],
+        task_type: Literal["write_improvement", "follow_up", "translation", "json_repair"],
         messages: list[dict[str, str]],
         max_tokens: int = 0,
         traceparent: str | None = None,
@@ -92,7 +108,7 @@ class ModelRouter:
         """Route a task to the appropriate model via Google AI Studio.
 
         Args:
-            task_type: Type of task for model selection.
+            task_type: Type of task for model selection and temperature.
             messages: OpenAI-compatible messages array.
             max_tokens: Maximum output tokens. 0 = use default from settings.
             traceparent: W3C trace context for distributed tracing.
@@ -107,6 +123,8 @@ class ModelRouter:
         """
         model = self._select_model(task_type)
         effective_max_tokens = max_tokens or settings.max_output_tokens
+        # BUG-09 FIX: use task-specific temperature
+        temperature = _temperature_for_task(task_type)
 
         headers = {
             "Authorization": f"Bearer {settings.google_ai_studio_api_key}",
@@ -121,7 +139,7 @@ class ModelRouter:
             "model": model,
             "messages": messages,
             "max_tokens": effective_max_tokens,
-            "temperature": 0.7,
+            "temperature": temperature,
             # response_format is intentionally omitted: nvidia/nemotron-3-super does not
             # support json_object mode. JSON output is enforced via the system prompt instead.
         }
@@ -154,8 +172,7 @@ class ModelRouter:
                 if response.status_code != 200:
                     error_text = response.text[:500]
                     raise ModelError(
-                        f"Google AI Studio API error {
-                            response.status_code}: {error_text}")
+                        f"Google AI Studio API error {response.status_code}: {error_text}")
 
                 data = response.json()
                 choices = data.get("choices", [])
@@ -170,7 +187,7 @@ class ModelRouter:
                 if finish_reason == "length":
                     logger.warning(
                         "Output truncated (finish_reason=length) for model %s. "
-                        "Attempting to parse partial JSON.", model, )
+                        "Attempting to parse partial JSON.", model,)
 
                 usage = data.get("usage", {})
 
@@ -195,8 +212,7 @@ class ModelRouter:
                     await asyncio.sleep(backoff)
                     continue
                 raise ModelTimeoutError(
-                    f"Google AI Studio request timed out after {
-                        settings.job_timeout_seconds}s") from exc
+                    f"Google AI Studio request timed out after {settings.job_timeout_seconds}s") from exc
 
             except (httpx.HTTPError, httpx.StreamError) as exc:
                 if attempt < max_retries:
@@ -217,15 +233,18 @@ class ModelRouter:
 
     async def route_stream(
         self,
-        task_type: Literal["write_improvement", "follow_up", "translation"],
+        task_type: Literal["write_improvement", "follow_up", "translation", "json_repair"],
         messages: list[dict[str, str]],
         max_tokens: int = 0,
         traceparent: str | None = None,
         on_token: Callable[[str, str], Awaitable[None]] | None = None,
+        model_override: str | None = None,
     ) -> ModelResponse:
         """Route with streaming enabled and invoke callback for each token chunk."""
-        model = self._select_model(task_type)
+        model = model_override or self._select_model(task_type)
         effective_max_tokens = max_tokens or settings.max_output_tokens
+        # BUG-09 FIX: use task-specific temperature
+        temperature = _temperature_for_task(task_type)
 
         headers = {
             "Authorization": f"Bearer {settings.google_ai_studio_api_key}",
@@ -238,7 +257,7 @@ class ModelRouter:
             "model": model,
             "messages": messages,
             "max_tokens": effective_max_tokens,
-            "temperature": 0.7,
+            "temperature": temperature,
             "stream": True,
         }
 
@@ -326,8 +345,7 @@ class ModelRouter:
                     await asyncio.sleep(2 ** attempt)
                     continue
                 raise ModelTimeoutError(
-                    f"Google AI Studio streaming request timed out after {
-                        settings.job_timeout_seconds}s") from exc
+                    f"Google AI Studio streaming request timed out after {settings.job_timeout_seconds}s") from exc
             except (httpx.HTTPError, httpx.StreamError) as exc:
                 if attempt < max_retries:
                     await asyncio.sleep(2 ** attempt)
@@ -336,3 +354,96 @@ class ModelRouter:
                     f"Google AI Studio streaming HTTP error: {exc}") from exc
 
         raise ModelError("Exhausted all streaming retries")
+
+    # F-BE-13: Anthropic fallback provider
+    async def _route_anthropic(
+        self,
+        task_type: str,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        traceparent: str | None,
+        on_token: Callable[[str, str], Awaitable[None]] | None,
+    ) -> ModelResponse:
+        """Route to Anthropic Messages API as a fallback."""
+        temperature = _temperature_for_task(task_type)
+
+        # Anthropic requires system message to be separated from messages
+        system_content = ""
+        filtered_messages: list[dict[str, str]] = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_content = msg.get("content", "")
+            else:
+                filtered_messages.append(msg)
+
+        headers = {
+            "x-api-key": settings.anthropic_api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        if traceparent:
+            headers["traceparent"] = traceparent
+
+        payload: dict[str, object] = {
+            "model": settings.anthropic_fallback_model,
+            "messages": filtered_messages,
+            "max_tokens": max_tokens or settings.max_output_tokens,
+            "temperature": temperature,
+        }
+        if system_content:
+            payload["system"] = system_content
+
+        try:
+            response = await self._client.post(
+                f"{settings.anthropic_base_url}/messages",
+                headers=headers,
+                json=payload,
+            )
+
+            if response.status_code != 200:
+                raise ModelError(
+                    f"Anthropic API error {response.status_code}: {response.text[:500]}"
+                )
+
+            data = response.json()
+            content_blocks = data.get("content", [])
+            content = "".join(
+                block.get("text", "") for block in content_blocks if block.get("type") == "text"
+            )
+            usage = data.get("usage", {})
+
+            if on_token and content:
+                await on_token(content, content)
+
+            return ModelResponse(
+                content=content,
+                model=data.get("model", settings.anthropic_fallback_model),
+                prompt_tokens=usage.get("input_tokens", 0),
+                completion_tokens=usage.get("output_tokens", 0),
+                finish_reason=data.get("stop_reason", ""),
+                raw_response=data,
+            )
+        except (httpx.HTTPError, httpx.StreamError) as exc:
+            raise ModelError(f"Anthropic HTTP error: {exc}") from exc
+
+    async def route_with_fallback(
+        self,
+        task_type: Literal["write_improvement", "follow_up", "translation", "json_repair"],
+        messages: list[dict[str, str]],
+        max_tokens: int = 0,
+        traceparent: str | None = None,
+        on_token: Callable[[str, str], Awaitable[None]] | None = None,
+    ) -> ModelResponse:
+        """Route with automatic Anthropic fallback on primary provider failure (F-BE-13)."""
+        try:
+            return await self.route_stream(task_type, messages, max_tokens, traceparent, on_token)
+        except (ModelTimeoutError, ModelError) as primary_err:
+            if settings.enable_anthropic_fallback and settings.anthropic_api_key:
+                logger.warning(
+                    "Primary provider failed, trying Anthropic fallback: %s",
+                    str(primary_err),
+                )
+                return await self._route_anthropic(
+                    task_type, messages, max_tokens, traceparent, on_token
+                )
+            raise
