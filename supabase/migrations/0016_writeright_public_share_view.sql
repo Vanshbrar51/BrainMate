@@ -1,6 +1,5 @@
--- Materialized view for the public share page — pre-joins jobs and shares
--- Refreshed when a new share is created (via function call in share/route.ts)
--- Not strictly necessary but speeds up the public share endpoint significantly
+-- Drop the existing view first to allow changing the column structure
+DROP VIEW IF EXISTS writeright_public_shares CASCADE;
 
 CREATE OR REPLACE VIEW writeright_public_shares AS
 SELECT
@@ -16,4 +15,6 @@ JOIN writeright_ai_jobs j ON j.id = s.job_id
 WHERE s.expires_at > now()
   AND j.status = 'completed';
 
--- No RLS needed — this is a server-side view accessed only by the API route with service key
+-- Allow anonymous and authenticated users to read from this view
+GRANT SELECT ON writeright_public_shares TO anon;
+GRANT SELECT ON writeright_public_shares TO authenticated;

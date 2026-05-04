@@ -14,7 +14,7 @@ import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 
 type Tier = "free" | "pro" | "team";
 
-const TIER_LIMITS: Record<Tier, { requests: number; tokens: number }> = {
+export const TIER_LIMITS: Record<Tier, { requests: number; tokens: number }> = {
   free:  { requests: 50,    tokens: 200_000  },
   pro:   { requests: 500,   tokens: 2_000_000 },
   team:  { requests: 2_000, tokens: 10_000_000 },

@@ -24,6 +24,6 @@ CREATE OR REPLACE VIEW writeright_public_shares AS
     AND j.status = 'completed'
     AND c.deleted_at IS NULL;
 
--- Anon users can read from this view (no auth.uid() check — token is the secret)
-ALTER VIEW writeright_public_shares OWNER TO authenticated;
+-- Allow anonymous and authenticated users to read from this view
 GRANT SELECT ON writeright_public_shares TO anon;
+GRANT SELECT ON writeright_public_shares TO authenticated;

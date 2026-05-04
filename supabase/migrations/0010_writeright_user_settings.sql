@@ -1,6 +1,10 @@
 -- supabase/migrations/0010_writeright_user_settings.sql
 -- User tier settings for subscription-based quota enforcement (F-BE-01)
 
+-- Enable the moddatetime extension to support auto-updating updated_at columns
+CREATE EXTENSION IF NOT EXISTS moddatetime;
+
+
 CREATE TABLE IF NOT EXISTS writeright_user_settings (
   user_id     text        PRIMARY KEY,
   tier        text        NOT NULL DEFAULT 'free'
