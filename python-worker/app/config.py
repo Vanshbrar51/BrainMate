@@ -27,6 +27,9 @@ class Settings(BaseSettings):
         extra="ignore", # Allow extra env vars, common in shared test/dev environments
     )
 
+    # Security
+    internal_api_token: str = Field(..., description="env: INTERNAL_API_TOKEN")
+
     # Redis
     redis_url: str = "redis://127.0.0.1:6379"
 
@@ -37,10 +40,13 @@ class Settings(BaseSettings):
     # Google AI Studio (LLM API)
     google_ai_studio_api_key: str
     google_ai_studio_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
-    anthropic_api_key: str = ""
+    anthropic_api_key: str = Field(default="", description="env: ANTHROPIC_API_KEY")
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     anthropic_fallback_model: str = "claude-haiku-4-5-20251001"
-    enable_anthropic_fallback: bool = False
+    enable_anthropic_fallback: bool = Field(
+        default=False,
+        description="env: ENABLE_ANTHROPIC_FALLBACK",
+    )
     default_model: str = "gemini-2.5-flash"
     embedding_model: str = "text-embedding-004"
 
@@ -64,21 +70,9 @@ class Settings(BaseSettings):
 
     # Rate limiting (for worker-side safety)
     max_concurrent_llm_calls: int = 4
-    enable_critique_pipeline: bool = False  # env: ENABLE_CRITIQUE_PIPELINE
-
-    # BUG-03 FIX: critique pipeline toggle (was a hardcoded False constant in ai_worker.py)
     enable_critique_pipeline: bool = Field(
         default=False,
         description="env: ENABLE_CRITIQUE_PIPELINE",
-    )
-
-    # F-BE-13: Anthropic fallback provider
-    anthropic_api_key: str = Field(default="", description="env: ANTHROPIC_API_KEY")
-    anthropic_base_url: str = "https://api.anthropic.com/v1"
-    anthropic_fallback_model: str = "claude-haiku-4-5-20251001"
-    enable_anthropic_fallback: bool = Field(
-        default=False,
-        description="env: ENABLE_ANTHROPIC_FALLBACK",
     )
 
 

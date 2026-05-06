@@ -23,7 +23,7 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
-from app.config import settings
+from app.config import get_settings
 from app.models.job import WritingJob
 from app.services.ai_worker import process_job
 from app.services.supabase_client import update_job_status
@@ -41,7 +41,7 @@ JOB_RESULT_PREFIX = "writeright:result:"
 JOB_STREAM_PREFIX = "writeright:stream:"
 LOCK_PREFIX = "writeright:lock:"
 DEAD_LETTER_KEY = "writeright:jobs:dead"  # F-BE-12
-LOCK_TTL_SECS = settings.job_timeout_seconds * 3
+LOCK_TTL_SECS = get_settings().job_timeout_seconds * 3
 STATUS_TTL_SECS = 3600
 DEAD_LETTER_KEY = "writeright:jobs:dead"
 
@@ -143,7 +143,7 @@ async def consume_jobs(
     On max retries exceeded: mark as failed, publish error to result stream.
     """
     semaphore = asyncio.Semaphore(concurrency)
-    poll_interval = settings.worker_poll_interval_ms / 1000.0
+    poll_interval = get_settings().worker_poll_interval_ms / 1000.0
     active_tasks: set[asyncio.Task] = set()
 
     logger.info(
@@ -259,8 +259,8 @@ async def _process_job_safe(
             )
 
         result = await asyncio.wait_for(
-            process_job(job, on_stream_chunk=on_stream_chunk, on_status=on_status),
-            timeout=float(settings.job_timeout_seconds),
+            process_job(job, get_settings(), on_stream_chunk=on_stream_chunk, on_status=on_status),
+            timeout=float(get_settings().job_timeout_seconds),
         )
 
         # 4. Success — update status and publish result
@@ -297,11 +297,11 @@ async def _process_job_safe(
         logger.error(
             "Job %s timed out after %ds",
             job.id,
-            settings.job_timeout_seconds)
+            get_settings().job_timeout_seconds)
         await _handle_failure(
             redis_client=redis_client,
             job=job,
-            error=f"Job timed out after {settings.job_timeout_seconds}s",
+            error=f"Job timed out after {get_settings().job_timeout_seconds}s",
         )
 
     except Exception as exc:
@@ -325,7 +325,7 @@ async def _handle_failure(
     """Handle job failure: retry with backoff or move to failed state."""
     job.attempt += 1
 
-    if job.attempt >= settings.job_max_retries:
+    if job.attempt >= get_settings().job_max_retries:
         # Exhausted retries — mark as permanently failed
         await _set_job_status(
             redis_client,

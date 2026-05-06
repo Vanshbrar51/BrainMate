@@ -29,7 +29,7 @@ import { getInternalApiTokenCandidates } from "@/lib/internal-api-token";
 import { context } from "@opentelemetry/api";
 import { type Redis } from "ioredis";
 import { getRedisPool, isCircuitOpen } from "@/lib/redis";
-import { logEvent, logError } from "@/lib/writeright-logger";
+import { logEvent } from "@/lib/writeright-logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -541,10 +541,7 @@ async function setSessionVersion(
 
 function incrementMetric(name: string, labels: Record<string, string>): void {
   // In production, this would increment a Prometheus counter
-  // For now, log the metric
-  const labelStr = Object.entries(labels)
-    .map(([k, v]) => `${k}="${v}"`)
-    .join(",");
+  // For now, log the metric via logEvent
   const traceId = getActiveTraceId();
   logEvent("metric.increment", {
     name,

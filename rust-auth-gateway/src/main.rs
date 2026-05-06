@@ -1,42 +1,20 @@
-use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
-use axum::{
-    extract::{Query, State},
-    http::header,
-    middleware,
-    response::IntoResponse,
-    routing::{delete, get, post},
-    Json, Router,
-};
 use axum_server::tls_rustls::RustlsConfig;
-use brainmate_auth_gateway::{
-    auth, build_state,
-    config::{validate_redis_url_security, Config},
-    telemetry, AppState,
-};
-use http::header::HeaderName;
-use http::{HeaderValue, Method, StatusCode};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
-use serde::Deserialize;
-use serde_json::json;
-use tower_http::{
-    cors::{Any, CorsLayer},
-    limit::RequestBodyLimitLayer,
-    set_header::SetResponseHeaderLayer,
-    timeout::TimeoutLayer,
-    trace::TraceLayer,
+use tracing::{error, info, warn, Instrument};
+
+use brainmate_auth_gateway::{
+    build_state,
+    config::Config,
+    telemetry,
 };
-use tracing::Instrument;
-use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize OpenTelemetry tracing
+    // ── Setup ──────────────────────────────────────────────────────────────
     dotenv::dotenv().ok();
-    
-    
-
     telemetry::init_tracing()?;
 
     install_crypto_provider()?;
@@ -61,12 +39,7 @@ async fn main() -> Result<()> {
         tls_enabled = config.tls_cert_path.is_some(),
         enforce_tls = config.enforce_tls_for_public_listener,
         secret_provider = std::env::var("SECRET_PROVIDER").unwrap_or_else(|_| "env".to_string()),
-        redis_url_masked = mask_redis_url(&config.redis_primary_url),
         region_id = %config.region_id,
-        rate_limit_burst = config.rate_limit_burst,
-        rate_limit_per_sec = config.rate_limit_per_sec,
-        max_sessions_per_user = config.max_sessions_per_user,
-        reconciliation_worker = config.enable_reconciliation_worker,
         "gateway starting"
     );
 
@@ -98,7 +71,6 @@ async fn main() -> Result<()> {
     }
 
     // Run pending database migrations when DATABASE_URL is configured.
-    // This is a no-op when the DB is already up-to-date.
     if let Ok(db_url) = std::env::var("DATABASE_URL") {
         if !db_url.trim().is_empty() {
             info!("DATABASE_URL configured; connecting to run migrations");
@@ -130,7 +102,6 @@ async fn main() -> Result<()> {
 
     let mut recon_shutdown_tx = None;
     if config.enable_reconciliation_worker {
-        // Spawn reconciliation worker for durable async retry.
         let (tx, recon_shutdown_rx) = tokio::sync::watch::channel(false);
         let recon_worker = Arc::new(
             brainmate_auth_gateway::reconciliation::ReconciliationWorker::new(
@@ -151,72 +122,8 @@ async fn main() -> Result<()> {
         warn!("jwks warmup failed at startup: {err}");
     }
 
-    let cors = build_cors_layer(&config)?;
-
-    let protected_routes = Router::new()
-        .route("/v1/auth/session", get(auth::session))
-        .route("/v1/auth/logout", post(auth::logout))
-        .with_state(state.clone())
-        .route_layer(middleware::from_fn({
-            let state = state.clone();
-            move |request, next| {
-                let state = state.clone();
-                async move { auth::require_auth(state, request, next).await }
-            }
-        }));
-
-    let internal_routes = Router::new()
-        .route("/v1/auth/session", post(auth::create_session))
-        .route("/v1/auth/session/{sid}", delete(auth::revoke_session))
-        .route("/v1/auth/refresh/issue", post(auth::issue_refresh))
-        .route("/v1/auth/refresh/rotate", post(auth::rotate_refresh))
-        .route("/v1/auth/refresh/revoke", post(auth::revoke_refresh))
-        .route("/v1/auth/otp/issue", post(auth::issue_otp))
-        .route("/v1/auth/otp/verify", post(auth::verify_otp))
-        .route_layer(middleware::from_fn({
-            let state = state.clone();
-            move |request, next| {
-                let state = state.clone();
-                async move { auth::require_internal_api_access(state, request, next).await }
-            }
-        }))
-        .with_state(state.clone());
-
-    let app = Router::new()
-        .route("/healthz", get(readyz))
-        .route("/healthz/live", get(livez))
-        .route("/healthz/ready", get(readyz))
-        .route("/healthz/redis", get(redis_healthz))
-        .route("/v1/tools/calendar.ics", get(calendar_ics))
-        .merge(protected_routes)
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::X_CONTENT_TYPE_OPTIONS,
-            HeaderValue::from_static("nosniff"),
-        ))
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::X_FRAME_OPTIONS,
-            HeaderValue::from_static("DENY"),
-        ))
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::REFERRER_POLICY,
-            HeaderValue::from_static("strict-origin-when-cross-origin"),
-        ))
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'; base-uri 'none'"),
-        ))
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::STRICT_TRANSPORT_SECURITY,
-            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
-        ))
-        .layer(RequestBodyLimitLayer::new(config.request_body_limit_bytes))
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(config.request_timeout_secs),
-        ))
-        .layer(TraceLayer::new_for_http())
-        .layer(cors)
-        .with_state(state.clone());
+    let app = brainmate_auth_gateway::router::create_router(state.clone());
+    let internal_routes = brainmate_auth_gateway::router::create_internal_router(state.clone());
 
     let internal_listener = tokio::net::TcpListener::bind(config.internal_bind_addr).await?;
     info!(
@@ -251,8 +158,7 @@ async fn main() -> Result<()> {
                     .handle(handle)
                     .serve(app.into_make_service_with_connect_info::<SocketAddr>())
                     .await
-                    .map_err(anyhow::Error::from)?;
-                Ok(())
+                    .map_err(|e| anyhow::anyhow!("TLS server error: {e}"))
             })
         } else {
             let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;
@@ -264,239 +170,21 @@ async fn main() -> Result<()> {
                 )
                 .with_graceful_shutdown(shutdown_signal())
                 .await
-                .map_err(anyhow::Error::from)?;
-                Ok(())
+                .map_err(|e| anyhow::anyhow!("Public server error: {e}"))
             })
         };
 
-    let (public_res, internal_res) = tokio::join!(public_server, internal_server);
-    public_res?;
-    internal_res?;
+    tokio::select! {
+        res = public_server => res?,
+        res = internal_server => res.map_err(|e| anyhow::anyhow!("Internal server error: {e}"))?,
+    }
 
     if let Some(tx) = recon_shutdown_tx {
         let _ = tx.send(true);
-        tokio::time::sleep(Duration::from_secs(2)).await;
     }
 
-    // Flush all buffered OpenTelemetry spans before shutdown
-    telemetry::shutdown_tracing();
-
-    state.redis.quit().await;
-
+    info!("gateway shutdown complete");
     Ok(())
-}
-
-use uuid::Uuid;
-
-async fn livez() -> impl IntoResponse {
-    let request_id = Uuid::new_v4().to_string();
-    let mut response = Json(json!({ "status": "ok", "probe": "live" })).into_response();
-    if let Ok(val) = HeaderValue::from_str(&request_id) {
-        response.headers_mut().insert("x-request-id", val);
-    }
-    response
-}
-
-async fn redis_healthz(State(state): State<AppState>) -> impl IntoResponse {
-    let request_id = Uuid::new_v4().to_string();
-    let pong = state.redis.ping().await;
-    let status = if pong {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    };
-    let body = json!({
-        "status": if pong { "ok" } else { "unavailable" },
-        "redis": pong,
-        "probe": "redis",
-    });
-    let mut response = (status, Json(body)).into_response();
-    if let Ok(val) = HeaderValue::from_str(&request_id) {
-        response.headers_mut().insert("x-request-id", val);
-    }
-    response
-}
-
-async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
-    let jwks_cache_value = state.redis.get_string("jwks:cache").await;
-    let redis_ready = jwks_cache_value.is_ok();
-    let jwks_ready = jwks_cache_value.ok().flatten().is_some();
-
-    let ready = redis_ready && jwks_ready;
-    let body = json!({
-        "status": if ready { "ready" } else { "degraded" },
-        "probe": "ready",
-        "redis": redis_ready,
-        "jwks": jwks_ready,
-    });
-
-    let request_id = Uuid::new_v4().to_string();
-    let status = if ready {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    };
-    let mut response = (status, Json(body)).into_response();
-    if let Ok(val) = HeaderValue::from_str(&request_id) {
-        response.headers_mut().insert("x-request-id", val);
-    }
-    response
-}
-
-#[derive(Debug, Deserialize)]
-struct CalendarQuery {
-    pub title: String,
-    pub time: String,
-    pub description: Option<String>,
-}
-
-async fn calendar_ics(Query(query): Query<CalendarQuery>) -> impl IntoResponse {
-    let now = chrono::Utc::now();
-    let stamp = now.format("%Y%m%dT%H%M%SZ").to_string();
-
-    let uid = uuid::Uuid::new_v4();
-
-    // Production-grade ICS escaping (Backslash, Comma, Semicolon, and Newlines)
-    let escape = |s: &str| -> String {
-        s.replace('\\', "\\\\")
-            .replace(',', "\\,")
-            .replace(';', "\\;")
-            .replace('\n', "\\n")
-            .replace('\r', "")
-    };
-
-    let safe_title = escape(&query.title);
-    let safe_time = escape(&query.time);
-    let safe_desc = query
-        .description
-        .as_deref()
-        .map(escape)
-        .unwrap_or_default();
-
-    let ics = format!(
-        "BEGIN:VCALENDAR\r\n\
-         VERSION:2.0\r\n\
-         PRODID:-//BrainMate AI//WriteRight//EN\r\n\
-         CALSCALE:GREGORIAN\r\n\
-         BEGIN:VEVENT\r\n\
-         UID:{}@brainmateai.com\r\n\
-         DTSTAMP:{}\r\n\
-         DTSTART:{}\r\n\
-         SUMMARY:{}\r\n\
-         DESCRIPTION:Meeting Time: {}\\n\\n{}\r\n\
-         TRANSP:OPAQUE\r\n\
-         END:VEVENT\r\n\
-         END:VCALENDAR\r\n",
-        uid, stamp, stamp, safe_title, safe_time, safe_desc
-    );
-
-    (
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "text/calendar; charset=utf-8"),
-            (
-                header::CONTENT_DISPOSITION,
-                "attachment; filename=\"meeting.ics\"",
-            ),
-            (header::CACHE_CONTROL, "no-store"),
-        ],
-        ics,
-    )
-}
-
-fn build_cors_layer(config: &Config) -> Result<CorsLayer> {
-    let mut cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
-        .allow_headers([
-            header::AUTHORIZATION,
-            header::CONTENT_TYPE,
-            header::ACCEPT,
-            HeaderName::from_static("traceparent"),
-            HeaderName::from_static("tracestate"),
-            HeaderName::from_static("baggage"),
-            HeaderName::from_static("x-request-nonce"),
-            HeaderName::from_static("x-device-fingerprint"),
-            HeaderName::from_static("x-request-id"),
-            HeaderName::from_static("x-waf-client-id"),
-            HeaderName::from_static("x-client-region"),
-        ]);
-
-    if config.allowed_origins.iter().any(|origin| origin == "*") {
-        if !config.allow_wildcard_cors {
-            anyhow::bail!(
-                "Wildcard CORS is blocked. Set ALLOW_WILDCARD_CORS=true only for local development."
-            );
-        }
-        cors = cors.allow_origin(Any);
-    } else {
-        let origins = config
-            .allowed_origins
-            .iter()
-            .map(|origin| HeaderValue::from_str(origin))
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        cors = cors.allow_origin(origins);
-    }
-
-    Ok(cors)
-}
-
-fn validate_security_posture(config: &Config, internal_api_tokens: &[String]) -> Result<()> {
-    let has_tls_cert = config.tls_cert_path.is_some();
-    let has_tls_key = config.tls_key_path.is_some();
-
-    if has_tls_cert ^ has_tls_key {
-        anyhow::bail!("TLS_CERT_PATH and TLS_KEY_PATH must both be set when enabling TLS");
-    }
-
-    if internal_api_tokens.is_empty() {
-        anyhow::bail!(
-            "INTERNAL_API_TOKENS (or INTERNAL_API_TOKEN/INTERNAL_API_TOKENS_FILE) is required"
-        );
-    }
-
-    if config.request_body_limit_bytes == 0 {
-        anyhow::bail!("REQUEST_BODY_LIMIT_BYTES must be greater than zero");
-    }
-
-    if !config.internal_bind_addr.ip().is_loopback() {
-        anyhow::bail!("AUTH_GATEWAY_INTERNAL_BIND_ADDR must be loopback-only for security");
-    }
-
-    if config.require_tls && !(has_tls_cert && has_tls_key) {
-        anyhow::bail!("REQUIRE_TLS=true but TLS_CERT_PATH/TLS_KEY_PATH are not fully configured");
-    }
-
-    if !(config.bind_addr.ip().is_loopback() || has_tls_cert && has_tls_key) {
-        if config.enforce_tls_for_public_listener {
-            anyhow::bail!(
-                "ENFORCE_TLS_FOR_PUBLIC_LISTENER=true but TLS certs are not configured. Set TLS_CERT_PATH and TLS_KEY_PATH, or set AUTH_GATEWAY_BIND_ADDR to a loopback address for local development."
-            );
-        } else {
-            warn!(
-                "Public auth listener is not loopback and TLS is disabled. Set ENFORCE_TLS_FOR_PUBLIC_LISTENER=true and configure TLS for production."
-            );
-        }
-    }
-
-    if !config.metrics_bind_addr.ip().is_loopback() {
-        warn!("metrics endpoint is not loopback-only; restrict AUTH_GATEWAY_METRICS_BIND_ADDR");
-    }
-
-    if !(30..=60).contains(&config.auth_cache_ttl_secs) {
-        anyhow::bail!("AUTH_CACHE_TTL_SECS must be between 30 and 60");
-    }
-
-    if config.jwks_soft_ttl_secs == 0 || config.jwks_soft_ttl_secs > config.jwks_hard_ttl_secs {
-        anyhow::bail!("JWKS_SOFT_TTL_SECS must be > 0 and <= JWKS_HARD_TTL_SECS");
-    }
-
-    validate_redis_url_security(&config.redis_primary_url)?;
-
-    Ok(())
-}
-
-fn mask_redis_url(url: &str) -> String {
-    brainmate_auth_gateway::redis_client::mask_redis_url(url)
 }
 
 async fn load_internal_api_tokens(config: &Config) -> Result<Vec<String>> {
@@ -523,7 +211,7 @@ async fn load_internal_api_tokens(config: &Config) -> Result<Vec<String>> {
     Ok(normalized)
 }
 
-fn spawn_internal_token_reloader(state: AppState, path: String) {
+fn spawn_internal_token_reloader(state: brainmate_auth_gateway::AppState, path: String) {
     tokio::spawn(
         async move {
             let static_tokens = {
@@ -596,6 +284,7 @@ fn parse_token_list(raw: &str) -> Vec<String> {
 }
 
 fn normalize_tokens(tokens: Vec<String>) -> Vec<String> {
+    use std::collections::HashSet;
     let mut seen = HashSet::new();
     let mut normalized = Vec::new();
 
@@ -614,10 +303,7 @@ fn normalize_tokens(tokens: Vec<String>) -> Vec<String> {
 }
 
 fn install_crypto_provider() -> Result<()> {
-    // rustls may compile with multiple crypto backends in this workspace.
-    // Install one explicitly at process start to avoid runtime panics.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-
     jsonwebtoken::crypto::rust_crypto::DEFAULT_PROVIDER
         .install_default()
         .map_err(|_| anyhow::anyhow!("Failed to install rust_crypto provider"))?;
@@ -648,4 +334,23 @@ async fn shutdown_signal() {
     }
 
     info!("signal received, waiting for in-flight requests to complete");
+}
+
+fn validate_security_posture(config: &Config, internal_api_tokens: &[String]) -> Result<()> {
+    let has_tls_cert = config.tls_cert_path.is_some();
+    let has_tls_key = config.tls_key_path.is_some();
+
+    if has_tls_cert ^ has_tls_key {
+        anyhow::bail!("TLS_CERT_PATH and TLS_KEY_PATH must both be set when enabling TLS");
+    }
+
+    if config.require_tls && !has_tls_cert {
+        anyhow::bail!("REQUIRE_TLS is set but no TLS certificates are provided");
+    }
+
+    if internal_api_tokens.len() < 1 {
+        anyhow::bail!("INTERNAL_API_TOKEN must be configured for internal services");
+    }
+
+    Ok(())
 }

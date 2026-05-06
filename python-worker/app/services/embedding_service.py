@@ -7,7 +7,7 @@ import logging
 import httpx
 from typing import List
 
-from app.config import settings
+from app.config import get_settings
 
 logger = logging.getLogger("writeright.embedding_service")
 
@@ -16,7 +16,7 @@ class EmbeddingService:
     """Client for generating text embeddings via Google AI Studio."""
 
     def __init__(self) -> None:
-        self.api_key = settings.google_ai_studio_api_key
+        self.api_key = get_settings().google_ai_studio_api_key
         # Deriving the base URL for the native Google AI Studio API (non-OpenAI)
         # OpenAI: .../v1beta/openai
         # Native: .../v1beta/models/{model}:embedContent
@@ -33,7 +33,7 @@ class EmbeddingService:
         Returns:
             List of 768 floats (standard for text-embedding-004).
         """
-        model = settings.embedding_model
+        model = get_settings().embedding_model
         url = f"{self.base_url}/models/{model}:embedContent?key={self.api_key}"
 
         payload = {

@@ -1,18 +1,28 @@
-# python-worker/conftest.py
+import os
 import pytest
-from unittest.mock import patch, AsyncMock
+import pytest_asyncio
+from unittest.mock import patch, AsyncMock, MagicMock
 
-# This fixture will ensure that app.config.settings is mocked for all tests.
-# It patches the module-level 'settings' object in app/config.py
-# This is crucial because 'settings' is a singleton loaded at import time.
-@pytest.fixture(scope="session", autouse=True)
-def mock_global_settings():
-    with patch("app.config.settings", AsyncMock()) as mock_s:
-        # Provide mock values for required settings
-        mock_s.internal_api_token = "test-token"
-        mock_s.supabase_url = "http://mock.supabase.url"
-        mock_s.supabase_service_key = "mock-supabase-key"
-        mock_s.google_ai_studio_api_key = "mock-google-key"
-        mock_s.embedding_model = "mock-embedding-model"
-        # Add other required settings here if needed
-        yield mock_s
+# Set required environment variables BEFORE importing app code
+os.environ["INTERNAL_API_TOKEN"] = "test-token"
+os.environ["SUPABASE_URL"] = "http://mock.supabase.url"
+os.environ["SUPABASE_SERVICE_KEY"] = "mock-supabase-key"
+os.environ["GOOGLE_AI_STUDIO_API_KEY"] = "mock-google-key"
+os.environ["OTEL_ENDPOINT"] = "" # Disable OTel in tests
+
+# DO NOT mock settings globally, use the environment variables
+# This avoids MagicMock serialization issues.
+
+@pytest.fixture(scope="session")
+def app():
+    # Ensure settings are loaded with our env vars
+    from app.config import get_settings
+    get_settings() # Initialize settings
+    from main import app
+    return app
+
+@pytest_asyncio.fixture
+async def client(app):
+    from httpx import AsyncClient, ASGITransport
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac

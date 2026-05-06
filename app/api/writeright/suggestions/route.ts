@@ -2,8 +2,8 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { getRedisPool, ns, isCircuitOpen } from "@/lib/redis";
-import { withSpan, addSpanAttributes, traceLogFields } from "@/lib/tracing";
-import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
+import { withSpan, addSpanAttributes } from "@/lib/tracing";
+import { withErrorHandler, createApiError, WriteRightError } from "@/lib/writeright-errors";
 
 export async function GET(req: Request) {
   return withErrorHandler(req, async () => {
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
           if (count === 1) await redis.expire(limitKey, 60);
           if (count > 30) throw createApiError("RATE_LIMITED", "Rate limit exceeded", 429);
         } catch (err) {
-            if (err instanceof Error && err.name === "WriteRightError") throw err;
+            if (err instanceof WriteRightError) throw err;
         }
       }
 
@@ -41,7 +41,9 @@ export async function GET(req: Request) {
               const cacheKey = ns("writeright", "suggestions", jobId);
               const cached = await redis.get(cacheKey);
               if (cached) return NextResponse.json(JSON.parse(cached));
-          } catch(err) {}
+          } catch {
+              // Ignore cache read errors
+          }
       }
 
       // 3. Get Improved Text
@@ -59,9 +61,7 @@ export async function GET(req: Request) {
            return NextResponse.json({ suggestions: ["Make it formal", "Make it shorter", "Fix grammar"] });
       }
 
-      // 4. Fast AI call (Simulated for this implementation since we don't have the ai service logic directly accessible here in the same way, we return static or basic dynamic suggestions based on content length/type. In a real scenario, this would use a fast model like haiku).
-      // Since instructions say: "Calls AI with a lightweight prompt", we will do a direct call to gemini here, or return static ones if not configured.
-
+      // 4. Fast AI call
       let suggestions = ["Make it formal", "Make it shorter", "Fix grammar"];
       try {
         const apiKey = process.env.GOOGLE_AI_STUDIO_API_KEY;
@@ -73,7 +73,7 @@ export async function GET(req: Request) {
                    "Content-Type": "application/json"
                },
                body: JSON.stringify({
-                   model: "gemini-2.5-flash",
+                   model: "gemini-2.0-flash", // Use stable model name
                    messages: [
                        { role: "system", content: "You are an AI assistant. Given the text, suggest exactly 3 specific next edits as short action chips (≤ 8 words each). Return a JSON array of strings: [\"suggestion 1\", \"suggestion 2\", \"suggestion 3\"]" },
                        { role: "user", content: text }
@@ -95,7 +95,7 @@ export async function GET(req: Request) {
            }
         }
       } catch (err) {
-          console.error("AI suggestions failed, falling back", err);
+          console.error("[api.writeright.suggestions] AI call failed:", err);
       }
 
       // 5. Cache result
@@ -104,7 +104,9 @@ export async function GET(req: Request) {
           try {
               const redis = getRedisPool();
               await redis.setex(ns("writeright", "suggestions", jobId), 600, JSON.stringify(result));
-          } catch(err){}
+          } catch {
+              // Ignore cache write errors
+          }
       }
 
       return NextResponse.json(result);

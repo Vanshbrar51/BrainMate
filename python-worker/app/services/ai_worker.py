@@ -22,7 +22,7 @@ from collections import Counter
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.config import get_settings
+from app.config import get_settings, settings
 from app.models.job import WritingJob, AIResult, TeachingBlock, ScoreBlock
 from app.services.prompt_builder import build_messages
 from app.services.model_router import ModelRouter
@@ -428,7 +428,7 @@ async def _generate_draft(
         voice_examples=voice_examples,
         intensity=job.intensity,
         max_history=10,
-        max_input_tokens=settings.max_input_tokens,
+        max_input_tokens=settings_instance.max_input_tokens,
     )
 
     if prompt_metadata.get("injection_detected"):
@@ -443,7 +443,7 @@ async def _generate_draft(
     model_response = await router.route_stream(
         task_type="write_improvement",
         messages=messages,
-        max_tokens=settings.max_output_tokens,
+        max_tokens=settings_instance.max_output_tokens,
         traceparent=job.traceparent,
         on_token=on_stream_chunk,
     )
@@ -457,10 +457,13 @@ async def _generate_draft(
         mode=job.mode,
     )
 
-    # AI-02: If result fell back to raw content, attempt repair
+    # AI-02: If result fell back to raw content or regex fallback, attempt repair
+    # Regex fallback often results in improved_text being a subset of content.
+    # We trigger repair if the parse failed to get a full structured result.
     if (
         result.improved_text == model_response.content.strip()
         or result.improved_text == "Unable to process your request. Please try again."
+        or result.teaching.mistakes == [] # Sign of regex fallback/failed parse
     ):
         logger.info("Attempting JSON repair for job %s", job.id)
         repaired = await _repair_json_response(model_response.content, router)
@@ -483,6 +486,7 @@ async def _generate_draft(
 async def _generate_critique_and_revision(
     draft_result: AIResult,
     job: WritingJob,
+    settings_instance: Settings,
 ) -> AIResult:
     """Phase 2 Critique Layer: Second LLM pass to refine the draft."""
     router = get_model_router()
@@ -506,7 +510,7 @@ async def _generate_critique_and_revision(
         model_response = await router.route(
             task_type="write_improvement",
             messages=messages,
-            max_tokens=settings.max_output_tokens,
+            max_tokens=settings_instance.max_output_tokens,
         )
 
         result = _parse_ai_response(
@@ -665,10 +669,10 @@ async def process_job(
         on_stream_chunk=on_stream_chunk,
     )
 
-    if settings.enable_critique_pipeline:
+    if settings_instance.enable_critique_pipeline:
         if on_status:
             await on_status("critiquing")
-        result = await _generate_critique_and_revision(result, job)
+        result = await _generate_critique_and_revision(result, job, settings_instance)
 
     if on_status:
         await on_status("finalizing")

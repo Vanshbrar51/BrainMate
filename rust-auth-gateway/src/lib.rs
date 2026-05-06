@@ -17,6 +17,7 @@ pub mod risk_engine;
 pub mod secrets;
 pub mod security_utils;
 pub mod session_store;
+pub mod router;
 pub mod telemetry;
 pub mod waf_feedback;
 
@@ -25,11 +26,12 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use tokio::sync::RwLock;
 
-use crate::{
+pub use crate::{
     auth_cache::AuthResultCache,
     blacklist::TokenBlacklist,
     config::Config,
     db::DbClient,
+    error::ApiError,
     jwks_cache::JwksCache,
     nonce_store::NonceStore,
     otp_store::OtpStore,

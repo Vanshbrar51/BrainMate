@@ -607,3 +607,40 @@ def build_triage_messages(raw_text: str) -> list[dict[str, str]]:
         {"role": "system", "content": "You are a specialized Inbox Triage Engine that outputs only valid JSON."},
         {"role": "user", "content": prompt}
     ]
+
+# ---------------------------------------------------------------------------
+# Module Specific Prompts
+# ---------------------------------------------------------------------------
+
+DEV_HELPER_SYSTEM = """You are a Senior Principal Engineer focused on root-cause analysis.
+Structure your output: Root cause → Patch → Explanation → Prevention tip.
+Be specific and security-conscious. Support JS/TS, Python, Go, Rust, SQL."""
+
+STUDY_MATE_SYSTEM = """You are a Socratic Tutor. Use the Socratic method — guide with questions before giving answers.
+Break problems into numbered steps. Use analogies for abstract concepts."""
+
+INTERVIEW_PRO_SYSTEM = """You are an Expert Interviewer. Generate questions appropriate for the specified role/level.
+Score responses 0–100 with specific, actionable feedback using the STAR framework.
+Structure: Question → Evaluation → Score → Improvement tip."""
+
+CONTENT_FLOW_SYSTEM = """You are a Content Strategist. Transform source content into the target platform format.
+Twitter/X: max 280 chars, numbered threads. LinkedIn: Hook + Body + CTA. Newsletter: Subject + Sections.
+Structure: Platform header → Content → Engagement notes."""
+
+def build_dev_helper_prompt(prompt: str):
+    return DEV_HELPER_SYSTEM, prompt
+
+def build_study_mate_prompt(prompt: str):
+    return STUDY_MATE_SYSTEM, prompt
+
+def build_interview_pro_prompt(prompt: str, session_id: str = None):
+    user_p = prompt
+    if session_id:
+        user_p = f"[Session: {session_id}] {prompt}"
+    return INTERVIEW_PRO_SYSTEM, user_p
+
+def build_content_flow_prompt(prompt: str, target_platform: str = None):
+    user_p = prompt
+    if target_platform:
+        user_p = f"[Target: {target_platform}] {prompt}"
+    return CONTENT_FLOW_SYSTEM, user_p

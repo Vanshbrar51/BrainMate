@@ -3,7 +3,6 @@ import fs from 'fs';
 import path from 'path';
 
 const APP_DIR = path.resolve(__dirname, '../app');
-const COMPONENTS_DIR = path.resolve(__dirname, '../components');
 
 function getAllFiles(dirPath: string, arrayOfFiles: string[] = []) {
   const files = fs.readdirSync(dirPath);

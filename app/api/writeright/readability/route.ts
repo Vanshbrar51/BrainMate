@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { withSpan, traceLogFields } from "@/lib/tracing";
+import { withSpan } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 
 function countSyllables(word: string): number {

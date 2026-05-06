@@ -121,12 +121,14 @@ export async function DELETE(
 
       const supabase = getSupabaseAdmin();
 
-      // Hard delete — ON DELETE CASCADE will clean up messages and jobs
+      // Soft delete — set deleted_at to now
       const { error, count } = await supabase
         .from("writeright_chats")
-        .delete({ count: "exact" })
+        .update({ deleted_at: new Date().toISOString() })
         .eq("id", chatId)
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .select("id", { count: "exact" });
 
       if (error) {
         console.error("[api.writeright.chat] Delete failed:", {
@@ -136,8 +138,8 @@ export async function DELETE(
         throw createApiError("DB_ERROR", "Failed to delete chat", 500);
       }
 
-      if (count === 0) {
-        throw createApiError("NOT_FOUND", "Chat not found", 404);
+      if (!count || count === 0) {
+        throw createApiError("NOT_FOUND", "Chat not found or already deleted", 404);
       }
 
       addSpanEvent("chat.deleted", { chat_id: chatId });

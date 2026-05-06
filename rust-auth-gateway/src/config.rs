@@ -240,6 +240,52 @@ impl Config {
     }
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            bind_addr: "0.0.0.0:8081".parse().unwrap(),
+            tls_cert_path: None,
+            tls_key_path: None,
+            require_tls: false,
+            enforce_tls_for_public_listener: false,
+            enable_reconciliation_worker: false,
+            metrics_bind_addr: "127.0.0.1:9090".parse().unwrap(),
+            metrics_optional: true,
+            internal_bind_addr: "127.0.0.1:9091".parse().unwrap(),
+            internal_api_tokens: vec![],
+            internal_api_tokens_file: None,
+            internal_api_tokens_reload_secs: 30,
+            request_body_limit_bytes: 64 * 1024,
+            require_redis_for_auth: false,
+            clerk_jwks_url: "https://clerk.example.com/.well-known/jwks.json".to_string(),
+            clerk_issuer: "https://clerk.example.com".to_string(),
+            clerk_audience: None,
+            clerk_authorized_party: None,
+            allowed_origins: vec!["http://localhost:3000".to_string()],
+            allow_wildcard_cors: false,
+            trust_x_forwarded_for: false,
+            trusted_proxy_cidrs: vec![],
+            region_id: "global".to_string(),
+            rate_limit_burst: 20,
+            rate_limit_per_sec: 10,
+            auth_cache_ttl_secs: 45,
+            request_timeout_secs: 10,
+            redis_connect_timeout_secs: 2,
+            redis_primary_url: "redis://127.0.0.1:6379".to_string(),
+            jwks_cache_ttl_secs: 3600,
+            jwks_soft_ttl_secs: 60,
+            jwks_hard_ttl_secs: 300,
+            jwks_backoff_base_secs: 30,
+            jwks_backoff_max_secs: 300,
+            max_session_ttl_secs: 86400,
+            max_sessions_per_user: 10,
+            otp_pepper: "test_pepper".to_string(),
+            db_url: None,
+            db_max_connections: 20,
+        }
+    }
+}
+
 fn required(name: &str) -> Result<String> {
     env::var(name).with_context(|| format!("{name} is required"))
 }

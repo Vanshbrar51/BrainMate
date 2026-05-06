@@ -15,7 +15,7 @@ from supabase import create_client, Client
 import asyncio
 from postgrest.types import CountMethod
 
-from app.config import settings
+from app.config import get_settings
 
 logger = logging.getLogger("writeright.supabase")
 
@@ -34,9 +34,10 @@ def get_supabase() -> Client:
     """
     global _client
     if _client is None:
+        settings_instance = get_settings()
         _client = create_client(
-            settings.supabase_url,
-            settings.supabase_service_key,
+            settings_instance.supabase_url,
+            settings_instance.supabase_service_key,
         )
     return _client
 

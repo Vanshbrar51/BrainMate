@@ -1,9 +1,9 @@
 import pytest
 from httpx import AsyncClient
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 import json
 import pytest_asyncio
-
+from types import SimpleNamespace
 
 from app.config import settings
 from app.models.job import TriageRequest, TriageItem, TriageResponse
@@ -12,15 +12,11 @@ from app.services.prompt_builder import TRIAGE_PROMPT, build_triage_messages
 # Mock ModelRouter for AI calls
 @pytest.fixture
 def mock_model_router():
-    with patch("app.services.ai_worker.get_model_router") as mock_get_router:
+    # Patch where it is USED, not where it is defined
+    with patch("app.routers.triage.get_model_router") as mock_get_router:
         mock_router = AsyncMock()
         mock_get_router.return_value = mock_router
         yield mock_router
-
-# Client for testing FastAPI endpoints
-async def client(app):
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        yield ac
 
 # Test cases for the /triage endpoint
 @pytest.mark.asyncio
@@ -40,7 +36,7 @@ async def test_triage_endpoint_valid_request_empty_ai_response(
     client: AsyncClient, mock_model_router: AsyncMock
 ):
     # Mock AI to return empty content
-    mock_model_router.route.return_value = AsyncMock(content="", model="mock", prompt_tokens=0, completion_tokens=0)
+    mock_model_router.route.return_value = SimpleNamespace(content="", model="mock", prompt_tokens=0, completion_tokens=0)
     
     headers = {"X-Internal-API-Token": "test-token"}
     request_data = {"raw_text": "Hello world"}
@@ -54,7 +50,7 @@ async def test_triage_endpoint_valid_request_malformed_json_ai_response(
     client: AsyncClient, mock_model_router: AsyncMock
 ):
     # Mock AI to return malformed JSON
-    mock_model_router.route.return_value = AsyncMock(content="not json", model="mock", prompt_tokens=0, completion_tokens=0)
+    mock_model_router.route.return_value = SimpleNamespace(content="not json", model="mock", prompt_tokens=0, completion_tokens=0)
     
     headers = {"X-Internal-API-Token": "test-token"}
     request_data = {"raw_text": "Hello world"}
@@ -82,7 +78,7 @@ async def test_triage_endpoint_valid_request_ai_response_with_markdown(
       ]
     }
     ```"""
-    mock_model_router.route.return_value = AsyncMock(content=mock_ai_content, model="mock", prompt_tokens=10, completion_tokens=20)
+    mock_model_router.route.return_value = SimpleNamespace(content=mock_ai_content, model="mock", prompt_tokens=10, completion_tokens=20)
     
     headers = {"X-Internal-API-Token": "test-token"}
     request_data = {"raw_text": "Email 1 content"}
@@ -107,7 +103,7 @@ async def test_triage_endpoint_valid_request_successful_triage(
         original_segment="Hi team, I'd like to schedule a meeting next week to discuss the project."
     )
     mock_ai_content = TriageResponse(items=[mock_triage_item]).model_dump_json()
-    mock_model_router.route.return_value = AsyncMock(content=mock_ai_content, model="mock", prompt_tokens=10, completion_tokens=20)
+    mock_model_router.route.return_value = SimpleNamespace(content=mock_ai_content, model="mock", prompt_tokens=10, completion_tokens=20)
     
     headers = {"X-Internal-API-Token": "test-token"}
     request_data = {"raw_text": "Hi team, I'd like to schedule a meeting next week to discuss the project."}

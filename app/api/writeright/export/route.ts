@@ -100,17 +100,28 @@ export async function GET(req: Request) {
             if (msg.role === "user") {
               lines.push(`**You:** ${msg.content}`);
             } else {
-              let result: Record<string, any> = { improved_text: msg.content, scores: null };
-              try {
-                result = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
-              } catch(e) {}
-              lines.push(`**WriteRight:** ${result.improved_text || msg.content}`);
-              if (result.scores) {
-                lines.push(`> Clarity ${result.scores.clarity}/10 · Tone ${result.scores.tone}/10 · Impact ${result.scores.impact}/10`);
-              }
+            interface WriteRightResult {
+              improved_text?: string;
+              scores?: {
+                clarity: number;
+                tone: number;
+                impact: number;
+              } | null;
             }
-            lines.push("");
+
+            let result: WriteRightResult = { improved_text: msg.content as string, scores: null };
+            try {
+              result = typeof msg.content === 'string' ? JSON.parse(msg.content) : (msg.content as WriteRightResult);
+            } catch {
+              // result remains with improved_text: msg.content
+            }
+            lines.push(`**WriteRight:** ${result.improved_text || msg.content}`);
+            if (result.scores) {
+              lines.push(`> Clarity ${result.scores.clarity}/10 · Tone ${result.scores.tone}/10 · Impact ${result.scores.impact}/10`);
+            }
           }
+          lines.push("");
+        }
           lines.push("---");
           lines.push("");
         }

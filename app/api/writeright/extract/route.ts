@@ -17,7 +17,7 @@ import {
   addSpanEvent,
   traceLogFields,
 } from "@/lib/tracing";
-import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
+import { withErrorHandler, createApiError, WriteRightError } from "@/lib/writeright-errors";
 
 const MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024;
 const MAX_CHARS = 10_000;
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
           });
         }
       } catch (err) {
-        if (err instanceof Error && err.name === "WriteRightError") throw err;
+        if (err instanceof WriteRightError) throw err;
         console.error("[api.writeright.extract] Rate-limit check failed", {
           error: err instanceof Error ? err.message : String(err),
           ...traceLogFields(),

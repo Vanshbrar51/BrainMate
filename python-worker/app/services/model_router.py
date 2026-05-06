@@ -21,7 +21,7 @@ from typing import Literal
 
 import httpx
 
-from app.config import settings
+from app.config import get_settings
 from app.models.job import ModelResponse
 
 logger = logging.getLogger("writeright.model_router")
@@ -77,14 +77,14 @@ class ModelRouter:
     def __init__(self) -> None:
         self._task_model_map: dict[str, str] = {}
         try:
-            self._task_model_map = json.loads(settings.task_model_map)
+            self._task_model_map = json.loads(get_settings().task_model_map)
         except (json.JSONDecodeError, TypeError):
             pass
 
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(
                 connect=10.0,
-                read=float(settings.job_timeout_seconds),
+                read=float(get_settings().job_timeout_seconds),
                 write=10.0,
                 pool=10.0,
             ),
@@ -96,7 +96,7 @@ class ModelRouter:
 
     def _select_model(self, task_type: str) -> str:
         """Returns model string for task. Override via TASK_MODEL_MAP env var (JSON)."""
-        return self._task_model_map.get(task_type, settings.default_model)
+        return self._task_model_map.get(task_type, get_settings().default_model)
 
     async def route(
         self,
@@ -110,7 +110,7 @@ class ModelRouter:
         Args:
             task_type: Type of task for model selection and temperature.
             messages: OpenAI-compatible messages array.
-            max_tokens: Maximum output tokens. 0 = use default from settings.
+            max_tokens: Maximum output tokens. 0 = use default from get_settings().
             traceparent: W3C trace context for distributed tracing.
 
         Returns:
@@ -122,12 +122,12 @@ class ModelRouter:
             ModelError: For other API errors.
         """
         model = self._select_model(task_type)
-        effective_max_tokens = max_tokens or settings.max_output_tokens
+        effective_max_tokens = max_tokens or get_settings().max_output_tokens
         # BUG-09 FIX: use task-specific temperature
         temperature = _temperature_for_task(task_type)
 
         headers = {
-            "Authorization": f"Bearer {settings.google_ai_studio_api_key}",
+            "Authorization": f"Bearer {get_settings().google_ai_studio_api_key}",
             "Content-Type": "application/json",
         }
 
@@ -149,7 +149,7 @@ class ModelRouter:
         for attempt in range(max_retries + 1):
             try:
                 response = await self._client.post(
-                    f"{settings.google_ai_studio_base_url}/chat/completions",
+                    f"{get_settings().google_ai_studio_base_url}/chat/completions",
                     headers=headers,
                     json=payload,
                 )
@@ -212,7 +212,7 @@ class ModelRouter:
                     await asyncio.sleep(backoff)
                     continue
                 raise ModelTimeoutError(
-                    f"Google AI Studio request timed out after {settings.job_timeout_seconds}s") from exc
+                    f"Google AI Studio request timed out after {get_settings().job_timeout_seconds}s") from exc
 
             except (httpx.HTTPError, httpx.StreamError) as exc:
                 if attempt < max_retries:
@@ -242,12 +242,12 @@ class ModelRouter:
     ) -> ModelResponse:
         """Route with streaming enabled and invoke callback for each token chunk."""
         model = model_override or self._select_model(task_type)
-        effective_max_tokens = max_tokens or settings.max_output_tokens
+        effective_max_tokens = max_tokens or get_settings().max_output_tokens
         # BUG-09 FIX: use task-specific temperature
         temperature = _temperature_for_task(task_type)
 
         headers = {
-            "Authorization": f"Bearer {settings.google_ai_studio_api_key}",
+            "Authorization": f"Bearer {get_settings().google_ai_studio_api_key}",
             "Content-Type": "application/json",
         }
         if traceparent:
@@ -272,7 +272,7 @@ class ModelRouter:
 
                 async with self._client.stream(
                     "POST",
-                    f"{settings.google_ai_studio_base_url}/chat/completions",
+                    f"{get_settings().google_ai_studio_base_url}/chat/completions",
                     headers=headers,
                     json=payload,
                 ) as response:
@@ -345,7 +345,7 @@ class ModelRouter:
                     await asyncio.sleep(2 ** attempt)
                     continue
                 raise ModelTimeoutError(
-                    f"Google AI Studio streaming request timed out after {settings.job_timeout_seconds}s") from exc
+                    f"Google AI Studio streaming request timed out after {get_settings().job_timeout_seconds}s") from exc
             except (httpx.HTTPError, httpx.StreamError) as exc:
                 if attempt < max_retries:
                     await asyncio.sleep(2 ** attempt)
@@ -377,7 +377,7 @@ class ModelRouter:
                 filtered_messages.append(msg)
 
         headers = {
-            "x-api-key": settings.anthropic_api_key,
+            "x-api-key": get_settings().anthropic_api_key,
             "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
         }
@@ -385,9 +385,9 @@ class ModelRouter:
             headers["traceparent"] = traceparent
 
         payload: dict[str, object] = {
-            "model": settings.anthropic_fallback_model,
+            "model": get_settings().anthropic_fallback_model,
             "messages": filtered_messages,
-            "max_tokens": max_tokens or settings.max_output_tokens,
+            "max_tokens": max_tokens or get_settings().max_output_tokens,
             "temperature": temperature,
         }
         if system_content:
@@ -395,7 +395,7 @@ class ModelRouter:
 
         try:
             response = await self._client.post(
-                f"{settings.anthropic_base_url}/messages",
+                f"{get_settings().anthropic_base_url}/messages",
                 headers=headers,
                 json=payload,
             )
@@ -417,7 +417,7 @@ class ModelRouter:
 
             return ModelResponse(
                 content=content,
-                model=data.get("model", settings.anthropic_fallback_model),
+                model=data.get("model", get_settings().anthropic_fallback_model),
                 prompt_tokens=usage.get("input_tokens", 0),
                 completion_tokens=usage.get("output_tokens", 0),
                 finish_reason=data.get("stop_reason", ""),
@@ -438,7 +438,7 @@ class ModelRouter:
         try:
             return await self.route_stream(task_type, messages, max_tokens, traceparent, on_token)
         except (ModelTimeoutError, ModelError) as primary_err:
-            if settings.enable_anthropic_fallback and settings.anthropic_api_key:
+            if get_settings().enable_anthropic_fallback and get_settings().anthropic_api_key:
                 logger.warning(
                     "Primary provider failed, trying Anthropic fallback: %s",
                     str(primary_err),

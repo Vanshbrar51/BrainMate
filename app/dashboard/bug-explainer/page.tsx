@@ -7,9 +7,9 @@ import {
   UserMessage,
   AIMessage,
   AIThinking,
-  CodeBlock,
-  InsightBlock,
 } from '@/components/dashboard/ChatMessage'
+import MarkdownContent from '@/components/dashboard/MarkdownContent'
+import { apiPost } from '@/lib/api-client'
 
 const CAPABILITIES = [
   {
@@ -52,50 +52,6 @@ const PROMPTS = [
   },
 ]
 
-const MOCK_AI: React.ReactNode = (
-  <>
-    <p>
-      I found the issue. You have a <strong>missing initial value</strong> in your{' '}
-      <code
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '0.875em',
-          background: 'var(--bg-subtle)',
-          padding: '1px 5px',
-          borderRadius: 4,
-        }}
-      >
-        Array.reduce()
-      </code>{' '}
-      call.
-    </p>
-    <p style={{ fontWeight: 600, color: 'var(--text-1)', marginBottom: 6 }}>Root cause</p>
-    <p>
-      Without an initial value,{' '}
-      <code
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '0.875em',
-          background: 'var(--bg-subtle)',
-          padding: '1px 5px',
-          borderRadius: 4,
-        }}
-      >
-        reduce()
-      </code>{' '}
-      uses the first array element as the accumulator. On an empty array, this throws a
-      TypeError immediately.
-    </p>
-    <CodeBlock
-      code={`function calculateTotal(items) {\n  return items.reduce((sum, item) => sum + item.price, 0)\n  //                                                  ^ add this\n}`}
-    />
-    <InsightBlock>
-      <strong style={{ color: 'var(--text-1)' }}>Remember:</strong> Always pass an initial value
-      to reduce() — it makes intent explicit and prevents runtime errors on empty arrays.
-    </InsightBlock>
-  </>
-)
-
 export default function DevHelperPage() {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
@@ -104,24 +60,35 @@ export default function DevHelperPage() {
   const taRef = useRef<HTMLTextAreaElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const scrollBottom = () =>
-    setTimeout(() => scrollRef.current?.scrollTo({ top: 999999, behavior: 'smooth' }), 60)
+  const scrollBottom = useCallback(() =>
+    setTimeout(() => scrollRef.current?.scrollTo({ top: 999999, behavior: 'smooth' }), 60), [])
 
   const submit = useCallback(
     async (text?: string) => {
       const msg = (text ?? input).trim()
       if (!msg || loading) return
+      
       setLoading(true)
       setInput('')
       setHasStarted(true)
       setMessages((p) => [...p, { role: 'user', content: msg }])
       scrollBottom()
-      await new Promise((r) => setTimeout(r, 1300)) // TODO: replace with real Anthropic API call
-      setMessages((p) => [...p, { role: 'ai', content: MOCK_AI }])
-      setLoading(false)
-      scrollBottom()
+
+      try {
+        const response = await apiPost<{ content: string }>('/api/writeright/bug-explainer', { prompt: msg })
+        setMessages((p) => [...p, { role: 'ai', content: <MarkdownContent content={response.content} /> }])
+      } catch (err) {
+        console.error('DevHelper error:', err)
+        setMessages((p) => [
+          ...p,
+          { role: 'ai', content: 'Sorry, I encountered an error. Please try again.' },
+        ])
+      } finally {
+        setLoading(false)
+        scrollBottom()
+      }
     },
-    [input, loading]
+    [input, loading, scrollBottom]
   )
 
   return (

@@ -27,6 +27,7 @@ from app.routers.health import router as health_router, set_health_dependencies
 from app.routers.morph import router as morph_router
 from app.routers.triage import router as triage_router
 from app.routers.voice import router as voice_router
+from app.routers.modules import router as modules_router
 from app.services.queue_consumer import consume_jobs
 from app.services.ai_worker import close_model_router
 from app.services.embedding_service import close_embedding_service
@@ -187,6 +188,7 @@ app.include_router(health_router)
 app.include_router(morph_router)
 app.include_router(triage_router)
 app.include_router(voice_router)
+app.include_router(modules_router)
 
 
 # Root endpoint

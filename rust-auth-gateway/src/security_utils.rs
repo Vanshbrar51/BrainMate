@@ -17,9 +17,17 @@ pub fn hash_otp_with_pepper(otp: &str, pepper: &str) -> String {
 }
 
 pub fn constant_time_eq(left: &str, right: &str) -> bool {
-    let left_bytes = left.as_bytes();
-    let right_bytes = right.as_bytes();
-    left_bytes.len() == right_bytes.len() && bool::from(left_bytes.ct_eq(right_bytes))
+    let mut left_hasher = Sha256::new();
+    left_hasher.update(left.as_bytes());
+    let left_hash = left_hasher.finalize();
+
+    let mut right_hasher = Sha256::new();
+    right_hasher.update(right.as_bytes());
+    let right_hash = right_hasher.finalize();
+
+    // Comparing hashes of strings ensures that we do not leak the length of the string
+    // through timing, as both strings are processed fully by the hasher.
+    bool::from(left_hash.ct_eq(&right_hash))
 }
 
 #[cfg(test)]

@@ -21,7 +21,7 @@ async function getShareData(token: string) {
   return res.json();
 }
 
-export async function generateMetadata({ params }: SharePageProps): Promise<Metadata> {
+export async function generateMetadata(): Promise<Metadata> {
   return {
     title: 'WriteRight | Shared Document',
     description: 'A document improved by WriteRight',
