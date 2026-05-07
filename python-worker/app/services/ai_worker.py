@@ -41,7 +41,11 @@ from app.services.supabase_client import (
 )
 from app.services.embedding_service import get_embedding_service
 
+from opentelemetry import trace
+
 logger = logging.getLogger("writeright.ai_worker")
+tracer = trace.get_tracer(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Module-level model router (shared across all jobs in this process)
@@ -399,88 +403,96 @@ def _quality_gate(text: str) -> tuple[bool, str]:
 
 async def _generate_draft(
     job: WritingJob,
+    settings_instance: Settings,
     history: list[dict[str, Any]],
     profile: list[str],
     on_stream_chunk: Callable[[str, str], Awaitable[None]] | None = None,
 ) -> tuple[AIResult, dict[str, bool]]:
-    # 2.7. Retrieve Brand Voice style DNA (RAG)
-    voice_examples = []
-    try:
-        # Only retrieve style if user has provided examples
-        emb_service = get_embedding_service()
-        # Use a lightweight embedding for retrieval
-        query_emb = await emb_service.get_embedding(job.content)
-        matches = await match_voice_examples(job.user_id, query_emb, count=2)
-        voice_examples = [m["content"] for m in matches]
-        if voice_examples:
-            logger.info("Injected %d Brand Voice examples for user %s", len(voice_examples), job.user_id)
-    except Exception:
-        logger.warning("Brand Voice retrieval failed (non-fatal)")
+    with tracer.start_as_current_span("ai_worker.generate_draft") as span:
+        span.set_attributes({
+            "job.id": job.id,
+            "job.mode": job.mode,
+            "job.tone": job.tone,
+            "job.intensity": job.intensity
+        })
+        # 2.7. Retrieve Brand Voice style DNA (RAG)
+        voice_examples = []
+        try:
+            # Only retrieve style if user has provided examples
+            emb_service = get_embedding_service()
+            # Use a lightweight embedding for retrieval
+            query_emb = await emb_service.get_embedding(job.content)
+            matches = await match_voice_examples(job.user_id, query_emb, count=2)
+            voice_examples = [m["content"] for m in matches]
+            if voice_examples:
+                logger.info("Injected %d Brand Voice examples for user %s", len(voice_examples), job.user_id)
+        except Exception:
+            logger.warning("Brand Voice retrieval failed (non-fatal)")
 
-    # 3. Build prompt
-    messages, prompt_metadata = build_messages(
-        user_text=job.content,
-        tone=job.tone,
-        mode=job.mode,
-        output_language=job.output_language,
-        history=history,
-        profile=profile,
-        voice_examples=voice_examples,
-        intensity=job.intensity,
-        max_history=10,
-        max_input_tokens=settings_instance.max_input_tokens,
-    )
-
-    if prompt_metadata.get("injection_detected"):
-        logger.warning(
-            '{"event": "injection.detected", "job_id": "%s", "chat_id": "%s"}',
-            job.id,
-            job.chat_id,
+        # 3. Build prompt
+        messages, prompt_metadata = build_messages(
+            user_text=job.content,
+            tone=job.tone,
+            mode=job.mode,
+            output_language=job.output_language,
+            history=history,
+            profile=profile,
+            voice_examples=voice_examples,
+            intensity=job.intensity,
+            max_history=10,
+            max_input_tokens=settings_instance.max_input_tokens,
         )
 
-    # 4. Call Google AI Studio via ModelRouter
-    router = get_model_router()
-    model_response = await router.route_stream(
-        task_type="write_improvement",
-        messages=messages,
-        max_tokens=settings_instance.max_output_tokens,
-        traceparent=job.traceparent,
-        on_token=on_stream_chunk,
-    )
-
-    # 5. Parse structured response
-    result = _parse_ai_response(
-        content=model_response.content,
-        model=model_response.model,
-        prompt_tokens=model_response.prompt_tokens,
-        completion_tokens=model_response.completion_tokens,
-        mode=job.mode,
-    )
-
-    # AI-02: If result fell back to raw content or regex fallback, attempt repair
-    # Regex fallback often results in improved_text being a subset of content.
-    # We trigger repair if the parse failed to get a full structured result.
-    if (
-        result.improved_text == model_response.content.strip()
-        or result.improved_text == "Unable to process your request. Please try again."
-        or result.teaching.mistakes == [] # Sign of regex fallback/failed parse
-    ):
-        logger.info("Attempting JSON repair for job %s", job.id)
-        repaired = await _repair_json_response(model_response.content, router)
-        if repaired:
-            repaired_result = _parse_ai_response(
-                content=repaired,
-                model=model_response.model,
-                prompt_tokens=model_response.prompt_tokens,
-                completion_tokens=model_response.completion_tokens,
-                mode=job.mode,
+        if prompt_metadata.get("injection_detected"):
+            logger.warning(
+                '{"event": "injection.detected", "job_id": "%s", "chat_id": "%s"}',
+                job.id,
+                job.chat_id,
             )
-            # Only use repaired if it actually parsed better
-            if repaired_result.improved_text != repaired.strip():
-                logger.info("JSON repair succeeded for job %s", job.id)
-                result = repaired_result
 
-    return result, prompt_metadata
+        # 4. Call Google AI Studio via ModelRouter
+        router = get_model_router()
+        model_response = await router.route_stream(
+            task_type="write_improvement",
+            messages=messages,
+            max_tokens=settings_instance.max_output_tokens,
+            traceparent=job.traceparent,
+            on_token=on_stream_chunk,
+        )
+
+        # 5. Parse structured response
+        result = _parse_ai_response(
+            content=model_response.content,
+            model=model_response.model,
+            prompt_tokens=model_response.prompt_tokens,
+            completion_tokens=model_response.completion_tokens,
+            mode=job.mode,
+        )
+
+        # AI-02: If result fell back to raw content or regex fallback, attempt repair
+        # Regex fallback often results in improved_text being a subset of content.
+        # We trigger repair if the parse failed to get a full structured result.
+        if (
+            result.improved_text == model_response.content.strip()
+            or result.improved_text == "Unable to process your request. Please try again."
+            or result.teaching.mistakes == [] # Sign of regex fallback/failed parse
+        ):
+            logger.info("Attempting JSON repair for job %s", job.id)
+            repaired = await _repair_json_response(model_response.content, router)
+            if repaired:
+                repaired_result = _parse_ai_response(
+                    content=repaired,
+                    model=model_response.model,
+                    prompt_tokens=model_response.prompt_tokens,
+                    completion_tokens=model_response.completion_tokens,
+                    mode=job.mode,
+                )
+                # Only use repaired if it actually parsed better
+                if repaired_result.improved_text != repaired.strip():
+                    logger.info("JSON repair succeeded for job %s", job.id)
+                    result = repaired_result
+
+        return result, prompt_metadata
 
 
 async def _generate_critique_and_revision(
@@ -576,184 +588,191 @@ async def process_job(
         ModelError: If the LLM call fails.
         Exception: For unexpected errors.
     """
-    logger.info(
-        '{"event": "job.processing", "job_id": "%s", "chat_id": "%s", '
-        '"tone": "%s", "mode": "%s", "attempt": %d}',
-        job.id,
-        job.chat_id,
-        job.tone,
-        job.mode,
-        job.attempt,
-    )
-
-    # 1. Update job status to processing in Supabase
-    try:
-        await update_job_status(job.id, "processing")
-    except Exception:
-        logger.warning(
-            "Failed to update job status to processing in Supabase (non-fatal)")
-
-    # 2. Fetch chat history from Supabase
-    history: list[dict[str, Any]] = []
-    try:
-        raw_history = await get_chat_history(job.chat_id, limit=20)
-        # Convert to dicts for prompt builder
-        history = [
-            {"role": msg.get("role", "user"), "content": msg.get("content", "")}
-            for msg in raw_history
-        ]
-    except Exception:
-        logger.warning(
-            "Failed to fetch chat history for %s (continuing without history)",
-            job.chat_id,
-        )
-
-    # 2.5. Fetch Personal Writing Profile
-    profile: list[str] = []
-    try:
-        profile = await get_writing_profile(job.user_id)
-    except Exception:
-        logger.warning(
-            f"Failed to fetch profile for {
-                job.user_id} (continuing without profile)")
-
-    can_process, reason = _is_processable_input(job.content)
-    if not can_process:
-        from app.models.job import AIResult, TeachingBlock, ScoreBlock
-        return AIResult(
-            improved_text=job.content,
-            teaching=TeachingBlock(
-                mistakes=[reason],
-                better_versions=["Please provide natural language text to improve."],
-                explanations=["WriteRight is designed for emails, paragraphs, LinkedIn posts, and WhatsApp messages."]
-            ),
-            follow_up="Try pasting an email draft or a paragraph you've written.",
-            suggestions=["Try an email draft", "Try a LinkedIn post", "Try a paragraph"],
-            scores=ScoreBlock(clarity=0, tone=0, impact=0, verdict="Needs more work"),
-            model="quality_gate",
-            prompt_tokens=0,
-            completion_tokens=0,
-        )
-
-    if on_status:
-        await on_status("drafting")
-
-    # F-BE-11: Quality gate — short-circuit before calling the model
-    ok, gate_reason = _quality_gate(job.content)
-    if not ok:
+    with tracer.start_as_current_span("ai_worker.process_job") as span:
+        span.set_attributes({
+            "job.id": job.id,
+            "job.chat_id": job.chat_id,
+            "user.id": job.user_id,
+        })
         logger.info(
-            '{"event": "job.quality_gate", "job_id": "%s", "reason": "%s"}',
-            job.id, gate_reason,
-        )
-        return AIResult(
-            improved_text=job.content,
-            teaching=TeachingBlock(
-                mistakes=[gate_reason],
-                better_versions=["Please provide a natural language text to improve."],
-                explanations=[
-                    "WriteRight is designed for emails, LinkedIn posts, paragraphs, and WhatsApp messages."
-                ],
-            ),
-            follow_up="Try pasting an email draft or a paragraph you\u2019ve written.",
-            suggestions=["Try an email draft", "Try a LinkedIn post", "Try a paragraph"],
-            scores=ScoreBlock(clarity=0, tone=0, impact=0, verdict="Needs more work"),
-            model="quality_gate",
-            prompt_tokens=0,
-            completion_tokens=0,
-        )
-
-    result, prompt_metadata = await _generate_draft(
-        job=job,
-        history=history,
-        profile=profile,
-        on_stream_chunk=on_stream_chunk,
-    )
-
-    if settings_instance.enable_critique_pipeline:
-        if on_status:
-            await on_status("critiquing")
-        result = await _generate_critique_and_revision(result, job, settings_instance)
-
-    if on_status:
-        await on_status("finalizing")
-
-
-    # 6. Persist AI message to Supabase
-    try:
-        await save_ai_message(
-            chat_id=job.chat_id,
-            user_id=job.user_id,
-            content=json.dumps(result.model_dump()),
-            metadata={
-                "model": result.model,
-                "prompt_tokens": result.prompt_tokens,
-                "completion_tokens": result.completion_tokens,
-                "injection_detected": prompt_metadata.get("injection_detected", False),
-                "job_id": job.id,
-                "mode": job.mode,
-                "tone": job.tone,
-                "output_language": job.output_language,
-            },
-        )
-    except Exception:
-        logger.exception("Failed to save AI message (job still completes)")
-
-    # 7. Update job status to completed in Supabase
-    try:
-        await update_job_status(
+            '{"event": "job.processing", "job_id": "%s", "chat_id": "%s", '
+            '"tone": "%s", "mode": "%s", "attempt": %d}',
             job.id,
-            "completed",
-            output=result.model_dump(),
+            job.chat_id,
+            job.tone,
+            job.mode,
+            job.attempt,
         )
-    except Exception:
-        logger.exception(
-            "Failed to update job status to completed in Supabase")
 
-    # 8. Record usage (non-fatal)
-    try:
-        await record_usage(
-            user_id=job.user_id,
-            job_id=job.id,
-            chat_id=job.chat_id,
-            model=result.model,
-            prompt_tokens=result.prompt_tokens,
-            completion_tokens=result.completion_tokens,
+        # 1. Update job status to processing in Supabase
+        try:
+            await update_job_status(job.id, "processing")
+        except Exception:
+            logger.warning(
+                "Failed to update job status to processing in Supabase (non-fatal)")
+
+        # 2. Fetch chat history from Supabase
+        history: list[dict[str, Any]] = []
+        try:
+            raw_history = await get_chat_history(job.chat_id, limit=20)
+            # Convert to dicts for prompt builder
+            history = [
+                {"role": msg.get("role", "user"), "content": msg.get("content", "")}
+                for msg in raw_history
+            ]
+        except Exception:
+            logger.warning(
+                "Failed to fetch chat history for %s (continuing without history)",
+                job.chat_id,
+            )
+
+        # 2.5. Fetch Personal Writing Profile
+        profile: list[str] = []
+        try:
+            profile = await get_writing_profile(job.user_id)
+        except Exception:
+            logger.warning(
+                f"Failed to fetch profile for {
+                    job.user_id} (continuing without profile)")
+
+        can_process, reason = _is_processable_input(job.content)
+        if not can_process:
+            from app.models.job import AIResult, TeachingBlock, ScoreBlock
+            return AIResult(
+                improved_text=job.content,
+                teaching=TeachingBlock(
+                    mistakes=[reason],
+                    better_versions=["Please provide natural language text to improve."],
+                    explanations=["WriteRight is designed for emails, paragraphs, LinkedIn posts, and WhatsApp messages."]
+                ),
+                follow_up="Try pasting an email draft or a paragraph you've written.",
+                suggestions=["Try an email draft", "Try a LinkedIn post", "Try a paragraph"],
+                scores=ScoreBlock(clarity=0, tone=0, impact=0, verdict="Needs more work"),
+                model="quality_gate",
+                prompt_tokens=0,
+                completion_tokens=0,
+            )
+
+        if on_status:
+            await on_status("drafting")
+
+        # F-BE-11: Quality gate — short-circuit before calling the model
+        ok, gate_reason = _quality_gate(job.content)
+        if not ok:
+            logger.info(
+                '{"event": "job.quality_gate", "job_id": "%s", "reason": "%s"}',
+                job.id, gate_reason,
+            )
+            return AIResult(
+                improved_text=job.content,
+                teaching=TeachingBlock(
+                    mistakes=[gate_reason],
+                    better_versions=["Please provide a natural language text to improve."],
+                    explanations=[
+                        "WriteRight is designed for emails, LinkedIn posts, paragraphs, and WhatsApp messages."
+                    ],
+                ),
+                follow_up="Try pasting an email draft or a paragraph you\u2019ve written.",
+                suggestions=["Try an email draft", "Try a LinkedIn post", "Try a paragraph"],
+                scores=ScoreBlock(clarity=0, tone=0, impact=0, verdict="Needs more work"),
+                model="quality_gate",
+                prompt_tokens=0,
+                completion_tokens=0,
+            )
+
+        result, prompt_metadata = await _generate_draft(
+            job=job,
+            settings_instance=settings_instance,
+            history=history,
+            profile=profile,
+            on_stream_chunk=on_stream_chunk,
         )
-    except Exception:
-        logger.warning("Failed to record usage (non-fatal)")
 
-    # 9. Streaks + achievements — now primarily handled by DB trigger fn_update_writeright_streak()
-    # on writeright_usage INSERT. Python-side call kept as a fallback / for achievement logic.
-    try:
-        await update_streak_and_achievements(
-            user_id=job.user_id,
-            mode=job.mode,
-            tone=job.tone,
-            injection_detected=bool(prompt_metadata.get("injection_detected", False)),
-            teaching_mistakes=result.teaching.mistakes,
+        if settings_instance.enable_critique_pipeline:
+            if on_status:
+                await on_status("critiquing")
+            result = await _generate_critique_and_revision(result, job, settings_instance)
+
+        if on_status:
+            await on_status("finalizing")
+
+
+        # 6. Persist AI message to Supabase
+        try:
+            await save_ai_message(
+                chat_id=job.chat_id,
+                user_id=job.user_id,
+                content=json.dumps(result.model_dump()),
+                metadata={
+                    "model": result.model,
+                    "prompt_tokens": result.prompt_tokens,
+                    "completion_tokens": result.completion_tokens,
+                    "injection_detected": prompt_metadata.get("injection_detected", False),
+                    "job_id": job.id,
+                    "mode": job.mode,
+                    "tone": job.tone,
+                    "output_language": job.output_language,
+                },
+            )
+        except Exception:
+            logger.exception("Failed to save AI message (job still completes)")
+
+        # 7. Update job status to completed in Supabase
+        try:
+            await update_job_status(
+                job.id,
+                "completed",
+                output=result.model_dump(),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to update job status to completed in Supabase")
+
+        # 8. Record usage (non-fatal)
+        try:
+            await record_usage(
+                user_id=job.user_id,
+                job_id=job.id,
+                chat_id=job.chat_id,
+                model=result.model,
+                prompt_tokens=result.prompt_tokens,
+                completion_tokens=result.completion_tokens,
+            )
+        except Exception:
+            logger.warning("Failed to record usage (non-fatal)")
+
+        # 9. Streaks + achievements — now primarily handled by DB trigger fn_update_writeright_streak()
+        # on writeright_usage INSERT. Python-side call kept as a fallback / for achievement logic.
+        try:
+            await update_streak_and_achievements(
+                user_id=job.user_id,
+                mode=job.mode,
+                tone=job.tone,
+                injection_detected=bool(prompt_metadata.get("injection_detected", False)),
+                teaching_mistakes=result.teaching.mistakes,
+            )
+        except Exception:
+            logger.warning("Failed to update streak/achievements (non-fatal)")
+
+        # F-BE-08: Writing profile analysis — now handled by DB trigger fn_update_writeright_profile().
+        # The asyncio.create_task() fire-and-forget pattern is replaced by the DB trigger,
+        # which is atomic and cannot be silently cancelled on worker restart.
+        logger.info(
+            '{"event": "job.profile_update", "job_id": "%s", "note": "handled_by_db_trigger"}',
+            job.id,
         )
-    except Exception:
-        logger.warning("Failed to update streak/achievements (non-fatal)")
 
-    # F-BE-08: Writing profile analysis — now handled by DB trigger fn_update_writeright_profile().
-    # The asyncio.create_task() fire-and-forget pattern is replaced by the DB trigger,
-    # which is atomic and cannot be silently cancelled on worker restart.
-    logger.info(
-        '{"event": "job.profile_update", "job_id": "%s", "note": "handled_by_db_trigger"}',
-        job.id,
-    )
+        # F-07 / BUG-04: Generate Chat Title — guarded inside update_chat_title() in supabase_client.py.
+        # Only overwrites auto-generated titles (those starting with 📝 or "Untitled Chat").
+        def _trigger_title_gen() -> None:
+            words = result.improved_text.split()
+            if len(words) > 0:
+                short_text = " ".join(words[:5]) + "..."
+                asyncio.create_task(
+                    update_chat_title(
+                        job.chat_id,
+                        f"\U0001f4dd {short_text}"))
 
-    # F-07 / BUG-04: Generate Chat Title — guarded inside update_chat_title() in supabase_client.py.
-    # Only overwrites auto-generated titles (those starting with 📝 or "Untitled Chat").
-    def _trigger_title_gen() -> None:
-        words = result.improved_text.split()
-        if len(words) > 0:
-            short_text = " ".join(words[:5]) + "..."
-            asyncio.create_task(
-                update_chat_title(
-                    job.chat_id,
-                    f"\U0001f4dd {short_text}"))
+        _trigger_title_gen()
 
-    _trigger_title_gen()
-
-    return result
+        return result

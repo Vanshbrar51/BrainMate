@@ -209,3 +209,18 @@ class VoiceListResponse(BaseModel):
     """List of writing examples."""
 
     examples: list[VoiceExample]
+
+
+class ModuleRequest(BaseModel):
+    """Payload for specialized AI modules."""
+
+    prompt: str
+    session_id: Optional[str] = None
+    target_platform: Optional[str] = None
+
+
+class ModuleResponse(BaseModel):
+    """Structured response for specialized AI modules."""
+
+    content: str
+

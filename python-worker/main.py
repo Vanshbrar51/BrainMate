@@ -208,15 +208,18 @@ async def root() -> dict[str, str]:
 
 def _mask_url(url: str) -> str:
     """Mask credentials in a URL for safe logging."""
+    if not url:
+        return ""
     try:
         from urllib.parse import urlparse, urlunparse
 
         parsed = urlparse(url)
-        if parsed.password:
-            masked = parsed._replace(
-                netloc=f"{parsed.username}:***@{parsed.hostname}"
-                + (f":{parsed.port}" if parsed.port else "")
-            )
+        if parsed.password or parsed.username:
+            # Mask both username and password if either exists
+            netloc = f"***:***@{parsed.hostname}"
+            if parsed.port:
+                netloc += f":{parsed.port}"
+            masked = parsed._replace(netloc=netloc)
             return urlunparse(masked)
         return url
     except Exception:

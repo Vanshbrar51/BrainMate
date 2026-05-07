@@ -61,6 +61,10 @@ _TASK_TEMPERATURES: dict[str, float] = {
     "follow_up": 0.4,
     "translation": 0.2,
     "json_repair": 0.1,
+    "dev_helper": 0.3,    # Low temperature for precise code patches
+    "study_mate": 0.7,    # Medium for creative analogies
+    "interview_pro": 0.6, # Balanced for dynamic questioning
+    "content_flow": 0.8,  # Higher for creative copywriting
 }
 
 
@@ -100,11 +104,21 @@ class ModelRouter:
 
     async def route(
         self,
-        task_type: Literal["write_improvement", "follow_up", "translation", "json_repair"],
+        task_type: Literal[
+            "write_improvement",
+            "follow_up",
+            "translation",
+            "json_repair",
+            "dev_helper",
+            "study_mate",
+            "interview_pro",
+            "content_flow",
+        ],
         messages: list[dict[str, str]],
         max_tokens: int = 0,
         traceparent: str | None = None,
     ) -> ModelResponse:
+
         """Route a task to the appropriate model via Google AI Studio.
 
         Args:
@@ -233,13 +247,23 @@ class ModelRouter:
 
     async def route_stream(
         self,
-        task_type: Literal["write_improvement", "follow_up", "translation", "json_repair"],
+        task_type: Literal[
+            "write_improvement",
+            "follow_up",
+            "translation",
+            "json_repair",
+            "dev_helper",
+            "study_mate",
+            "interview_pro",
+            "content_flow",
+        ],
         messages: list[dict[str, str]],
         max_tokens: int = 0,
         traceparent: str | None = None,
         on_token: Callable[[str, str], Awaitable[None]] | None = None,
         model_override: str | None = None,
     ) -> ModelResponse:
+
         """Route with streaming enabled and invoke callback for each token chunk."""
         model = model_override or self._select_model(task_type)
         effective_max_tokens = max_tokens or get_settings().max_output_tokens
@@ -428,12 +452,22 @@ class ModelRouter:
 
     async def route_with_fallback(
         self,
-        task_type: Literal["write_improvement", "follow_up", "translation", "json_repair"],
+        task_type: Literal[
+            "write_improvement",
+            "follow_up",
+            "translation",
+            "json_repair",
+            "dev_helper",
+            "study_mate",
+            "interview_pro",
+            "content_flow",
+        ],
         messages: list[dict[str, str]],
         max_tokens: int = 0,
         traceparent: str | None = None,
         on_token: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> ModelResponse:
+
         """Route with automatic Anthropic fallback on primary provider failure (F-BE-13)."""
         try:
             return await self.route_stream(task_type, messages, max_tokens, traceparent, on_token)

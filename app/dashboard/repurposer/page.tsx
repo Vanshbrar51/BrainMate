@@ -73,7 +73,7 @@ export default function ContentFlowPage() {
       setLoading(true)
       setInput('')
       setHasStarted(true)
-      setMessages((p) => [...p, { role: 'user', content: \`[\${targetPlatform}] \${msg}\` }])
+      setMessages((p) => [...p, { role: 'user', content: `[${targetPlatform}] ${msg}` }])
       scrollBottom()
 
       try {
@@ -164,7 +164,7 @@ export default function ContentFlowPage() {
               <button
                 key={p.id}
                 onClick={() => setTargetPlatform(p.id)}
-                className={\`chat-platform-btn \${targetPlatform === p.id ? 'active' : ''}\`}
+                className={`chat-platform-btn ${targetPlatform === p.id ? 'active' : ''}`}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

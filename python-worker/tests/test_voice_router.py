@@ -28,10 +28,11 @@ async def test_voice_ingest_success(client: AsyncClient):
     with patch("app.routers.voice.get_embedding_service") as mock_get_emb, \
          patch("app.routers.voice.save_voice_example", new_callable=AsyncMock) as mock_save:
         
-        # get_embedding_service() returns the singleton instance
         mock_emb_service = AsyncMock(spec=EmbeddingService)
         mock_emb_service.get_embedding.return_value = [0.1] * 768
         mock_get_emb.return_value = mock_emb_service
+        
+        mock_save.return_value = {"id": "new-uuid-123"}
         
         response = await client.post("/voice/ingest", json=request_data, headers=headers)
         

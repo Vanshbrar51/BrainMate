@@ -10,14 +10,14 @@ const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || "dev-token";
 
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   return withErrorHandler(req, async () => {
     return withSpan("api.writeright.voice.delete", async () => {
       const { userId } = await auth();
       if (!userId) throw createApiError("UNAUTHORIZED", "Not authenticated", 401);
 
-      const { id } = params;
+      const { id } = await params;
       if (!id) throw createApiError("VALIDATION_ERROR", "Missing example ID", 400);
 
       addSpanAttributes({ "user.id": userId, "writeright.voice.id": id });

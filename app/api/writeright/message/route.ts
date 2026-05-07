@@ -174,7 +174,10 @@ export async function POST(req: Request) {
 
       // 5. Quota check
       const quotaResponse = await getQuota(req);
-      const quota = await quotaResponse.json();
+      const quota = await quotaResponse.json() as { 
+        tier: "free" | "pro" | "team",
+        exhausted: { requests: boolean, tokens: boolean }
+      };
 
       if (quota.exhausted.requests || quota.exhausted.tokens) {
         throw createApiError("QUOTA_EXCEEDED", "Monthly limit reached. Upgrade for more.", 402);

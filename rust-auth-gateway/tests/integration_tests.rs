@@ -119,3 +119,29 @@ async fn test_adversarial_jwt_tampering() {
     // Should be unauthorized
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn test_calendar_ics_generation() {
+    let base_url = spawn_test_gateway().await;
+    let client = reqwest::Client::new();
+
+    let resp = client.get(format!("{}/v1/tools/calendar.ics", base_url))
+        .query(&[
+            ("title", "Project Meeting"),
+            ("time", "Tomorrow at 3 PM"),
+            ("description", "Discuss implementation details"),
+        ])
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers()["content-type"], "text/calendar; charset=utf-8");
+    
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("BEGIN:VCALENDAR"));
+    assert!(body.contains("SUMMARY:Project Meeting"));
+    assert!(body.contains("DESCRIPTION:Meeting Time: Tomorrow at 3 PM"));
+    assert!(body.contains("Discuss implementation details"));
+    assert!(body.contains("END:VCALENDAR"));
+}

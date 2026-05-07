@@ -29,7 +29,11 @@ from app.services.ai_worker import process_job
 from app.services.supabase_client import update_job_status
 from app.routers.health import increment_metric
 
+from opentelemetry import trace
+
 logger = logging.getLogger("writeright.queue_consumer")
+tracer = trace.get_tracer(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -207,114 +211,120 @@ async def _process_job_safe(
     job: WritingJob,
 ) -> None:
     """Process a single job with error handling, locking, and retry logic."""
+    with tracer.start_as_current_span("queue_consumer.process_job_safe") as span:
+        span.set_attributes({
+            "job.id": job.id,
+            "worker.id": worker_id,
+            "job.attempt": job.attempt
+        })
 
-    # 1. Acquire distributed lock (prevents double-processing)
-    lock_key = f"{LOCK_PREFIX}{job.id}"
-    lock_value = f"{worker_id}:{time.time()}"
+        # 1. Acquire distributed lock (prevents double-processing)
+        lock_key = f"{LOCK_PREFIX}{job.id}"
+        lock_value = f"{worker_id}:{time.time()}"
 
-    lock_acquired = await redis_client.set(
-        lock_key,
-        lock_value,
-        nx=True,
-        ex=LOCK_TTL_SECS,
-    )
-    if not lock_acquired:
-        logger.debug("Job %s already locked by another worker", job.id)
-        return
+        lock_acquired = await redis_client.set(
+            lock_key,
+            lock_value,
+            nx=True,
+            ex=LOCK_TTL_SECS,
+        )
+        if not lock_acquired:
+            logger.debug("Job %s already locked by another worker", job.id)
+            return
 
-    try:
-        # 2. Update status to processing
-        await _set_job_status(redis_client, job.id, "processing")
+        try:
+            # 2. Update status to processing
+            await _set_job_status(redis_client, job.id, "processing")
 
-        # 3. Process with timeout
-        _token_buffer = ""
-        _word_count_published = 0
+            # 3. Process with timeout
+            _token_buffer = ""
+            _word_count_published = 0
 
-        async def on_stream_chunk(chunk: str, full_text: str) -> None:
-            nonlocal _token_buffer, _word_count_published
-            _token_buffer += chunk
+            async def on_stream_chunk(chunk: str, full_text: str) -> None:
+                nonlocal _token_buffer, _word_count_published
+                _token_buffer += chunk
 
-            import re
-            if '"improved_text": "' in full_text and _word_count_published < 500:
-                match = re.search(r'"improved_text":\s*"((?:[^"\\]|\\.)*)', full_text)
-                if match:
-                    so_far = match.group(1).replace('\\"', '"').replace('\\n', '\n')
-                    words_so_far = so_far.split()
-                    if len(words_so_far) > _word_count_published:
-                        new_words = words_so_far[_word_count_published:]
-                        word_chunk = " ".join(new_words) + " "
-                        await _publish_stream_chunk(
-                            redis_client=redis_client,
-                            job_id=job.id,
-                            chunk=word_chunk,
-                            delta=word_chunk,
-                        )
-                        _word_count_published = len(words_so_far)
+                import re
+                if '"improved_text": "' in full_text and _word_count_published < 500:
+                    match = re.search(r'"improved_text":\s*"((?:[^"\\]|\\.)*)', full_text)
+                    if match:
+                        so_far = match.group(1).replace('\\"', '"').replace('\\n', '\n')
+                        words_so_far = so_far.split()
+                        if len(words_so_far) > _word_count_published:
+                            new_words = words_so_far[_word_count_published:]
+                            word_chunk = " ".join(new_words) + " "
+                            await _publish_stream_chunk(
+                                redis_client=redis_client,
+                                job_id=job.id,
+                                chunk=word_chunk,
+                                delta=word_chunk,
+                            )
+                            _word_count_published = len(words_so_far)
 
-        async def on_status(stage: str) -> None:
-            await _publish_stream_status(
-                redis_client=redis_client,
-                job_id=job.id,
-                stage=stage,
+            async def on_status(stage: str) -> None:
+                await _publish_stream_status(
+                    redis_client=redis_client,
+                    job_id=job.id,
+                    stage=stage,
+                )
+
+            result = await asyncio.wait_for(
+                process_job(job, get_settings(), on_stream_chunk=on_stream_chunk, on_status=on_status),
+                timeout=float(get_settings().job_timeout_seconds),
             )
 
-        result = await asyncio.wait_for(
-            process_job(job, get_settings(), on_stream_chunk=on_stream_chunk, on_status=on_status),
-            timeout=float(get_settings().job_timeout_seconds),
-        )
+            # 4. Success — update status and publish result
+            result_dict = result.model_dump()
 
-        # 4. Success — update status and publish result
-        result_dict = result.model_dump()
+            await _set_job_status(
+                redis_client,
+                job.id,
+                "completed",
+            )
+            await _publish_result(redis_client, job.id, result_dict)
+            try:
+                cache_key = f"writeright:cache:{_input_hash_for_cache(job)}"
+                await redis_client.setex(cache_key, STATUS_TTL_SECS, json.dumps(result_dict))
+            except Exception:
+                logger.warning(
+                    "Failed to cache result for job %s (non-fatal)", job.id)
 
-        await _set_job_status(
-            redis_client,
-            job.id,
-            "completed",
-        )
-        await _publish_result(redis_client, job.id, result_dict)
-        try:
-            cache_key = f"writeright:cache:{_input_hash_for_cache(job)}"
-            await redis_client.setex(cache_key, STATUS_TTL_SECS, json.dumps(result_dict))
-        except Exception:
-            logger.warning(
-                "Failed to cache result for job %s (non-fatal)", job.id)
+            logger.info(
+                '{"event": "job.completed", "job_id": "%s", "chat_id": "%s", '
+                '"model": "%s", "prompt_tokens": %d, "completion_tokens": %d, '
+                '"tone": "%s", "mode": "%s"}',
+                job.id,
+                job.chat_id,
+                result.model,
+                result.prompt_tokens,
+                result.completion_tokens,
+                job.tone,
+                job.mode,
+            )
+            increment_metric("jobs_processed")
 
-        logger.info(
-            '{"event": "job.completed", "job_id": "%s", "chat_id": "%s", '
-            '"model": "%s", "prompt_tokens": %d, "completion_tokens": %d, '
-            '"tone": "%s", "mode": "%s"}',
-            job.id,
-            job.chat_id,
-            result.model,
-            result.prompt_tokens,
-            result.completion_tokens,
-            job.tone,
-            job.mode,
-        )
-        increment_metric("jobs_processed")
+        except asyncio.TimeoutError:
+            logger.error(
+                "Job %s timed out after %ds",
+                job.id,
+                get_settings().job_timeout_seconds)
+            await _handle_failure(
+                redis_client=redis_client,
+                job=job,
+                error=f"Job timed out after {get_settings().job_timeout_seconds}s",
+            )
 
-    except asyncio.TimeoutError:
-        logger.error(
-            "Job %s timed out after %ds",
-            job.id,
-            get_settings().job_timeout_seconds)
-        await _handle_failure(
-            redis_client=redis_client,
-            job=job,
-            error=f"Job timed out after {get_settings().job_timeout_seconds}s",
-        )
+        except Exception as exc:
+            logger.exception("Job %s failed: %s", job.id, str(exc))
+            await _handle_failure(
+                redis_client=redis_client,
+                job=job,
+                error=str(exc),
+            )
 
-    except Exception as exc:
-        logger.exception("Job %s failed: %s", job.id, str(exc))
-        await _handle_failure(
-            redis_client=redis_client,
-            job=job,
-            error=str(exc),
-        )
-
-    finally:
-        # Release lock
-        await redis_client.delete(lock_key)
+        finally:
+            # Release lock
+            await redis_client.delete(lock_key)
 
 
 async def _handle_failure(

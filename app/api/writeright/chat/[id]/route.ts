@@ -122,13 +122,13 @@ export async function DELETE(
       const supabase = getSupabaseAdmin();
 
       // Soft delete — set deleted_at to now
-      const { error, count } = await supabase
+      const { error, data } = await supabase
         .from("writeright_chats")
         .update({ deleted_at: new Date().toISOString() })
         .eq("id", chatId)
         .eq("user_id", userId)
         .is("deleted_at", null)
-        .select("id", { count: "exact" });
+        .select("id");
 
       if (error) {
         console.error("[api.writeright.chat] Delete failed:", {
@@ -138,7 +138,8 @@ export async function DELETE(
         throw createApiError("DB_ERROR", "Failed to delete chat", 500);
       }
 
-      if (!count || count === 0) {
+      const count = data?.length || 0;
+      if (count === 0) {
         throw createApiError("NOT_FOUND", "Chat not found or already deleted", 404);
       }
 
