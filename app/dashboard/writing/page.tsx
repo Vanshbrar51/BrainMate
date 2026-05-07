@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useHaptics } from "@/lib/haptics"
 import { useAuth } from '@clerk/nextjs'
 import { useErrorToast } from '@/lib/writeright-toast'
 import React from 'react'
@@ -35,6 +36,8 @@ import {
   Smile,
   ArrowRight,
   Wand2,
+  Volume2,
+  VolumeX,
   Settings2,
   Fingerprint,
   Loader2,
@@ -2260,6 +2263,25 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export default function WriteRightPage() {
+
+
+  useEffect(() => {
+    if (clarityScore > prevScoreRef.current + 2) { // Only pulse on noticeable improvement
+      setPulse(true)
+      const timer = setTimeout(() => setPulse(false), 500)
+      prevScoreRef.current = clarityScore
+      return () => clearTimeout(timer)
+    }
+    prevScoreRef.current = clarityScore
+  }, [clarityScore])
+
+  // Get color based on score
+  const clarityColor = useMemo(() => {
+    if (clarityScore < 40) return '#f59e0b' // Amber
+    if (clarityScore < 70) return '#06b6d4' // Cyan
+    return '#10b981' // Emerald
+  }, [clarityScore])
+
   const { getToken } = useAuth()
   const { toasts, dismiss, showError } = useErrorToast()
   const [input, setInput] = useState('')
@@ -2275,6 +2297,56 @@ export default function WriteRightPage() {
   const [triageLoading, setTriageLoading] = useState(false)
   const [voiceModalOpen, setVoiceModalOpen] = useState(false)
   const [showAdvancedTools, setShowAdvancedTools] = useState(false)
+
+  const { playClick, playShimmer, toggleMute, isMuted } = useHaptics()
+
+  // Clarity Score (Average sentence length + Flesch-Kincaid-like simplicity)
+  const clarityScore = useMemo(() => {
+    if (!input.trim()) return 0
+    const words = input.trim().split(/\s+/).length
+    const sentences = input.split(/[.!?]+/).filter(Boolean).length || 1
+    const chars = input.replace(/\s/g, '').length
+
+    const avgWordsPerSentence = words / sentences
+    const avgCharsPerWord = chars / words
+
+    // Lower is better (simpler)
+    const score = avgWordsPerSentence + (avgCharsPerWord * 5)
+
+    // Convert to a 1-100 scale where higher is better clarity
+    // Ideal roughly: 15 words/sentence, 5 chars/word -> 15 + 25 = 40.
+    let mapped = 100 - ((score - 20) * 2)
+    return Math.max(0, Math.min(100, mapped))
+  }, [input])
+
+  const prevScoreRef = useRef(clarityScore)
+  const [pulse, setPulse] = useState(false)
+  const [ghostText, setGhostText] = useState('')
+  const [ghosting, setGhosting] = useState(false)
+
+  // Ghosting effect when intensity changes
+  useEffect(() => {
+    if (!input.trim() || isMorphing) return
+    setGhosting(true)
+
+    // Simple mock "morph" to show AI thinking
+    const words = input.split(' ')
+    const mockGhost = words.map((w, i) => {
+      if (i % 5 === 0 && w.length > 3) return w + '...'
+      return w
+    }).join(' ')
+
+    setGhostText(mockGhost)
+
+    const timer = setTimeout(() => {
+      setGhosting(false)
+      setGhostText('')
+    }, 400) // Flicker duration
+
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intensity, isMorphing])
+
   const [messages, setMessages] = useState<WriteRightMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [hasStarted, setHasStarted] = useState(false)
@@ -2995,6 +3067,7 @@ export default function WriteRightPage() {
       setSessionCount(prev => prev + 1)
 
       // ENHANCE-06: Trigger shortcut tip after 3rd improvement
+      playShimmer()
       if (sessionCount === 2) {
         try {
           const dismissed = localStorage.getItem('wr:shortcut-tip')
@@ -3704,13 +3777,14 @@ export default function WriteRightPage() {
                   </div>
                 </div>
 
-                <div className="chat-input-box">
+                <div className="chat-input-box wr-pulse-wrapper" style={{ '--writing-clarity-color': clarityColor } as React.CSSProperties}>
+                  {pulse && <div className="wr-pulse-anim" />}
                   <textarea
                     ref={taRef}
                     className="chat-textarea"
                     placeholder={MODE_PLACEHOLDERS[mode]}
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={(e) => { playClick(); setInput(e.target.value) }}
                     onInput={(e) => {
                       const t = e.currentTarget
                       t.style.height = 'auto'
@@ -3725,6 +3799,11 @@ export default function WriteRightPage() {
                     rows={3}
                     maxLength={CHAR_MAX}
                   />
+                  {ghosting && ghostText && (
+                    <div className="wr-ghost-text">
+                      {ghostText}
+                    </div>
+                  )}
                   {charDisplay && (
                     <p className={`wr-char-count${charClass ? ` ${charClass}` : ''}`}>
                       {charDisplay}
@@ -3879,6 +3958,15 @@ export default function WriteRightPage() {
                     </button>
                   )}
 
+                  <button
+                    type="button"
+                    className={`chat-tool-btn${!isMuted ? ' active' : ''}`}
+                    onClick={toggleMute}
+                    aria-label="Toggle haptics"
+                    title="Mechanical haptics"
+                  >
+                    {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                  </button>
                   <div className="wr-depth-menu">
                     <button type="button" className="chat-tool-btn" aria-label="Rewrite depth">
                       <Settings2 size={16} />
