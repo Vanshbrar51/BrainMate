@@ -2468,3 +2468,83 @@ footer {
 }
 
 /* WriteRight CSS END */
+
+/* ── WRITERIGHT HAPTICS & VISUAL PULSE ──────────────────────── */
+.wr-pulse-wrapper {
+  position: relative;
+  border-radius: var(--radius-md, 0.5rem);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.wr-pulse-wrapper:focus-within {
+  border-color: var(--writing-clarity-color, var(--accent));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--writing-clarity-color, var(--accent)) 20%, transparent);
+}
+
+.wr-pulse-wrapper::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1px solid var(--writing-clarity-color, transparent);
+  pointer-events: none;
+  opacity: 0.5;
+  transition: border-color 0.3s ease;
+}
+
+.wr-pulse-anim {
+  position: absolute;
+  inset: -4px;
+  border-radius: calc(var(--radius-md, 0.5rem) + 2px);
+  background: transparent;
+  border: 2px solid var(--writing-clarity-color, var(--accent));
+  opacity: 0;
+  pointer-events: none;
+  animation: wr-pulse-keyframe 0.5s ease-out forwards;
+}
+
+@keyframes wr-pulse-keyframe {
+  0% { transform: scale(0.98); opacity: 0.6; }
+  100% { transform: scale(1.02); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wr-pulse-anim { display: none; }
+}
+
+/* ── GHOST-WRITING MORPH PREVIEW ───────────────────────────── */
+.wr-ghost-text {
+  position: absolute;
+  top: 12px; /* Match .chat-textarea padding */
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  pointer-events: none;
+  color: var(--text-3);
+  opacity: 0.3;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: hidden;
+  z-index: 1;
+  animation: wr-ghost-flicker 0.4s ease-in-out forwards;
+}
+
+@keyframes wr-ghost-flicker {
+  0% { opacity: 0.3; filter: blur(1px); }
+  50% { opacity: 0.15; filter: blur(2px); }
+  100% { opacity: 0; filter: blur(0px); }
+}
+
+/* Ensure textarea background is transparent so ghost shows through,
+   but parent box has background */
+.chat-input-box .chat-textarea {
+  background-color: transparent;
+  position: relative;
+  z-index: 2;
+}
+.chat-input-box {
+  background-color: var(--surface);
+}
