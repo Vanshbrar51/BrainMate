@@ -3,9 +3,15 @@ import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { withSpan } from "@/lib/tracing";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const getOpenAI = () => {
+  if (!process.env.OPENAI_API_KEY) {
+    if (process.env.NODE_ENV === "production" && process.env.NEXT_PHASE !== "phase-production-build") {
+       throw new Error("Missing credentials. Please pass an apiKey or set OPENAI_API_KEY.");
+    }
+    return new OpenAI({ apiKey: "dummy-key-for-build" });
+  }
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+};
 
 export async function POST(req: Request) {
   return withErrorHandler(req, async () => {
@@ -27,6 +33,8 @@ export async function POST(req: Request) {
       if (!fullText || !selectedText || !prompt) {
         throw createApiError("VALIDATION_ERROR", "Missing required fields", 400);
       }
+
+      const openai = getOpenAI();
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",

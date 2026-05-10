@@ -27,7 +27,10 @@ async def morph_text(
     """Morph text based on new tone/intensity with low latency."""
 
     # Simple internal token check (shared secret)
-    if not x_internal_api_token or x_internal_api_token != get_settings().internal_api_token:
+    if (
+        not x_internal_api_token
+        or x_internal_api_token != get_settings().internal_api_token
+    ):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     messages = build_morph_messages(
@@ -41,6 +44,7 @@ async def morph_text(
     async def generate() -> AsyncGenerator[str, None]:
         router_instance = get_model_router()
         import asyncio
+
         queue: asyncio.Queue[str | None] = asyncio.Queue()
 
         async def token_callback(chunk: str, _: str) -> None:
@@ -53,7 +57,7 @@ async def morph_text(
                     messages=messages,
                     traceparent=request.traceparent,
                     on_token=token_callback,
-                    model_override="gemini-1.5-flash"
+                    model_override="gemini-1.5-flash",
                 )
             except Exception as e:
                 logger.error(f"Morph router task failed: {e}")

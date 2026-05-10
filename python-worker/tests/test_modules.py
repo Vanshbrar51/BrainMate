@@ -19,7 +19,7 @@ def test_dev_helper_mock():
         response = client.post(
             "/dev-helper",
             json={"prompt": "test error"},
-            headers={"X-Internal-API-Token": "test-token"}
+            headers={"X-Internal-API-Token": "test-token"},
         )
         assert response.status_code == 200
         assert response.json()["content"] == "Root cause: Test error"
@@ -33,7 +33,7 @@ def test_study_mate_mock():
         response = client.post(
             "/study-mate",
             json={"prompt": "learn math"},
-            headers={"X-Internal-API-Token": "test-token"}
+            headers={"X-Internal-API-Token": "test-token"},
         )
         assert response.status_code == 200
         assert response.json()["content"] == "Step 1: Learn"

@@ -8,7 +8,11 @@ from fastapi import APIRouter, Header, HTTPException, Query
 
 from app.models.job import VoiceIngestRequest, VoiceListResponse, VoiceExample
 from app.services.embedding_service import get_embedding_service
-from app.services.supabase_client import save_voice_example, get_voice_examples, delete_voice_example
+from app.services.supabase_client import (
+    save_voice_example,
+    get_voice_examples,
+    delete_voice_example,
+)
 from app.config import get_settings
 
 logger = logging.getLogger("writeright.routers.voice")
@@ -24,7 +28,10 @@ async def ingest_voice_example(
     """Generate embedding for a writing example and save to Supabase."""
 
     # 1. Internal token check
-    if not x_internal_api_token or x_internal_api_token != get_settings().internal_api_token:
+    if (
+        not x_internal_api_token
+        or x_internal_api_token != get_settings().internal_api_token
+    ):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     if not request.content.strip():
@@ -37,9 +44,7 @@ async def ingest_voice_example(
 
         # 3. Save to Supabase
         result = await save_voice_example(
-            user_id=request.user_id,
-            content=request.content,
-            embedding=embedding
+            user_id=request.user_id, content=request.content, embedding=embedding
         )
 
         return {"status": "success", "id": result.get("id")}
@@ -56,7 +61,10 @@ async def list_voice_examples(
 ):
     """List all writing examples for a user."""
 
-    if not x_internal_api_token or x_internal_api_token != get_settings().internal_api_token:
+    if (
+        not x_internal_api_token
+        or x_internal_api_token != get_settings().internal_api_token
+    ):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
@@ -65,7 +73,7 @@ async def list_voice_examples(
             VoiceExample(
                 id=str(row["id"]),
                 content=row["content"],
-                created_at=str(row["created_at"])
+                created_at=str(row["created_at"]),
             )
             for row in rows
         ]
@@ -83,7 +91,10 @@ async def remove_voice_example(
 ):
     """Delete a specific writing example."""
 
-    if not x_internal_api_token or x_internal_api_token != get_settings().internal_api_token:
+    if (
+        not x_internal_api_token
+        or x_internal_api_token != get_settings().internal_api_token
+    ):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:

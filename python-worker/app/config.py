@@ -38,9 +38,10 @@ class Settings(BaseSettings):
 
     # Google AI Studio (LLM API)
     google_ai_studio_api_key: str
-    google_ai_studio_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
-    anthropic_api_key: str = Field(
-        default="", description="env: ANTHROPIC_API_KEY")
+    google_ai_studio_base_url: str = (
+        "https://generativelanguage.googleapis.com/v1beta/openai"
+    )
+    anthropic_api_key: str = Field(default="", description="env: ANTHROPIC_API_KEY")
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     anthropic_fallback_model: str = "claude-haiku-4-5-20251001"
     enable_anthropic_fallback: bool = Field(

@@ -44,7 +44,7 @@ import {
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
-  Columns,
+
 } from 'lucide-react'
 import {
   UserMessage,

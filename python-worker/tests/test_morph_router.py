@@ -2,19 +2,21 @@ import pytest
 from httpx import AsyncClient
 from unittest.mock import AsyncMock, patch
 
-
 # Test cases for the /morph endpoint
 
 
 @pytest.mark.asyncio
 async def test_morph_endpoint_unauthorized(client: AsyncClient):
-    response = await client.post("/morph", json={
-        "original_text": "hello",
-        "current_text": "hello",
-        "tone": "Professional",
-        "intensity": 3,
-        "mode": "email"
-    })
+    response = await client.post(
+        "/morph",
+        json={
+            "original_text": "hello",
+            "current_text": "hello",
+            "tone": "Professional",
+            "intensity": 3,
+            "mode": "email",
+        },
+    )
     assert response.status_code == 401
 
 
@@ -26,7 +28,7 @@ async def test_morph_endpoint_success(client: AsyncClient):
         "current_text": "Hello, how are you?",
         "tone": "Formal",
         "intensity": 5,
-        "mode": "email"
+        "mode": "email",
     }
 
     # Mock ModelRouter.route_stream to simulate token streaming
@@ -41,7 +43,9 @@ async def test_morph_endpoint_success(client: AsyncClient):
         mock_router.route_stream.side_effect = mock_route_stream
         mock_get_router.return_value = mock_router
 
-        async with client.stream("POST", "/morph", json=request_data, headers=headers) as response:
+        async with client.stream(
+            "POST", "/morph", json=request_data, headers=headers
+        ) as response:
             assert response.status_code == 200
             assert response.headers["content-type"] == "text/plain; charset=utf-8"
 
@@ -62,7 +66,7 @@ async def test_morph_endpoint_error_handling(client: AsyncClient):
         "current_text": "Hello",
         "tone": "Formal",
         "intensity": 3,
-        "mode": "email"
+        "mode": "email",
     }
 
     with patch("app.routers.morph.get_model_router") as mock_get_router:
@@ -70,8 +74,12 @@ async def test_morph_endpoint_error_handling(client: AsyncClient):
         mock_router.route_stream.side_effect = Exception("AI failed")
         mock_get_router.return_value = mock_router
 
-        async with client.stream("POST", "/morph", json=request_data, headers=headers) as response:
-            assert response.status_code == 200  # StreamingResponse often starts with 200
+        async with client.stream(
+            "POST", "/morph", json=request_data, headers=headers
+        ) as response:
+            assert (
+                response.status_code == 200
+            )  # StreamingResponse often starts with 200
 
             chunks = []
             async for chunk in response.aiter_text():
