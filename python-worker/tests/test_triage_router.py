@@ -17,6 +17,7 @@ def mock_model_router():
         mock_get_router.return_value = mock_router
         yield mock_router
 
+
 # Test cases for the /triage endpoint
 
 
@@ -40,7 +41,8 @@ async def test_triage_endpoint_valid_request_empty_ai_response(
 ):
     # Mock AI to return empty content
     mock_model_router.route.return_value = SimpleNamespace(
-        content="", model="mock", prompt_tokens=0, completion_tokens=0)
+        content="", model="mock", prompt_tokens=0, completion_tokens=0
+    )
 
     headers = {"X-Internal-API-Token": "test-token"}
     request_data = {"raw_text": "Hello world"}
@@ -56,7 +58,8 @@ async def test_triage_endpoint_valid_request_malformed_json_ai_response(
 ):
     # Mock AI to return malformed JSON
     mock_model_router.route.return_value = SimpleNamespace(
-        content="not json", model="mock", prompt_tokens=0, completion_tokens=0)
+        content="not json", model="mock", prompt_tokens=0, completion_tokens=0
+    )
 
     headers = {"X-Internal-API-Token": "test-token"}
     request_data = {"raw_text": "Hello world"}
@@ -86,7 +89,8 @@ async def test_triage_endpoint_valid_request_ai_response_with_markdown(
     }
     ```"""
     mock_model_router.route.return_value = SimpleNamespace(
-        content=mock_ai_content, model="mock", prompt_tokens=10, completion_tokens=20)
+        content=mock_ai_content, model="mock", prompt_tokens=10, completion_tokens=20
+    )
 
     headers = {"X-Internal-API-Token": "test-token"}
     request_data = {"raw_text": "Email 1 content"}
@@ -109,16 +113,17 @@ async def test_triage_endpoint_valid_request_successful_triage(
         category="Client",
         smart_replies=["Confirm availability", "Suggest alternative times"],
         action_items=["Check calendar", "Propose times"],
-        original_segment="Hi team, I'd like to schedule a meeting next week to discuss the project."
+        original_segment="Hi team, I'd like to schedule a meeting next week to discuss the project.",
     )
-    mock_ai_content = TriageResponse(
-        items=[mock_triage_item]).model_dump_json()
+    mock_ai_content = TriageResponse(items=[mock_triage_item]).model_dump_json()
     mock_model_router.route.return_value = SimpleNamespace(
-        content=mock_ai_content, model="mock", prompt_tokens=10, completion_tokens=20)
+        content=mock_ai_content, model="mock", prompt_tokens=10, completion_tokens=20
+    )
 
     headers = {"X-Internal-API-Token": "test-token"}
     request_data = {
-        "raw_text": "Hi team, I'd like to schedule a meeting next week to discuss the project."}
+        "raw_text": "Hi team, I'd like to schedule a meeting next week to discuss the project."
+    }
     response = await client.post("/triage", json=request_data, headers=headers)
 
     assert response.status_code == 200
@@ -127,6 +132,7 @@ async def test_triage_endpoint_valid_request_successful_triage(
     assert parsed_response.items[0].subject == "Meeting Request"
     assert parsed_response.items[0].urgency == "High"
     assert "Check calendar" in parsed_response.items[0].action_items
+
 
 # Test cases for prompt builder utility
 

@@ -68,6 +68,7 @@ return items[1]
 # Status Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _set_job_status(
     redis_client: aioredis.Redis,
     job_id: str,
@@ -132,6 +133,7 @@ async def _publish_stream_chunk(
 # Consumer Loop
 # ---------------------------------------------------------------------------
 
+
 async def consume_jobs(
     worker_id: str,
     redis_client: aioredis.Redis,
@@ -167,8 +169,9 @@ async def consume_jobs(
                 await asyncio.sleep(poll_interval)
                 continue
 
-            member_str = member.decode(
-                "utf-8") if isinstance(member, bytes) else str(member)
+            member_str = (
+                member.decode("utf-8") if isinstance(member, bytes) else str(member)
+            )
 
             try:
                 job_data = json.loads(member_str)
@@ -186,7 +189,9 @@ async def consume_jobs(
 
             async def run_job(j: WritingJob) -> None:
                 try:
-                    await _process_job_safe(worker_id=worker_id, redis_client=redis_client, job=j)
+                    await _process_job_safe(
+                        worker_id=worker_id, redis_client=redis_client, job=j
+                    )
                 finally:
                     semaphore.release()
 
@@ -200,9 +205,7 @@ async def consume_jobs(
                 await asyncio.gather(*active_tasks, return_exceptions=True)
             break
         except Exception:
-            logger.exception(
-                "Worker %s encountered an error in main loop",
-                worker_id)
+            logger.exception("Worker %s encountered an error in main loop", worker_id)
             await asyncio.sleep(poll_interval)
 
 
@@ -213,11 +216,9 @@ async def _process_job_safe(
 ) -> None:
     """Process a single job with error handling, locking, and retry logic."""
     with tracer.start_as_current_span("queue_consumer.process_job_safe") as span:
-        span.set_attributes({
-            "job.id": job.id,
-            "worker.id": worker_id,
-            "job.attempt": job.attempt
-        })
+        span.set_attributes(
+            {"job.id": job.id, "worker.id": worker_id, "job.attempt": job.attempt}
+        )
 
         # 1. Acquire distributed lock (prevents double-processing)
         lock_key = f"{LOCK_PREFIX}{job.id}"
@@ -246,12 +247,13 @@ async def _process_job_safe(
                 _token_buffer += chunk
 
                 import re
+
                 if '"improved_text": "' in full_text and _word_count_published < 500:
                     match = re.search(
-                        r'"improved_text":\s*"((?:[^"\\]|\\.)*)', full_text)
+                        r'"improved_text":\s*"((?:[^"\\]|\\.)*)', full_text
+                    )
                     if match:
-                        so_far = match.group(1).replace(
-                            '\\"', '"').replace('\\n', '\n')
+                        so_far = match.group(1).replace('\\"', '"').replace("\\n", "\n")
                         words_so_far = so_far.split()
                         if len(words_so_far) > _word_count_published:
                             new_words = words_so_far[_word_count_published:]
@@ -276,7 +278,8 @@ async def _process_job_safe(
                     job,
                     get_settings(),
                     on_stream_chunk=on_stream_chunk,
-                    on_status=on_status),
+                    on_status=on_status,
+                ),
                 timeout=float(get_settings().job_timeout_seconds),
             )
 
@@ -291,10 +294,11 @@ async def _process_job_safe(
             await _publish_result(redis_client, job.id, result_dict)
             try:
                 cache_key = f"writeright:cache:{_input_hash_for_cache(job)}"
-                await redis_client.setex(cache_key, STATUS_TTL_SECS, json.dumps(result_dict))
+                await redis_client.setex(
+                    cache_key, STATUS_TTL_SECS, json.dumps(result_dict)
+                )
             except Exception:
-                logger.warning(
-                    "Failed to cache result for job %s (non-fatal)", job.id)
+                logger.warning("Failed to cache result for job %s (non-fatal)", job.id)
 
             logger.info(
                 '{"event": "job.completed", "job_id": "%s", "chat_id": "%s", '
@@ -312,9 +316,8 @@ async def _process_job_safe(
 
         except asyncio.TimeoutError:
             logger.error(
-                "Job %s timed out after %ds",
-                job.id,
-                get_settings().job_timeout_seconds)
+                "Job %s timed out after %ds", job.id, get_settings().job_timeout_seconds
+            )
             await _handle_failure(
                 redis_client=redis_client,
                 job=job,
@@ -351,25 +354,30 @@ async def _handle_failure(
             "failed",
             {"error": error[:500]},
         )
-        await _publish_result(redis_client, job.id, {
-            "error": error,
-            "status": "failed",
-        })
+        await _publish_result(
+            redis_client,
+            job.id,
+            {
+                "error": error,
+                "status": "failed",
+            },
+        )
 
         dead_letter_entry = {
             **job.model_dump(),
             "failed_at": time.time(),
             "final_error": error[:500],
         }
-        await redis_client.zadd(DEAD_LETTER_KEY, {json.dumps(dead_letter_entry): time.time()})
+        await redis_client.zadd(
+            DEAD_LETTER_KEY, {json.dumps(dead_letter_entry): time.time()}
+        )
         await redis_client.expire(DEAD_LETTER_KEY, 7 * 24 * 3600)
 
         # Update Supabase
         try:
             await update_job_status(job.id, "failed", error=error[:500])
         except Exception:
-            logger.exception(
-                "Failed to update Supabase job status for %s", job.id)
+            logger.exception("Failed to update Supabase job status for %s", job.id)
 
         # F-BE-12: Push to dead letter queue for monitoring
         try:
@@ -378,13 +386,15 @@ async def _handle_failure(
                 "failed_at": time.time(),
                 "final_error": error[:500],
             }
-            await redis_client.zadd(DEAD_LETTER_KEY, {json.dumps(dead_entry): time.time()})
+            await redis_client.zadd(
+                DEAD_LETTER_KEY, {json.dumps(dead_entry): time.time()}
+            )
             # 7-day retention
             await redis_client.expire(DEAD_LETTER_KEY, 7 * 24 * 3600)
         except Exception:
             logger.warning(
-                "Failed to write to dead letter queue for job %s (non-fatal)",
-                job.id)
+                "Failed to write to dead letter queue for job %s (non-fatal)", job.id
+            )
 
         logger.error(
             '{"event": "job.failed", "job_id": "%s", "attempts": %d, "error": "%s"}',
@@ -412,8 +422,7 @@ async def _handle_failure(
         try:
             await update_job_status(job.id, "retrying", error=error[:500])
         except Exception:
-            logger.exception(
-                "Failed to update Supabase job status for %s", job.id)
+            logger.exception("Failed to update Supabase job status for %s", job.id)
 
         logger.warning(
             '{"event": "job.retrying", "job_id": "%s", "attempt": %d, "delay_ms": %d}',

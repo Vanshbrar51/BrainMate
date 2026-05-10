@@ -61,6 +61,7 @@ def set_health_dependencies(
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("/health")
 async def health_check() -> dict[str, Any]:
     """Liveness/readiness probe.
@@ -85,16 +86,23 @@ async def health_check() -> dict[str, Any]:
     supabase_ok = False
     try:
         from app.services.supabase_client import get_supabase
+
         await asyncio.to_thread(
-            lambda: get_supabase().table("writeright_chats").select("id").limit(1).execute()
+            lambda: get_supabase()
+            .table("writeright_chats")
+            .select("id")
+            .limit(1)
+            .execute()
         )
         supabase_ok = True
     except Exception:
         pass
 
-    status = "healthy" if (
-        redis_ok and supabase_ok) else (
-        "degraded" if redis_ok else "unhealthy")
+    status = (
+        "healthy"
+        if (redis_ok and supabase_ok)
+        else ("degraded" if redis_ok else "unhealthy")
+    )
 
     return {
         "status": status,

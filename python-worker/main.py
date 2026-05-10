@@ -51,34 +51,33 @@ logger = logging.getLogger("writeright.main")
 def _init_otel() -> None:
     """Initialize OpenTelemetry SDK if OTEL_ENDPOINT is configured."""
     if not settings.otel_endpoint:
-        logger.info(
-            "OTEL_ENDPOINT not set, skipping OpenTelemetry initialization")
+        logger.info("OTEL_ENDPOINT not set, skipping OpenTelemetry initialization")
         return
 
     try:
         from opentelemetry import trace
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.resources import Resource
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+            OTLPSpanExporter,
+        )
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-        resource = Resource.create({
-            "service.name": settings.otel_service_name,
-            "service.version": "0.1.0",
-        })
+        resource = Resource.create(
+            {
+                "service.name": settings.otel_service_name,
+                "service.version": "0.1.0",
+            }
+        )
 
-        exporter = OTLPSpanExporter(
-            endpoint=settings.otel_endpoint, insecure=True)
+        exporter = OTLPSpanExporter(endpoint=settings.otel_endpoint, insecure=True)
         provider = TracerProvider(resource=resource)
         provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
 
-        logger.info(
-            "OpenTelemetry initialized (endpoint=%s)",
-            settings.otel_endpoint)
+        logger.info("OpenTelemetry initialized (endpoint=%s)", settings.otel_endpoint)
     except ImportError:
-        logger.warning(
-            "OpenTelemetry packages not installed, tracing disabled")
+        logger.warning("OpenTelemetry packages not installed, tracing disabled")
     except Exception:
         logger.exception("Failed to initialize OpenTelemetry")
 
@@ -86,6 +85,7 @@ def _init_otel() -> None:
 # ---------------------------------------------------------------------------
 # Lifespan
 # ---------------------------------------------------------------------------
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -123,8 +123,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         supabase_ok = True
         logger.info("Supabase connected: %s", _mask_url(settings.supabase_url))
     except Exception:
-        logger.warning(
-            "Supabase connectivity check failed — will retry on first job")
+        logger.warning("Supabase connectivity check failed — will retry on first job")
 
     # 4. Set health check dependencies
     set_health_dependencies(
@@ -211,6 +210,7 @@ async def root() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _mask_url(url: str) -> str:
     """Mask credentials in a URL for safe logging."""

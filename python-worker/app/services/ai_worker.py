@@ -80,7 +80,11 @@ VERDICT_STRONG = "Strong draft"
 
 DEFAULT_SUGGESTIONS_BY_MODE: dict[str, list[str]] = {
     "email": ["Make it shorter", "Add a formal closing", "Make it more assertive"],
-    "paragraph": ["Simplify the language", "Tighten the structure", "Make it more concise"],
+    "paragraph": [
+        "Simplify the language",
+        "Tighten the structure",
+        "Make it more concise",
+    ],
     "linkedin": ["Add a stronger hook", "Make it more concise", "Add a clear CTA"],
     "whatsapp": ["Make it more formal", "Add a clear deadline", "Keep it concise"],
 }
@@ -128,15 +132,15 @@ def _sanitize_suggestion(raw_suggestion: Any) -> str | None:
 
 def _fallback_suggestions(mode: str) -> list[str]:
     defaults = DEFAULT_SUGGESTIONS_BY_MODE.get(
-        mode, DEFAULT_SUGGESTIONS_BY_MODE["email"])
+        mode, DEFAULT_SUGGESTIONS_BY_MODE["email"]
+    )
     return defaults.copy()
 
 
 def _extract_suggestions(data: dict[str, Any], mode: str) -> list[str]:
     """Return exactly 3 deduplicated, sanitized suggestion chips."""
     suggestions_raw = data.get("suggestions")
-    suggestions_list = suggestions_raw if isinstance(
-        suggestions_raw, list) else []
+    suggestions_list = suggestions_raw if isinstance(suggestions_raw, list) else []
 
     suggestions: list[str] = []
     seen: set[str] = set()
@@ -253,10 +257,10 @@ def _parse_ai_response(
                         english_version = None
                     teaching_data = data.get("teaching", {})
                     teaching = TeachingBlock(
-                        mistakes=teaching_data.get(
-                            "mistakes", []), better_versions=teaching_data.get(
-                            "better_versions", []), explanations=teaching_data.get(
-                            "explanations", []), )
+                        mistakes=teaching_data.get("mistakes", []),
+                        better_versions=teaching_data.get("better_versions", []),
+                        explanations=teaching_data.get("explanations", []),
+                    )
                     scores_data = data.get("scores", {})
                     if not isinstance(scores_data, dict):
                         scores_data = {}
@@ -266,8 +270,7 @@ def _parse_ai_response(
                         impact=_clamp_score(scores_data.get("impact")),
                         verdict=_normalize_verdict(scores_data.get("verdict")),
                     )
-                    logger.info(
-                        "JSON extraction succeeded after initial parse failure")
+                    logger.info("JSON extraction succeeded after initial parse failure")
                     return AIResult(
                         improved_text=improved_text,
                         english_version=english_version,
@@ -284,14 +287,14 @@ def _parse_ai_response(
 
         logger.warning("JSON extraction failed, falling back to regex")
 
-        improved_match = re.search(
-            r'"improved_text"\s*:\s*"((?:\\"|[^"])*?)"', cleaned)
+        improved_match = re.search(r'"improved_text"\s*:\s*"((?:\\"|[^"])*?)"', cleaned)
         if improved_match:
             try:
                 # Basic string unescaping fallback if standard loads aborts
                 # entirely
-                fb_text = improved_match.group(1).replace(
-                    '\\"', '"').replace('\\n', '\n')
+                fb_text = (
+                    improved_match.group(1).replace('\\"', '"').replace("\\n", "\n")
+                )
                 return AIResult(
                     improved_text=fb_text,
                     english_version=None,
@@ -306,11 +309,13 @@ def _parse_ai_response(
             except Exception:
                 pass
 
-        logger.error(
-            "Regex parsing heavily failed, resolving to pure content dump")
+        logger.error("Regex parsing heavily failed, resolving to pure content dump")
         return AIResult(
-            improved_text=content.strip() if content.strip(
-            ) else "Unable to process your request. Please try again.",
+            improved_text=(
+                content.strip()
+                if content.strip()
+                else "Unable to process your request. Please try again."
+            ),
             english_version=None,
             teaching=TeachingBlock(),
             follow_up="Could you try rephrasing your request?",
@@ -322,9 +327,7 @@ def _parse_ai_response(
         )
 
 
-async def _repair_json_response(
-    raw: str, router: ModelRouter
-) -> str | None:
+async def _repair_json_response(raw: str, router: ModelRouter) -> str | None:
     """AI-02: One-shot repair call to fix malformed JSON.
 
     Returns the repaired content string, or None if repair fails.
@@ -332,8 +335,10 @@ async def _repair_json_response(
     """
     try:
         repair_msgs = [
-            {"role": "system",
-             "content": "Fix the broken JSON below. Return ONLY the corrected raw JSON, no markdown."},
+            {
+                "role": "system",
+                "content": "Fix the broken JSON below. Return ONLY the corrected raw JSON, no markdown.",
+            },
             {"role": "user", "content": f"Broken JSON:\n{raw[:2000]}"},
         ]
         # BUG-09 FIX: use "json_repair" task type → temperature=0.1
@@ -352,6 +357,7 @@ async def _repair_json_response(
 # Writing Profile Analysis (F-04)
 # ---------------------------------------------------------------------------
 
+
 async def analyze_writing_profile(user_id: str) -> None:
     """Analyze the user's past mistakes and update their writing profile.
     Only executes if the usage count is a multiple of 5.
@@ -360,17 +366,18 @@ async def analyze_writing_profile(user_id: str) -> None:
         usage_count = await get_usage_count(user_id)
         if usage_count > 0 and usage_count % 5 == 0:
             logger.info(
-                f"Triggering writing profile analysis for user_id={user_id} (count={usage_count})")
+                f"Triggering writing profile analysis for user_id={user_id} (count={usage_count})"
+            )
             mistakes = await get_recent_mistakes(user_id, limit=20)
             if mistakes:
                 counter = Counter(mistakes)
                 top_mistakes = [m for m, _ in counter.most_common(5)]
                 await update_writing_profile(user_id, top_mistakes, usage_count)
-                logger.info(
-                    f"Updated writing profile for user_id={user_id} with {
+                logger.info(f"Updated writing profile for user_id={user_id} with {
                         len(top_mistakes)} mistakes")
     except Exception:
         logger.exception("Failed to analyze writing profile")
+
 
 # ---------------------------------------------------------------------------
 # Input Quality Gate (F-BE-11)
@@ -390,10 +397,14 @@ def _quality_gate(text: str) -> tuple[bool, str]:
     if alpha_ratio < 0.25:
         return False, "Text appears to contain mostly numbers or symbols."
     code_line_pattern = re.compile(
-        r'^\s*(def |class |function |import |const |let |var |#include|<\?php)', re.MULTILINE
+        r"^\s*(def |class |function |import |const |let |var |#include|<\?php)",
+        re.MULTILINE,
     )
     if len(code_line_pattern.findall(stripped)) >= 3:
-        return False, "This looks like code. WriteRight works with natural language only."
+        return (
+            False,
+            "This looks like code. WriteRight works with natural language only.",
+        )
     return True, ""
 
 
@@ -410,12 +421,14 @@ async def _generate_draft(
     on_stream_chunk: Callable[[str, str], Awaitable[None]] | None = None,
 ) -> tuple[AIResult, dict[str, bool]]:
     with tracer.start_as_current_span("ai_worker.generate_draft") as span:
-        span.set_attributes({
-            "job.id": job.id,
-            "job.mode": job.mode,
-            "job.tone": job.tone,
-            "job.intensity": job.intensity
-        })
+        span.set_attributes(
+            {
+                "job.id": job.id,
+                "job.mode": job.mode,
+                "job.tone": job.tone,
+                "job.intensity": job.intensity,
+            }
+        )
         # 2.7. Retrieve Brand Voice style DNA (RAG)
         voice_examples = []
         try:
@@ -429,7 +442,8 @@ async def _generate_draft(
                 logger.info(
                     "Injected %d Brand Voice examples for user %s",
                     len(voice_examples),
-                    job.user_id)
+                    job.user_id,
+                )
         except Exception:
             logger.warning("Brand Voice retrieval failed (non-fatal)")
 
@@ -479,7 +493,8 @@ async def _generate_draft(
         # result.
         if (
             result.improved_text == model_response.content.strip()
-            or result.improved_text == "Unable to process your request. Please try again."
+            or result.improved_text
+            == "Unable to process your request. Please try again."
             or result.teaching.mistakes == []  # Sign of regex fallback/failed parse
         ):
             logger.info("Attempting JSON repair for job %s", job.id)
@@ -519,9 +534,11 @@ async def _generate_critique_and_revision(
     """
 
     messages = [
-        {"role": "system",
-         "content": "You are a professional editor. Output only valid JSON."},
-        {"role": "user", "content": critique_prompt}
+        {
+            "role": "system",
+            "content": "You are a professional editor. Output only valid JSON.",
+        },
+        {"role": "user", "content": critique_prompt},
     ]
 
     try:
@@ -567,10 +584,19 @@ def _is_processable_input(text: str) -> tuple[bool, str]:
     # Looks like code (more than 3 lines starting with
     # def/function/class/import/const)
     import re as regex
-    code_lines = sum(1 for line in stripped.split('\n')
-                     if regex.match(r'^\s*(def |class |function |import |const |let |var |\{|\})', line))
+
+    code_lines = sum(
+        1
+        for line in stripped.split("\n")
+        if regex.match(
+            r"^\s*(def |class |function |import |const |let |var |\{|\})", line
+        )
+    )
     if code_lines >= 3:
-        return False, "This looks like code. WriteRight is for natural language writing only."
+        return (
+            False,
+            "This looks like code. WriteRight is for natural language writing only.",
+        )
 
     return True, ""
 
@@ -597,11 +623,13 @@ async def process_job(
         Exception: For unexpected errors.
     """
     with tracer.start_as_current_span("ai_worker.process_job") as span:
-        span.set_attributes({
-            "job.id": job.id,
-            "job.chat_id": job.chat_id,
-            "user.id": job.user_id,
-        })
+        span.set_attributes(
+            {
+                "job.id": job.id,
+                "job.chat_id": job.chat_id,
+                "user.id": job.user_id,
+            }
+        )
         logger.info(
             '{"event": "job.processing", "job_id": "%s", "chat_id": "%s", '
             '"tone": "%s", "mode": "%s", "attempt": %d}',
@@ -617,7 +645,8 @@ async def process_job(
             await update_job_status(job.id, "processing")
         except Exception:
             logger.warning(
-                "Failed to update job status to processing in Supabase (non-fatal)")
+                "Failed to update job status to processing in Supabase (non-fatal)"
+            )
 
         # 2. Fetch chat history from Supabase
         history: list[dict[str, Any]] = []
@@ -625,8 +654,7 @@ async def process_job(
             raw_history = await get_chat_history(job.chat_id, limit=20)
             # Convert to dicts for prompt builder
             history = [
-                {"role": msg.get("role", "user"),
-                 "content": msg.get("content", "")}
+                {"role": msg.get("role", "user"), "content": msg.get("content", "")}
                 for msg in raw_history
             ]
         except Exception:
@@ -640,32 +668,33 @@ async def process_job(
         try:
             profile = await get_writing_profile(job.user_id)
         except Exception:
-            logger.warning(
-                f"Failed to fetch profile for {
+            logger.warning(f"Failed to fetch profile for {
                     job.user_id} (continuing without profile)")
 
         can_process, reason = _is_processable_input(job.content)
         if not can_process:
             from app.models.job import AIResult, TeachingBlock, ScoreBlock
+
             return AIResult(
                 improved_text=job.content,
                 teaching=TeachingBlock(
                     mistakes=[reason],
                     better_versions=[
-                        "Please provide natural language text to improve."],
+                        "Please provide natural language text to improve."
+                    ],
                     explanations=[
-                        "WriteRight is designed for emails, paragraphs, LinkedIn posts, and WhatsApp messages."]
+                        "WriteRight is designed for emails, paragraphs, LinkedIn posts, and WhatsApp messages."
+                    ],
                 ),
                 follow_up="Try pasting an email draft or a paragraph you've written.",
                 suggestions=[
                     "Try an email draft",
                     "Try a LinkedIn post",
-                    "Try a paragraph"],
+                    "Try a paragraph",
+                ],
                 scores=ScoreBlock(
-                    clarity=0,
-                    tone=0,
-                    impact=0,
-                    verdict="Needs more work"),
+                    clarity=0, tone=0, impact=0, verdict="Needs more work"
+                ),
                 model="quality_gate",
                 prompt_tokens=0,
                 completion_tokens=0,
@@ -679,14 +708,16 @@ async def process_job(
         if not ok:
             logger.info(
                 '{"event": "job.quality_gate", "job_id": "%s", "reason": "%s"}',
-                job.id, gate_reason,
+                job.id,
+                gate_reason,
             )
             return AIResult(
                 improved_text=job.content,
                 teaching=TeachingBlock(
                     mistakes=[gate_reason],
                     better_versions=[
-                        "Please provide a natural language text to improve."],
+                        "Please provide a natural language text to improve."
+                    ],
                     explanations=[
                         "WriteRight is designed for emails, LinkedIn posts, paragraphs, and WhatsApp messages."
                     ],
@@ -695,12 +726,11 @@ async def process_job(
                 suggestions=[
                     "Try an email draft",
                     "Try a LinkedIn post",
-                    "Try a paragraph"],
+                    "Try a paragraph",
+                ],
                 scores=ScoreBlock(
-                    clarity=0,
-                    tone=0,
-                    impact=0,
-                    verdict="Needs more work"),
+                    clarity=0, tone=0, impact=0, verdict="Needs more work"
+                ),
                 model="quality_gate",
                 prompt_tokens=0,
                 completion_tokens=0,
@@ -717,7 +747,9 @@ async def process_job(
         if settings_instance.enable_critique_pipeline:
             if on_status:
                 await on_status("critiquing")
-            result = await _generate_critique_and_revision(result, job, settings_instance)
+            result = await _generate_critique_and_revision(
+                result, job, settings_instance
+            )
 
         if on_status:
             await on_status("finalizing")
@@ -732,7 +764,9 @@ async def process_job(
                     "model": result.model,
                     "prompt_tokens": result.prompt_tokens,
                     "completion_tokens": result.completion_tokens,
-                    "injection_detected": prompt_metadata.get("injection_detected", False),
+                    "injection_detected": prompt_metadata.get(
+                        "injection_detected", False
+                    ),
                     "job_id": job.id,
                     "mode": job.mode,
                     "tone": job.tone,
@@ -750,8 +784,7 @@ async def process_job(
                 output=result.model_dump(),
             )
         except Exception:
-            logger.exception(
-                "Failed to update job status to completed in Supabase")
+            logger.exception("Failed to update job status to completed in Supabase")
 
         # 8. Record usage (non-fatal)
         try:
@@ -775,8 +808,8 @@ async def process_job(
                 mode=job.mode,
                 tone=job.tone,
                 injection_detected=bool(
-                    prompt_metadata.get(
-                        "injection_detected", False)),
+                    prompt_metadata.get("injection_detected", False)
+                ),
                 teaching_mistakes=result.teaching.mistakes,
             )
         except Exception:
@@ -798,9 +831,8 @@ async def process_job(
             if len(words) > 0:
                 short_text = " ".join(words[:5]) + "..."
                 asyncio.create_task(
-                    update_chat_title(
-                        job.chat_id,
-                        f"\U0001f4dd {short_text}"))
+                    update_chat_title(job.chat_id, f"\U0001f4dd {short_text}")
+                )
 
         _trigger_title_gen()
 

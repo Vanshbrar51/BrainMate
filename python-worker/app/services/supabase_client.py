@@ -46,6 +46,7 @@ def get_supabase() -> Client:
 # Chat History
 # ---------------------------------------------------------------------------
 
+
 def _fetch_history_sync(chat_id: str, limit: int) -> list[dict[str, Any]]:
     result = (
         get_supabase()
@@ -59,8 +60,7 @@ def _fetch_history_sync(chat_id: str, limit: int) -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], result.data or [])
 
 
-async def get_chat_history(
-        chat_id: str, limit: int = 20) -> list[dict[str, Any]]:
+async def get_chat_history(chat_id: str, limit: int = 20) -> list[dict[str, Any]]:
     """Fetch chat history from Supabase.
 
     Returns messages ordered by created_at ASC (oldest first).
@@ -70,15 +70,14 @@ async def get_chat_history(
     try:
         return await asyncio.to_thread(_fetch_history_sync, chat_id, limit)
     except Exception:
-        logger.exception(
-            "Failed to fetch chat history for chat_id=%s",
-            chat_id)
+        logger.exception("Failed to fetch chat history for chat_id=%s", chat_id)
         return []
 
 
 # ---------------------------------------------------------------------------
 # AI Message Persistence
 # ---------------------------------------------------------------------------
+
 
 def _save_ai_message_sync(
     chat_id: str,
@@ -89,16 +88,18 @@ def _save_ai_message_sync(
     result = (
         get_supabase()
         .table("writeright_messages")
-        .insert({
-            "chat_id": chat_id,
-            "user_id": user_id,
-            "role": "assistant",
-            "content": content,
-            "metadata": {
-                "result_type": "ai_improvement",
-                **metadata,
-            },
-        })
+        .insert(
+            {
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "role": "assistant",
+                "content": content,
+                "metadata": {
+                    "result_type": "ai_improvement",
+                    **metadata,
+                },
+            }
+        )
         .execute()
     )
 
@@ -126,11 +127,11 @@ async def save_ai_message(
         The inserted message record.
     """
     try:
-        return await asyncio.to_thread(_save_ai_message_sync, chat_id, user_id, content, metadata)
-    except Exception:
-        logger.exception(
-            "Failed to save AI message for chat_id=%s", chat_id
+        return await asyncio.to_thread(
+            _save_ai_message_sync, chat_id, user_id, content, metadata
         )
+    except Exception:
+        logger.exception("Failed to save AI message for chat_id=%s", chat_id)
         raise
 
 
@@ -138,13 +139,19 @@ async def save_ai_message(
 # Chat Operations
 # ---------------------------------------------------------------------------
 
+
 def _update_chat_title_sync(chat_id: str, new_title: str) -> None:
     client = get_supabase()
     try:
         # BUG-04 FIX: Read the current title before overwriting.
         # Only overwrite if the title is still auto-generated.
-        result = client.table("writeright_chats").select(
-            "title").eq("id", chat_id).single().execute()
+        result = (
+            client.table("writeright_chats")
+            .select("title")
+            .eq("id", chat_id)
+            .single()
+            .execute()
+        )
         if not result.data or not isinstance(result.data, dict):
             return
         current = str(result.data.get("title", ""))
@@ -158,7 +165,10 @@ def _update_chat_title_sync(chat_id: str, new_title: str) -> None:
         if not is_auto:
             # User has renamed this chat — preserve it
             logger.info(
-                "Skipping title update for chat %s (user-renamed: %r)", chat_id, current[:40])
+                "Skipping title update for chat %s (user-renamed: %r)",
+                chat_id,
+                current[:40],
+            )
             return
         client.table("writeright_chats").update(
             {"title": new_title, "updated_at": "now()"}
@@ -175,6 +185,7 @@ async def update_chat_title(chat_id: str, new_title: str) -> None:
 # ---------------------------------------------------------------------------
 # Job Status Update
 # ---------------------------------------------------------------------------
+
 
 def _update_job_status_sync(
     job_id: str,
@@ -226,6 +237,7 @@ async def update_job_status(
 # Usage Tracking
 # ---------------------------------------------------------------------------
 
+
 def _record_usage_sync(
     user_id: str,
     job_id: str,
@@ -237,15 +249,17 @@ def _record_usage_sync(
     (
         get_supabase()
         .table("writeright_usage")
-        .insert({
-            "user_id": user_id,
-            "job_id": job_id,
-            "chat_id": chat_id,
-            "model": model,
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        })
+        .insert(
+            {
+                "user_id": user_id,
+                "job_id": job_id,
+                "chat_id": chat_id,
+                "model": model,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            }
+        )
         .execute()
     )
 
@@ -269,12 +283,18 @@ async def record_usage(
         completion_tokens: Number of completion tokens generated.
     """
     try:
-        await asyncio.to_thread(_record_usage_sync, user_id, job_id, chat_id, model, prompt_tokens, completion_tokens)
+        await asyncio.to_thread(
+            _record_usage_sync,
+            user_id,
+            job_id,
+            chat_id,
+            model,
+            prompt_tokens,
+            completion_tokens,
+        )
     except Exception:
         # Usage tracking failure should never block job completion
-        logger.exception(
-            "Failed to record usage for job_id=%s (non-fatal)", job_id
-        )
+        logger.exception("Failed to record usage for job_id=%s (non-fatal)", job_id)
 
 
 # ---------------------------------------------------------------------------
@@ -316,21 +336,22 @@ def _update_streak_and_achievements_sync(
         .execute()
     )
     streak_row_json = streak_res.data[0] if streak_res.data else None
-    streak_row = cast(
-        dict[str, Any], streak_row_json) if streak_row_json else None
+    streak_row = cast(dict[str, Any], streak_row_json) if streak_row_json else None
 
     if not streak_row:
         current_streak = 1
         longest_streak = 1
         (
             client.table("writeright_streaks")
-            .insert({
-                "user_id": user_id,
-                "current_streak": current_streak,
-                "longest_streak": longest_streak,
-                "last_activity_date": today.isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+            .insert(
+                {
+                    "user_id": user_id,
+                    "current_streak": current_streak,
+                    "longest_streak": longest_streak,
+                    "last_activity_date": today.isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             .execute()
         )
     else:
@@ -349,22 +370,21 @@ def _update_streak_and_achievements_sync(
         longest_streak = max(longest_streak, current_streak)
         (
             client.table("writeright_streaks")
-            .update({
-                "current_streak": current_streak,
-                "longest_streak": longest_streak,
-                "last_activity_date": today.isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+            .update(
+                {
+                    "current_streak": current_streak,
+                    "longest_streak": longest_streak,
+                    "last_activity_date": today.isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             .eq("user_id", user_id)
             .execute()
         )
 
     # 2) Aggregate usage for achievements
     usage_rows = (
-        client.table("writeright_usage")
-        .select("id")
-        .eq("user_id", user_id)
-        .execute()
+        client.table("writeright_usage").select("id").eq("user_id", user_id).execute()
     ).data or []
     total_improvements = len(usage_rows)
 
@@ -391,8 +411,9 @@ def _update_streak_and_achievements_sync(
     achievements: set[str] = set()
     if total_improvements >= 1:
         achievements.add("first_improvement")
-    if (not injection_detected and any("kindly revert" in m.lower()
-                                       for m in teaching_mistakes if isinstance(m, str))):
+    if not injection_detected and any(
+        "kindly revert" in m.lower() for m in teaching_mistakes if isinstance(m, str)
+    ):
         achievements.add("indian_english_fixer")
     if mode == "whatsapp" and whatsapp_jobs >= 10:
         achievements.add("hinglish_hero")
@@ -418,12 +439,12 @@ def _update_streak_and_achievements_sync(
             .eq("user_id", user_id)
             .execute()
         )
-        existing_set = {r["achievement"] for r in cast(
-            list[dict[str, Any]], existing_res.data or [])}
+        existing_set = {
+            r["achievement"]
+            for r in cast(list[dict[str, Any]], existing_res.data or [])
+        }
     except Exception:
-        logger.warning(
-            "Failed to fetch existing achievements for user_id=%s",
-            user_id)
+        logger.warning("Failed to fetch existing achievements for user_id=%s", user_id)
         existing_set = set()
 
     new_achievements = achievements - existing_set
@@ -445,8 +466,8 @@ def _update_streak_and_achievements_sync(
     except Exception:
         # Fallback to individual inserts if batch fails (e.g. race condition)
         logger.warning(
-            "Batch achievement insert failed for user_id=%s, falling back",
-            user_id)
+            "Batch achievement insert failed for user_id=%s, falling back", user_id
+        )
         for ach in to_insert:
             try:
                 client.table("writeright_achievements").insert(ach).execute()
@@ -477,6 +498,7 @@ async def update_streak_and_achievements(
             user_id,
         )
 
+
 # ---------------------------------------------------------------------------
 # Personal Writing Profile (F-04)
 # ---------------------------------------------------------------------------
@@ -484,9 +506,12 @@ async def update_streak_and_achievements(
 
 def _get_usage_count_sync(user_id: str) -> int:
     client = get_supabase()
-    res = client.table("writeright_usage").select(
-        "id", count=CountMethod.exact).eq(
-        "user_id", user_id).execute()
+    res = (
+        client.table("writeright_usage")
+        .select("id", count=CountMethod.exact)
+        .eq("user_id", user_id)
+        .execute()
+    )
     return res.count if res.count is not None else 0
 
 
@@ -500,8 +525,13 @@ async def get_usage_count(user_id: str) -> int:
 
 def _get_writing_profile_sync(user_id: str) -> list[str]:
     client = get_supabase()
-    res = client.table("writeright_writing_profiles").select(
-        "top_mistakes").eq("user_id", user_id).limit(1).execute()
+    res = (
+        client.table("writeright_writing_profiles")
+        .select("top_mistakes")
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
     if res.data:
         row = cast(dict[str, Any], res.data[0])
         mistakes = row.get("top_mistakes")
@@ -520,17 +550,20 @@ async def get_writing_profile(user_id: str) -> list[str]:
 
 def _get_recent_mistakes_sync(user_id: str, limit: int = 20) -> list[str]:
     client = get_supabase()
-    res = client.table("writeright_messages") \
-        .select("content") \
-        .eq("user_id", user_id) \
-        .eq("role", "assistant") \
-        .order("created_at", desc=True) \
-        .limit(limit) \
+    res = (
+        client.table("writeright_messages")
+        .select("content")
+        .eq("user_id", user_id)
+        .eq("role", "assistant")
+        .order("created_at", desc=True)
+        .limit(limit)
         .execute()
+    )
 
     import json
+
     all_mistakes = []
-    for row_json in (res.data or []):
+    for row_json in res.data or []:
         row = cast(dict[str, Any], row_json)
         try:
             content = json.loads(row.get("content", "{}"))
@@ -551,10 +584,7 @@ async def get_recent_mistakes(user_id: str, limit: int = 20) -> list[str]:
         return []
 
 
-def _update_writing_profile_sync(
-        user_id: str,
-        mistakes: list[str],
-        count: int) -> None:
+def _update_writing_profile_sync(user_id: str, mistakes: list[str], count: int) -> None:
     client = get_supabase()
     from datetime import datetime, timezone
 
@@ -562,19 +592,17 @@ def _update_writing_profile_sync(
         "user_id": user_id,
         "top_mistakes": mistakes,
         "improvement_count": count,
-        "last_analyzed_at": datetime.now(timezone.utc).isoformat()
+        "last_analyzed_at": datetime.now(timezone.utc).isoformat(),
     }
 
     # We use upsert on a unique user_id field
     # In Supabase/PostgREST, we can just upsert. If it exists, it updates.
     client.table("writeright_writing_profiles").upsert(
-        upsert_data, on_conflict="user_id").execute()  # type: ignore
+        upsert_data, on_conflict="user_id"
+    ).execute()  # type: ignore
 
 
-async def update_writing_profile(
-        user_id: str,
-        mistakes: list[str],
-        count: int) -> None:
+async def update_writing_profile(user_id: str, mistakes: list[str], count: int) -> None:
     try:
         await asyncio.to_thread(_update_writing_profile_sync, user_id, mistakes, count)
     except Exception:
@@ -585,6 +613,7 @@ async def update_writing_profile(
 # Brand Voice (RAG)
 # ---------------------------------------------------------------------------
 
+
 def _save_voice_example_sync(
     user_id: str,
     content: str,
@@ -593,11 +622,13 @@ def _save_voice_example_sync(
     result = (
         get_supabase()
         .table("writeright_brand_voice")
-        .insert({
-            "user_id": user_id,
-            "content": content,
-            "embedding": embedding,
-        })
+        .insert(
+            {
+                "user_id": user_id,
+                "content": content,
+                "embedding": embedding,
+            }
+        )
         .execute()
     )
     if not result.data:
@@ -611,7 +642,9 @@ async def save_voice_example(
     embedding: list[float],
 ) -> dict[str, Any]:
     """Save a new stylistic example with its embedding."""
-    return await asyncio.to_thread(_save_voice_example_sync, user_id, content, embedding)
+    return await asyncio.to_thread(
+        _save_voice_example_sync, user_id, content, embedding
+    )
 
 
 def _match_voice_examples_sync(
@@ -622,12 +655,15 @@ def _match_voice_examples_sync(
     # Use the RPC function defined in migration 0017
     result = (
         get_supabase()
-        .rpc("match_brand_voice", {
-            "query_embedding": embedding,
-            "match_threshold": 0.5,
-            "match_count": count,
-            "p_user_id": user_id,
-        })
+        .rpc(
+            "match_brand_voice",
+            {
+                "query_embedding": embedding,
+                "match_threshold": 0.5,
+                "match_count": count,
+                "p_user_id": user_id,
+            },
+        )
         .execute()
     )
     return cast(list[dict[str, Any]], result.data or [])
@@ -640,11 +676,11 @@ async def match_voice_examples(
 ) -> list[dict[str, Any]]:
     """Perform vector similarity search for relevant style examples."""
     try:
-        return await asyncio.to_thread(_match_voice_examples_sync, user_id, embedding, count)
+        return await asyncio.to_thread(
+            _match_voice_examples_sync, user_id, embedding, count
+        )
     except Exception:
-        logger.exception(
-            "Failed to match voice examples for user_id=%s",
-            user_id)
+        logger.exception("Failed to match voice examples for user_id=%s", user_id)
         return []
 
 
@@ -666,12 +702,9 @@ async def get_voice_examples(user_id: str) -> list[dict[str, Any]]:
 
 
 def _delete_voice_example_sync(user_id: str, example_id: str) -> None:
-    get_supabase() \
-        .table("writeright_brand_voice") \
-        .delete() \
-        .eq("id", example_id) \
-        .eq("user_id", user_id) \
-        .execute()
+    get_supabase().table("writeright_brand_voice").delete().eq("id", example_id).eq(
+        "user_id", user_id
+    ).execute()
 
 
 async def delete_voice_example(user_id: str, example_id: str) -> None:

@@ -26,7 +26,10 @@ async def triage_bulk_text(
     """Analyze a bulk text dump and return categorized triage items."""
 
     # 1. Simple internal token check
-    if not x_internal_api_token or x_internal_api_token != get_settings().internal_api_token:
+    if (
+        not x_internal_api_token
+        or x_internal_api_token != get_settings().internal_api_token
+    ):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     # 2. Build messages
@@ -57,31 +60,29 @@ async def triage_bulk_text(
         try:
             data = json.loads(content)
             # Support both {"items": [...]} and raw array [...]
-            items_raw = data.get(
-                "items", []) if isinstance(
-                data, dict) else data
+            items_raw = data.get("items", []) if isinstance(data, dict) else data
 
             items = []
             for item in items_raw:
                 # Basic validation / default values
-                items.append(TriageItem(
-                    subject=item.get("subject", "Untitled"),
-                    summary=item.get("summary", ""),
-                    urgency=item.get("urgency", "Medium"),
-                    category=item.get("category", "Work"),
-                    action_items=item.get("action_items", []),
-                    smart_replies=item.get("smart_replies", []),
-                    original_segment=item.get("original_segment", "")
-                ))
+                items.append(
+                    TriageItem(
+                        subject=item.get("subject", "Untitled"),
+                        summary=item.get("summary", ""),
+                        urgency=item.get("urgency", "Medium"),
+                        category=item.get("category", "Work"),
+                        action_items=item.get("action_items", []),
+                        smart_replies=item.get("smart_replies", []),
+                        original_segment=item.get("original_segment", ""),
+                    )
+                )
 
             return TriageResponse(items=items)
 
         except (json.JSONDecodeError, KeyError, TypeError) as e:
-            logger.error(
-                f"Failed to parse triage JSON: {e}\nContent: {content}")
+            logger.error(f"Failed to parse triage JSON: {e}\nContent: {content}")
             raise HTTPException(
-                status_code=500,
-                detail=f"AI returned invalid JSON structure: {str(e)}"
+                status_code=500, detail=f"AI returned invalid JSON structure: {str(e)}"
             )
 
     except Exception as e:

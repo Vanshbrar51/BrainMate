@@ -37,12 +37,7 @@ class EmbeddingService:
         model = get_settings().embedding_model
         url = f"{self.base_url}/models/{model}:embedContent?key={self.api_key}"
 
-        payload = {
-            "model": f"models/{model}",
-            "content": {
-                "parts": [{"text": text}]
-            }
-        }
+        payload = {"model": f"models/{model}", "content": {"parts": [{"text": text}]}}
 
         try:
             response = await self._client.post(url, json=payload)
@@ -51,7 +46,7 @@ class EmbeddingService:
                 logger.error(
                     "Embedding API error %d: %s",
                     response.status_code,
-                    response.text[:500]
+                    response.text[:500],
                 )
                 response.raise_for_status()
 

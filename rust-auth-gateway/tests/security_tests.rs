@@ -1,5 +1,3 @@
-use axum::http::StatusCode;
-use brainmate_auth_gateway::auth;
 
 // NOTE: This is a placeholder for actual integration security tests
 // In a real scenario, we would use the build_test_state helper from auth.rs
