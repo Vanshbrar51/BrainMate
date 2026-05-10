@@ -167,14 +167,17 @@ class MorphRequest(BaseModel):
 class TriageItem(BaseModel):
     """A single analyzed item from a bulk triage request."""
 
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()) if 'uuid' in globals() else "")
+    id: str = Field(default_factory=lambda: str(
+        uuid.uuid4()) if 'uuid' in globals() else "")
     subject: str
     summary: str
     urgency: str = Field(description="High | Medium | Low")
-    category: str = Field(description="Work | Client | Internal | Spam | Personal")
+    category: str = Field(
+        description="Work | Client | Internal | Spam | Personal")
     smart_replies: list[str] = Field(default_factory=list)
     action_items: list[str] = Field(default_factory=list)
-    original_segment: str = Field(description="The original part of the text for this item")
+    original_segment: str = Field(
+        description="The original part of the text for this item")
 
 
 class TriageResponse(BaseModel):
@@ -223,4 +226,3 @@ class ModuleResponse(BaseModel):
     """Structured response for specialized AI modules."""
 
     content: str
-

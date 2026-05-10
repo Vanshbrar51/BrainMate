@@ -22,7 +22,7 @@ from collections import Counter
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from app.config import get_settings, settings
+from app.config import Settings
 from app.models.job import WritingJob, AIResult, TeachingBlock, ScoreBlock
 from app.services.prompt_builder import build_messages
 from app.services.model_router import ModelRouter
@@ -309,7 +309,8 @@ def _parse_ai_response(
         logger.error(
             "Regex parsing heavily failed, resolving to pure content dump")
         return AIResult(
-            improved_text=content.strip() if content.strip() else "Unable to process your request. Please try again.",
+            improved_text=content.strip() if content.strip(
+            ) else "Unable to process your request. Please try again.",
             english_version=None,
             teaching=TeachingBlock(),
             follow_up="Could you try rephrasing your request?",
@@ -347,7 +348,6 @@ async def _repair_json_response(
         return None
 
 
-
 # ---------------------------------------------------------------------------
 # Writing Profile Analysis (F-04)
 # ---------------------------------------------------------------------------
@@ -375,6 +375,7 @@ async def analyze_writing_profile(user_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Input Quality Gate (F-BE-11)
 # ---------------------------------------------------------------------------
+
 
 def _quality_gate(text: str) -> tuple[bool, str]:
     """Return (ok, reason) before calling the model.
@@ -425,7 +426,10 @@ async def _generate_draft(
             matches = await match_voice_examples(job.user_id, query_emb, count=2)
             voice_examples = [m["content"] for m in matches]
             if voice_examples:
-                logger.info("Injected %d Brand Voice examples for user %s", len(voice_examples), job.user_id)
+                logger.info(
+                    "Injected %d Brand Voice examples for user %s",
+                    len(voice_examples),
+                    job.user_id)
         except Exception:
             logger.warning("Brand Voice retrieval failed (non-fatal)")
 
@@ -471,11 +475,12 @@ async def _generate_draft(
 
         # AI-02: If result fell back to raw content or regex fallback, attempt repair
         # Regex fallback often results in improved_text being a subset of content.
-        # We trigger repair if the parse failed to get a full structured result.
+        # We trigger repair if the parse failed to get a full structured
+        # result.
         if (
             result.improved_text == model_response.content.strip()
             or result.improved_text == "Unable to process your request. Please try again."
-            or result.teaching.mistakes == [] # Sign of regex fallback/failed parse
+            or result.teaching.mistakes == []  # Sign of regex fallback/failed parse
         ):
             logger.info("Attempting JSON repair for job %s", job.id)
             repaired = await _repair_json_response(model_response.content, router)
@@ -514,7 +519,8 @@ async def _generate_critique_and_revision(
     """
 
     messages = [
-        {"role": "system", "content": "You are a professional editor. Output only valid JSON."},
+        {"role": "system",
+         "content": "You are a professional editor. Output only valid JSON."},
         {"role": "user", "content": critique_prompt}
     ]
 
@@ -536,8 +542,8 @@ async def _generate_critique_and_revision(
         # Merge some context from draft if needed, but we can just use the new result
         # To make sure we keep the same structure:
         if result.improved_text == model_response.content.strip():
-             # fallback failed parsing
-             return draft_result
+            # fallback failed parsing
+            return draft_result
 
         return result
     except Exception as e:
@@ -558,7 +564,8 @@ def _is_processable_input(text: str) -> tuple[bool, str]:
     if alpha_ratio < 0.3:
         return False, "Text appears to contain mostly numbers or symbols."
 
-    # Looks like code (more than 3 lines starting with def/function/class/import/const)
+    # Looks like code (more than 3 lines starting with
+    # def/function/class/import/const)
     import re as regex
     code_lines = sum(1 for line in stripped.split('\n')
                      if regex.match(r'^\s*(def |class |function |import |const |let |var |\{|\})', line))
@@ -566,6 +573,7 @@ def _is_processable_input(text: str) -> tuple[bool, str]:
         return False, "This looks like code. WriteRight is for natural language writing only."
 
     return True, ""
+
 
 async def process_job(
     job: WritingJob,
@@ -617,7 +625,8 @@ async def process_job(
             raw_history = await get_chat_history(job.chat_id, limit=20)
             # Convert to dicts for prompt builder
             history = [
-                {"role": msg.get("role", "user"), "content": msg.get("content", "")}
+                {"role": msg.get("role", "user"),
+                 "content": msg.get("content", "")}
                 for msg in raw_history
             ]
         except Exception:
@@ -642,12 +651,21 @@ async def process_job(
                 improved_text=job.content,
                 teaching=TeachingBlock(
                     mistakes=[reason],
-                    better_versions=["Please provide natural language text to improve."],
-                    explanations=["WriteRight is designed for emails, paragraphs, LinkedIn posts, and WhatsApp messages."]
+                    better_versions=[
+                        "Please provide natural language text to improve."],
+                    explanations=[
+                        "WriteRight is designed for emails, paragraphs, LinkedIn posts, and WhatsApp messages."]
                 ),
                 follow_up="Try pasting an email draft or a paragraph you've written.",
-                suggestions=["Try an email draft", "Try a LinkedIn post", "Try a paragraph"],
-                scores=ScoreBlock(clarity=0, tone=0, impact=0, verdict="Needs more work"),
+                suggestions=[
+                    "Try an email draft",
+                    "Try a LinkedIn post",
+                    "Try a paragraph"],
+                scores=ScoreBlock(
+                    clarity=0,
+                    tone=0,
+                    impact=0,
+                    verdict="Needs more work"),
                 model="quality_gate",
                 prompt_tokens=0,
                 completion_tokens=0,
@@ -667,14 +685,22 @@ async def process_job(
                 improved_text=job.content,
                 teaching=TeachingBlock(
                     mistakes=[gate_reason],
-                    better_versions=["Please provide a natural language text to improve."],
+                    better_versions=[
+                        "Please provide a natural language text to improve."],
                     explanations=[
                         "WriteRight is designed for emails, LinkedIn posts, paragraphs, and WhatsApp messages."
                     ],
                 ),
                 follow_up="Try pasting an email draft or a paragraph you\u2019ve written.",
-                suggestions=["Try an email draft", "Try a LinkedIn post", "Try a paragraph"],
-                scores=ScoreBlock(clarity=0, tone=0, impact=0, verdict="Needs more work"),
+                suggestions=[
+                    "Try an email draft",
+                    "Try a LinkedIn post",
+                    "Try a paragraph"],
+                scores=ScoreBlock(
+                    clarity=0,
+                    tone=0,
+                    impact=0,
+                    verdict="Needs more work"),
                 model="quality_gate",
                 prompt_tokens=0,
                 completion_tokens=0,
@@ -695,7 +721,6 @@ async def process_job(
 
         if on_status:
             await on_status("finalizing")
-
 
         # 6. Persist AI message to Supabase
         try:
@@ -742,13 +767,16 @@ async def process_job(
             logger.warning("Failed to record usage (non-fatal)")
 
         # 9. Streaks + achievements — now primarily handled by DB trigger fn_update_writeright_streak()
-        # on writeright_usage INSERT. Python-side call kept as a fallback / for achievement logic.
+        # on writeright_usage INSERT. Python-side call kept as a fallback / for
+        # achievement logic.
         try:
             await update_streak_and_achievements(
                 user_id=job.user_id,
                 mode=job.mode,
                 tone=job.tone,
-                injection_detected=bool(prompt_metadata.get("injection_detected", False)),
+                injection_detected=bool(
+                    prompt_metadata.get(
+                        "injection_detected", False)),
                 teaching_mistakes=result.teaching.mistakes,
             )
         except Exception:
@@ -763,7 +791,8 @@ async def process_job(
         )
 
         # F-07 / BUG-04: Generate Chat Title — guarded inside update_chat_title() in supabase_client.py.
-        # Only overwrites auto-generated titles (those starting with 📝 or "Untitled Chat").
+        # Only overwrites auto-generated titles (those starting with 📝 or
+        # "Untitled Chat").
         def _trigger_title_gen() -> None:
             words = result.improved_text.split()
             if len(words) > 0:

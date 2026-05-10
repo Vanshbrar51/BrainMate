@@ -22,7 +22,7 @@ async def ingest_voice_example(
     x_internal_api_token: str = Header(None, alias="X-Internal-API-Token"),
 ):
     """Generate embedding for a writing example and save to Supabase."""
-    
+
     # 1. Internal token check
     if not x_internal_api_token or x_internal_api_token != get_settings().internal_api_token:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -41,7 +41,7 @@ async def ingest_voice_example(
             content=request.content,
             embedding=embedding
         )
-        
+
         return {"status": "success", "id": result.get("id")}
 
     except Exception as e:
@@ -55,7 +55,7 @@ async def list_voice_examples(
     x_internal_api_token: str = Header(None, alias="X-Internal-API-Token"),
 ):
     """List all writing examples for a user."""
-    
+
     if not x_internal_api_token or x_internal_api_token != get_settings().internal_api_token:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -82,7 +82,7 @@ async def remove_voice_example(
     x_internal_api_token: str = Header(None, alias="X-Internal-API-Token"),
 ):
     """Delete a specific writing example."""
-    
+
     if not x_internal_api_token or x_internal_api_token != get_settings().internal_api_token:
         raise HTTPException(status_code=401, detail="Unauthorized")
 

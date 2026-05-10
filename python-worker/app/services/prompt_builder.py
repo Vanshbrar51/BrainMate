@@ -32,7 +32,9 @@ INJECTION_PATTERNS: list[re.Pattern[str]] = [
         r"act\s+as\s+(?!a\s+(?:writing|communication)|writing|communication)",
         re.IGNORECASE),
     re.compile(r"forget\s+(everything|all|your)", re.IGNORECASE),
-    re.compile(r"override\s+(your|the)\s+(instructions|prompt|rules)", re.IGNORECASE),
+    re.compile(
+        r"override\s+(your|the)\s+(instructions|prompt|rules)",
+        re.IGNORECASE),
     re.compile(r"disregard\s+all\s+above", re.IGNORECASE),
     re.compile(r"jailbreak", re.IGNORECASE),
     re.compile(r"developer\s*mode", re.IGNORECASE),
@@ -380,12 +382,12 @@ def _looks_like_reply_chain(text: str) -> bool:
                for pattern in patterns)
 
 
-
 def _estimate_tokens(text: str) -> int:
     """Rough token estimate: ~4 chars per token for English, ~2 for CJK."""
     cjk_count = sum(1 for c in text if '一' <= c <= '鿿')
     other_count = len(text) - cjk_count
     return (cjk_count // 2) + (other_count // 4)
+
 
 def format_history(
     messages: list[dict],  # type: ignore[type-arg]
@@ -423,7 +425,7 @@ def detect_script(text: str) -> str:
     """Detect writing system from character ranges — no ML needed."""
     devanagari = sum(1 for c in text if 'ऀ' <= c <= 'ॿ')
     arabic = sum(1 for c in text if '؀' <= c <= 'ۿ')
-    latin = sum(1 for c in text if c.isalpha() and c.isascii())
+    sum(1 for c in text if c.isalpha() and c.isascii())
     total = len([c for c in text if c.strip()])
     if total == 0:
         return "en"
@@ -432,6 +434,7 @@ def detect_script(text: str) -> str:
     if arabic / total > 0.15:
         return "ar"
     return "en"
+
 
 def build_messages(
     user_text: str,
@@ -490,7 +493,7 @@ This user has been coached on these before — they need a direct, specific fix,
     if voice_examples:
         dna_block = "\n\nUSER STYLE DNA (Mimic this vocabulary, cadence, and sign-offs):\n"
         for i, example in enumerate(voice_examples):
-            dna_block += f"Example {i+1}: \"{example}\"\n"
+            dna_block += f"Example {i + 1}: \"{example}\"\n"
         system_prompt += dna_block
 
     if _looks_like_reply_chain(sanitized):
@@ -516,7 +519,6 @@ This user has been coached on these before — they need a direct, specific fix,
     detected_lang = detect_script(sanitized)
     if detected_lang != "en":
         system_prompt += f"\n\nInput language detected as {detected_lang}. Preserve native speaker patterns that are correct. Only fix actual errors, not differences from English."
-
 
     # 4. Format history
     history_messages = format_history(history, max_history)
@@ -551,12 +553,15 @@ This user has been coached on these before — they need a direct, specific fix,
 
     system_budget = _estimate_tokens(system_prompt)
     user_budget = _estimate_tokens(user_content)
-    few_shot_budget = sum(_estimate_tokens(m["content"]) for m in few_shot_messages)
+    few_shot_budget = sum(
+        _estimate_tokens(
+            m["content"]) for m in few_shot_messages)
 
-    remaining_budget = max_input_tokens - system_budget - user_budget - few_shot_budget - 200  # safety margin
+    remaining_budget = max_input_tokens - system_budget - \
+        user_budget - few_shot_budget - 200  # safety margin
 
     # Trim history from oldest end until it fits
-    trimmed_history = []
+    trimmed_history: list[dict[str, str]] = []
     for msg in reversed(history_messages):
         msg_tokens = _estimate_tokens(msg["content"])
         if remaining_budget - msg_tokens >= 0:
@@ -584,7 +589,7 @@ def build_morph_messages(
 ) -> list[dict[str, str]]:
     """Build a simple messages array for the high-speed morphing task."""
     intensity_desc = INTENSITY_CONTEXT.get(intensity, "Standard")
-    
+
     prompt = MORPH_PROMPT.format(
         tone=tone,
         intensity=intensity,
@@ -593,7 +598,7 @@ def build_morph_messages(
         original_text=original_text,
         current_text=current_text,
     )
-    
+
     return [
         {"role": "system", "content": "You are a professional writing assistant focused on tone and intensity adjustment."},
         {"role": "user", "content": prompt}
@@ -611,6 +616,7 @@ def build_triage_messages(raw_text: str) -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------
 # Module Specific Prompts
 # ---------------------------------------------------------------------------
+
 
 DEV_HELPER_SYSTEM = """You are a Senior Principal Software Engineer at BrainMate AI, focused on deep root-cause analysis and secure code remediation.
 
@@ -676,25 +682,30 @@ Guidelines:
 - Maintain the core message but optimize the "wrapper" for maximum engagement.
 """
 
+
 def build_dev_helper_prompt(prompt: str) -> tuple[str, str]:
     """Build system and user prompts for DevHelper."""
     return DEV_HELPER_SYSTEM, prompt
+
 
 def build_study_mate_prompt(prompt: str) -> tuple[str, str]:
     """Build system and user prompts for StudyMate."""
     return STUDY_MATE_SYSTEM, prompt
 
-def build_interview_pro_prompt(prompt: str, session_id: str | None = None) -> tuple[str, str]:
+
+def build_interview_pro_prompt(
+        prompt: str, session_id: str | None = None) -> tuple[str, str]:
     """Build system and user prompts for InterviewPro."""
     user_p = prompt
     if session_id:
         user_p = f"[Session: {session_id}] {prompt}"
     return INTERVIEW_PRO_SYSTEM, user_p
 
-def build_content_flow_prompt(prompt: str, target_platform: str | None = None) -> tuple[str, str]:
+
+def build_content_flow_prompt(
+        prompt: str, target_platform: str | None = None) -> tuple[str, str]:
     """Build system and user prompts for ContentFlow."""
     user_p = prompt
     if target_platform:
         user_p = f"[Target: {target_platform}] {prompt}"
     return CONTENT_FLOW_SYSTEM, user_p
-

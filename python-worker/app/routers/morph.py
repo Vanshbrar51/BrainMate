@@ -3,7 +3,6 @@
 # Bypasses the job queue for ultra-fast, interactive text manipulation.
 # Uses StreamingResponse to provide immediate token-by-token feedback.
 
-import json
 import logging
 from typing import AsyncGenerator
 
@@ -26,7 +25,7 @@ async def morph_text(
     x_internal_api_token: str = Header(None, alias="X-Internal-API-Token"),
 ) -> StreamingResponse:
     """Morph text based on new tone/intensity with low latency."""
-    
+
     # Simple internal token check (shared secret)
     if not x_internal_api_token or x_internal_api_token != get_settings().internal_api_token:
         raise HTTPException(status_code=401, detail="Unauthorized")

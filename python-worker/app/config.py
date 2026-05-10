@@ -13,18 +13,17 @@ class Settings(BaseSettings):
     All fields are read from environment variables. Defaults are provided
     for non-sensitive values. Sensitive values (API keys, URLs) must be set.
     """
-    
+
     def configure_mock(self, **kwargs):
         """Allows direct setting of attributes for testing purposes."""
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="ignore", # Allow extra env vars, common in shared test/dev environments
+        extra="ignore",  # Allow extra env vars, common in shared test/dev environments
     )
 
     # Security
@@ -40,7 +39,8 @@ class Settings(BaseSettings):
     # Google AI Studio (LLM API)
     google_ai_studio_api_key: str
     google_ai_studio_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
-    anthropic_api_key: str = Field(default="", description="env: ANTHROPIC_API_KEY")
+    anthropic_api_key: str = Field(
+        default="", description="env: ANTHROPIC_API_KEY")
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     anthropic_fallback_model: str = "claude-haiku-4-5-20251001"
     enable_anthropic_fallback: bool = Field(
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
         description="env: ENABLE_ANTHROPIC_FALLBACK",
     )
     default_model: str = "gemini-2.5-flash"
-    embedding_model: str = "text-embedding-004"
+    embedding_model: str = "gemini-embedding-001"
 
     # Task-specific model overrides (JSON string: {"write_improvement":
     # "model-name"})
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
 
     # Token limits
     max_input_tokens: int = 4096
-    max_output_tokens: int = 2048
+    max_output_tokens: int = 8192
 
     # Observability
     otel_endpoint: str = ""
@@ -78,10 +78,12 @@ class Settings(BaseSettings):
 
 _settings_instance: Settings | None = None
 
+
 def get_settings() -> Settings:
     global _settings_instance
     if _settings_instance is None:
-        _settings_instance = Settings()
+        _settings_instance = Settings()  # type: ignore[call-arg]
     return _settings_instance
+
 
 settings = get_settings()

@@ -810,6 +810,7 @@ footer {
 .chat-workspace {
   display: flex;
   flex-direction: column;
+  flex: 1;
   height: 100%;
   overflow: hidden;
   background: var(--bg);
@@ -1414,30 +1415,66 @@ footer {
   border-radius: 4px;
 }
 
-.wr-workspace-with-sidebar { display: flex; height: 100%; min-height: 0; overflow: hidden; background: var(--wr-bg); }
-.wr-workspace-main { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; background: var(--wr-bg); }
+/* WriteRight Workspace Layout — flex column with scroll area + pinned composer */
+.wr-workspace-with-sidebar {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--wr-bg);
+}
+.wr-workspace-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--wr-bg);
+  transition: all 400ms var(--wr-ease);
+  position: relative;
+}
 .wr-workspace-main.solo { width: 100%; }
 
-[data-module="write"] .chat-scroll { background: var(--wr-bg); padding-bottom: 220px; }
-[data-module="write"] .chat-scroll-inner { max-width: 760px; margin: 0 auto; padding: 48px 28px 0; width: 100%; }
-[data-module="write"] .chat-messages { display: flex; flex-direction: column; gap: 16px; }
+/* Scroll area fills remaining space */
+[data-module="write"] .chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--wr-bg);
+  /* bottom padding must clear the composer (approx 240px tall) */
+  padding-bottom: 16px;
+  scroll-behavior: smooth;
+}
+[data-module="write"] .chat-scroll-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  /* top padding: breathing room, bottom padding: clear the fixed composer */
+  padding: 40px 24px 120px;
+  width: 100%;
+}
+[data-module="write"] .chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding-bottom: 24px;
+}
 [data-module="write"] .chat-msg-ai { max-width: 100%; }
 [data-module="write"] .chat-msg-ai-content { width: min(760px, 100%); }
 
 [data-module="write"] .chat-empty {
   width: min(640px, calc(100vw - 48px));
   margin: 0 auto;
-  padding: 60px 0 100px;
+  /* Use clamp so it fits on smaller heights without needing to scroll for basics */
+  padding: clamp(24px, 4vh, 60px) 0 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
 }
 .wr-hero-title {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   font-family: var(--font-serif);
   font-style: italic;
-  font-size: clamp(32px, 5vw, 44px);
+  font-size: clamp(28px, 4vw, 40px);
   font-weight: 400;
   color: var(--wr-text);
   text-align: center;
@@ -1445,9 +1482,9 @@ footer {
   line-height: 1.05;
 }
 .wr-hero-tagline {
-  margin: 0 0 36px;
+  margin: 0 0 clamp(20px, 3vh, 36px);
   color: var(--wr-text-3);
-  font-size: 16px;
+  font-size: 15px;
   text-align: center;
   line-height: 1.5;
   max-width: 440px;
@@ -1525,6 +1562,54 @@ footer {
 .wr-sidebar-new { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; border-radius: 8px; border: 1px solid var(--wr-border); background: var(--wr-surface); color: var(--wr-text); font-size: 13px; font-weight: 500; cursor: pointer; transition: background 120ms var(--wr-ease); }
 .wr-sidebar-export { width: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--wr-border); background: var(--wr-surface); color: var(--wr-text); cursor: pointer; transition: background 120ms var(--wr-ease); }
 .wr-sidebar-new:hover, .wr-sidebar-export:hover { background: var(--wr-surface-2); border-color: var(--wr-border); }
+.wr-sidebar-toggle-btn {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--wr-text-3);
+  cursor: pointer;
+  transition: all 150ms var(--wr-ease);
+}
+.wr-sidebar-toggle-btn:hover {
+  background: var(--wr-surface-2);
+  color: var(--wr-text);
+}
+
+.wr-sidebar-open-btn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--wr-border);
+  background: var(--wr-surface);
+  color: var(--wr-text-2);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 150ms var(--wr-ease);
+}
+.wr-sidebar-open-btn:hover {
+  background: var(--wr-surface-2);
+  border-color: var(--wr-border);
+  color: var(--wr-text);
+  transform: translateX(2px);
+}
+
+/* Ensure the main area has a bit of padding if sidebar is closed to accommodate the button */
+.wr-workspace-main.solo { 
+  padding-left: 0;
+}
 
 .wr-search-bar { padding: 12px 16px 0; }
 .wr-search-wrap { position: relative; }
@@ -1559,24 +1644,24 @@ footer {
 .wr-sidebar-onboard { padding: 12px 16px; color: var(--wr-text-3); border-top: 1px solid var(--wr-border-soft); font-size: 12px; line-height: 1.5; }
 .wr-sidebar-onboard p { margin: 0 0 6px; }
 
-/* Chat input bar (sticky bottom composer) */
-.chat-input-bar {
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  right: 0;
+/* Chat input bar — flex footer, NOT sticky/absolute.
+   The flex column of wr-workspace-main naturally pins this to the bottom. */
+[data-module="write"] .chat-input-bar {
+  flex-shrink: 0;
+  padding: 12px 24px 24px;
+  position: relative;
   z-index: 10;
-  padding: 16px 24px 28px;
-  background: linear-gradient(to top, var(--wr-bg) 60%, transparent);
-  pointer-events: none;
+  background: var(--wr-bg);
+  pointer-events: all;
 }
-.chat-input-bar-inner {
+[data-module="write"] .chat-input-bar-inner {
   width: min(760px, 100%);
   margin: 0 auto;
-  pointer-events: auto;
+  padding: 0 4px; /* Slight horizontal padding for focus ring breathing room */
   display: flex;
   flex-direction: column;
   gap: 6px;
+  position: relative;
 }
 
 /* Composer Input Card */
@@ -1765,30 +1850,31 @@ footer {
 .chat-tool-btn.is-muted { opacity: 0.4; cursor: default; }
 
 .wr-send-btn {
-  min-width: 90px;
-  height: 34px;
-  padding: 0 16px;
-  border-radius: 10px;
+  min-width: 100px;
+  height: 38px;
+  padding: 0 20px;
+  border-radius: 12px;
   border: 0;
   background: var(--wr-text);
   color: var(--wr-bg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  font-size: 13px;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   letter-spacing: -0.01em;
-  transition: opacity 150ms var(--wr-ease), transform 100ms var(--wr-ease);
+  transition: all 200ms var(--wr-ease);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
 }
 .wr-send-btn:hover:not(:disabled) {
-  opacity: 0.87;
-  transform: translateY(-0.5px);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.16);
+  opacity: 0.95;
 }
 .wr-send-btn:active:not(:disabled) {
   transform: translateY(0);
-  opacity: 0.8;
 }
 .wr-send-btn:disabled {
   background: var(--wr-surface-2);
@@ -2234,24 +2320,19 @@ footer {
   .wr-sidebar { display: none; }
   .wr-workspace-with-sidebar { display: block; }
   [data-module="write"] .chat-scroll-inner { padding: 24px 16px 0; max-width: 100%; }
-  [data-module="write"] .chat-empty { padding-top: 24px; max-width: 100%; }
+  [data-module="write"] .chat-empty { padding-top: 32px; max-width: 100%; }
   [data-module="write"] .chat-prompts-grid { grid-template-columns: 1fr; }
-  .chat-input-bar { padding: 0 12px 12px; background: var(--wr-bg); }
+  [data-module="write"] .chat-input-bar { padding: 8px 12px 16px; }
+  [data-module="write"] .chat-input-bar-inner { width: 100%; }
   .wr-input-footer-row { flex-direction: column; align-items: stretch; gap: 12px; }
-  .wr-mode-bar { width: 100%; }
-  /* old chat-input-footer */ .old-chat-input-footer { width: 100%; }
+  .wr-mode-bar { width: 100%; overflow-x: auto; }
+  .wr-tone-bar { overflow-x: auto; }
   .wr-send-btn { min-width: 90px; }
   .wr-score-gauges { grid-template-columns: 1fr; gap: 12px; }
   .wr-diff-header { flex-direction: column; align-items: flex-start; }
   .wr-diff-actions { width: 100%; flex-wrap: wrap; }
   .wr-rant-banner { flex-direction: column; align-items: flex-start; }
   .wr-builder-panel { grid-template-columns: 1fr; }
-  [data-module="write"] .chat-prompts-grid { grid-template-columns: 1fr; }
-  .chat-input-bar { padding: 12px 12px 16px; background: var(--wr-bg); }
-  .chat-input-bar-inner { width: 100%; }
-  /* old wr-input-header */ .old-wr-input-header { flex-direction: column; align-items: stretch; gap: 8px; }
-  .wr-mode-bar { width: 100%; overflow-x: auto; }
-  .wr-tone-bar { overflow-x: auto; }
 }
 
 @media print {
@@ -2352,21 +2433,7 @@ footer {
   to   { opacity: 1; transform: none; }
 }
 
-/* ── Conversation scroll inner — single source of truth ── */
-[data-module="write"] .chat-scroll-inner {
-  max-width: 760px;
-  padding: 48px 28px 0;
-}
-
-/* Chat messages spacing */
-[data-module="write"] .chat-messages {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  padding-bottom: 24px;
-}
-
-
+/* ── Input card (composer card inside chat-input-bar) ── */
 .wr-input-card {
   border: 1px solid var(--wr-border);
   border-radius: 12px;
@@ -2383,12 +2450,21 @@ footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 8px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--wr-border-soft);
+  min-width: 0;
+  overflow: hidden;
 }
-.wr-input-footer-row {
-  display: none; /* We moved this inside the card as chat-input-footer */
+.wr-input-header .wr-mode-bar {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+.wr-input-header .wr-tone-bar {
+  flex-shrink: 0;
+  overflow-x: auto;
+  max-width: 45%;
 }
 .chat-input-footer {
   display: flex;
@@ -2398,29 +2474,23 @@ footer {
   border-top: 1px solid var(--wr-border-soft);
   background: var(--wr-surface);
 }
-.chat-input-box {
-  border: 0 !important;
-  box-shadow: none !important;
-  background: transparent !important;
+/* WriteRight overrides for standard chat-input-box */
+[data-module="write"] .chat-input-box {
+  border: 1.5px solid var(--wr-border);
+  box-shadow: var(--shadow-sm);
+  background: var(--wr-surface);
+  transition: all 260ms var(--wr-ease);
 }
-.chat-input-box:focus-within {
-  outline: none !important;
-  box-shadow: none !important;
+[data-module="write"] .chat-input-box:focus-within {
+  border-color: var(--wr-accent);
+  box-shadow: 0 4px 20px rgba(176, 94, 69, 0.12), 0 0 0 3px var(--wr-accent-soft);
+  transform: translateY(-1px);
 }
 .wr-input-card:focus-within {
   border-color: var(--wr-border);
   box-shadow: 0 4px 16px rgba(0,0,0,0.08);
   outline: 2px solid rgba(176, 94, 69, 0.4);
   outline-offset: -1px;
-}
-
-
-[data-module="write"] .chat-scroll {
-  padding-bottom: 240px;
-}
-[data-module="write"] .chat-scroll-inner {
-  max-width: 800px;
-  padding: 64px 24px 0;
 }
 [data-module="write"] .chat-messages {
   gap: 32px; /* Claude has more air between messages */
@@ -2435,17 +2505,11 @@ footer {
   margin-bottom: 12px;
 }
 
-/* The Input Card alignment */
-.chat-input-bar {
-  padding: 0 24px 32px;
-}
-.chat-input-bar-inner {
-  max-width: 800px;
-}
-.wr-input-card {
+/* Input card focus polish (within WriteRight) */
+[data-module="write"] .wr-input-card {
   box-shadow: 0 4px 16px rgba(0,0,0,0.04);
 }
-.wr-input-card:focus-within {
+[data-module="write"] .wr-input-card:focus-within {
   box-shadow: 0 8px 32px rgba(0,0,0,0.08);
 }
 
@@ -2469,11 +2533,175 @@ footer {
 
 /* WriteRight CSS END */
 
-/* ── WRITERIGHT HAPTICS & VISUAL PULSE ──────────────────────── */
-.wr-pulse-wrapper {
+.wr-chat-empty-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: var(--wr-surface);
+  border: 1px solid var(--wr-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin-bottom: clamp(12px, 2vh, 20px);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.wr-input-alerts-padded {
+  padding: 12px 16px 0;
+}
+
+.wr-streaming-pulse .wr-input-card {
+  animation: wr-streaming-pulse-border 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes wr-streaming-pulse-border {
+  0%, 100% { outline: 2px solid rgba(176, 94, 69, 0); outline-offset: -1px; }
+  50% { outline: 2px solid rgba(176, 94, 69, 0.4); outline-offset: -1px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wr-diff-after-text.animating span[data-w] {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .wr-streaming-pulse .wr-input-card {
+    animation: none !important;
+  }
+  .wr-ink-flow-container {
+    animation: none !important;
+    background-position: 0 0 !important;
+  }
+}
+/* WriteRight CSS END */
+
+/* ── FEATURE 3: GENERATIVE INK FLOW ─────────────────────── */
+.wr-ink-flow-container {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    90deg, 
+    transparent 0%, 
+    var(--wr-accent) 50%, 
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: destination-out;
+  animation: wr-ink-flow 3s ease-in-out infinite;
+  z-index: 10;
+  pointer-events: none;
+}
+
+@keyframes wr-ink-flow {
+  0% { background-position: 200% 0; opacity: 0.3; }
+  50% { opacity: 0.8; }
+  100% { background-position: -200% 0; opacity: 0.3; }
+}
+
+/* ── FEATURE 4: AMBIENT FOCUS MODE ──────────────────────── */
+.wr-workspace-container {
+  /* Must fill the main element which is flex-1 in the shell */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  transition: opacity 0.8s var(--wr-ease);
+}
+
+.wr-focus-mode .wr-sidebar,
+.wr-focus-mode .chat-messages > *:not(:last-child) {
+  opacity: 0.15;
+  filter: grayscale(0.2) blur(1px);
+  pointer-events: none;
+}
+
+/* Ensure active elements stay sharp */
+.wr-focus-mode .wr-floating-input-wrap,
+.wr-focus-mode .chat-messages > :last-child {
+  opacity: 1 !important;
+  filter: none !important;
+  pointer-events: auto !important;
+}
+
+/* Refined Premium Typography */
+:root {
+  --font-display: "Instrument Serif", serif;
+  --font-body: "Inter", -apple-system, sans-serif;
+}
+
+.chat-workspace[data-module="write"] {
+  background-color: var(--wr-ivory);
+}
+
+/* Floating Input Card */
+.wr-floating-input-wrap {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(800px, calc(100vw - 48px));
+  z-index: 100;
+  transition: all 0.3s var(--wr-ease);
+}
+
+.wr-premium-input-card {
+  background: white;
+  border: 0.5px solid var(--wr-border-paper);
+  border-radius: 24px;
+  box-shadow: 
+    0 4px 20px rgba(0,0,0,0.03),
+    0 12px 40px rgba(0,0,0,0.04);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Paper UI Artifact View */
+.wr-paper-artifact {
+  background: #FFFFFF;
+  border: 1px solid var(--wr-border-paper);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.05);
+  border-radius: 12px;
+  padding: 48px 64px;
+  margin: 24px 0;
   position: relative;
-  border-radius: var(--radius-md, 0.5rem);
-  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  font-family: var(--font-body);
+}
+
+.wr-paper-artifact::before {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 40px; height: 40px;
+  background: linear-gradient(225deg, transparent 50%, rgba(0,0,0,0.02) 50%, rgba(0,0,0,0.05) 100%);
+  border-bottom-left-radius: 8px;
+}
+
+.wr-premium-header {
+  font-family: var(--font-display);
+  font-size: 32px;
+  color: var(--wr-ink);
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+
+.wr-premium-body {
+  font-size: 16px;
+  line-height: 1.7;
+  color: #373735;
+  letter-spacing: 0.01em;
+}
+
+/* Gaussian Clarity Pulse */
+.wr-pulse-wrapper.premium:focus-within {
+  box-shadow: 0 0 30px var(--writing-clarity-color, var(--accent));
+  transition: box-shadow 0.6s ease;
 }
 
 .wr-pulse-wrapper:focus-within {

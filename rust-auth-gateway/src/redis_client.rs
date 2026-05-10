@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use redis::{aio::MultiplexedConnection, Client, RedisError};
+use redis::{aio::ConnectionManager, Client, RedisError};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::Mutex;
 use tracing::info;
@@ -29,7 +29,11 @@ pub struct RedisClient {
 
 #[derive(Clone)]
 enum Backend {
-    Redis(MultiplexedConnection),
+    /// ConnectionManager wraps a MultiplexedConnection and automatically
+    /// re-establishes the underlying TCP connection whenever Redis closes
+    /// it (idle timeouts, server restarts, network blips).  This is the
+    /// canonical solution for "broken pipe" errors on long-lived connections.
+    Redis(ConnectionManager),
     Memory(Arc<InMemoryRedis>),
 }
 
@@ -65,13 +69,16 @@ impl RedisClient {
         let client = Client::open(url)
             .map_err(|e| RedisLayerError::Unavailable(format!("invalid redis url: {e}")))?;
 
-        let conn = tokio::time::timeout(connect_timeout, client.get_multiplexed_async_connection())
+        // ConnectionManager::new() opens the first connection and thereafter
+        // silently reconnects on any broken-pipe / connection-reset error,
+        // with exponential back-off, without any application-level code changes.
+        let manager = tokio::time::timeout(connect_timeout, ConnectionManager::new(client))
             .await
             .map_err(|_| RedisLayerError::Unavailable("connection timeout".to_string()))?
             .map_err(|e| RedisLayerError::Unavailable(format!("failed to connect to redis: {e}")))?;
 
         let instance = Self {
-            backend: Backend::Redis(conn),
+            backend: Backend::Redis(manager),
         };
 
         if !instance.ping().await {

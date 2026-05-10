@@ -1,11 +1,11 @@
 import pytest
 from httpx import AsyncClient
-from unittest.mock import AsyncMock, patch, MagicMock
-import asyncio
+from unittest.mock import AsyncMock, patch
 
-from app.models.job import MorphRequest
 
 # Test cases for the /morph endpoint
+
+
 @pytest.mark.asyncio
 async def test_morph_endpoint_unauthorized(client: AsyncClient):
     response = await client.post("/morph", json={
@@ -16,6 +16,7 @@ async def test_morph_endpoint_unauthorized(client: AsyncClient):
         "mode": "email"
     })
     assert response.status_code == 401
+
 
 @pytest.mark.asyncio
 async def test_morph_endpoint_success(client: AsyncClient):
@@ -43,14 +44,15 @@ async def test_morph_endpoint_success(client: AsyncClient):
         async with client.stream("POST", "/morph", json=request_data, headers=headers) as response:
             assert response.status_code == 200
             assert response.headers["content-type"] == "text/plain; charset=utf-8"
-            
+
             chunks = []
             async for chunk in response.aiter_text():
                 chunks.append(chunk)
-            
+
             full_text = "".join(chunks)
             assert full_text == "Morphed text"
             mock_router.route_stream.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_morph_endpoint_error_handling(client: AsyncClient):
@@ -69,11 +71,11 @@ async def test_morph_endpoint_error_handling(client: AsyncClient):
         mock_get_router.return_value = mock_router
 
         async with client.stream("POST", "/morph", json=request_data, headers=headers) as response:
-            assert response.status_code == 200 # StreamingResponse often starts with 200
-            
+            assert response.status_code == 200  # StreamingResponse often starts with 200
+
             chunks = []
             async for chunk in response.aiter_text():
                 chunks.append(chunk)
-            
+
             full_text = "".join(chunks)
             assert "Error: AI failed" in full_text

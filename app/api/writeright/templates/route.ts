@@ -20,6 +20,7 @@ export async function GET(req: Request) {
         .from("writeright_templates")
         .select("id, name, content, mode, tone, use_count, created_at, updated_at")
         .eq("user_id", userId)
+        .is("deleted_at", null)
         .order("use_count", { ascending: false });
 
       if (error) {

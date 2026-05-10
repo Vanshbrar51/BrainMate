@@ -5,6 +5,7 @@ import { useHaptics } from "@/lib/haptics"
 import { useAuth } from '@clerk/nextjs'
 import { useErrorToast } from '@/lib/writeright-toast'
 import React from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Mic,
   MicOff,
@@ -41,6 +42,9 @@ import {
   Settings2,
   Fingerprint,
   Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Columns,
 } from 'lucide-react'
 import {
   UserMessage,
@@ -837,13 +841,9 @@ function WriteRightThinking({ startTime }: { startTime: number | null }) {
         <div className="chat-msg-ai-avatar wr-thinking-avatar">
           ✍️
         </div>
-        <span className="chat-msg-ai-label wr-thinking-label">
-          <span className="wr-brain-wave" aria-hidden="true">
-            <svg viewBox="0 0 48 24" fill="none">
-              <path d="M2 12 C8 4, 14 20, 20 12 S32 4, 38 12 S44 20, 46 12" />
-              <path d="M2 12 C8 6, 14 18, 20 12 S32 6, 38 12 S44 18, 46 12" />
-              <path d="M2 12 C8 8, 14 16, 20 12 S32 8, 38 12 S44 16, 46 12" />
-            </svg>
+        <span className="chat-msg-ai-label wr-thinking-label" style={{ fontStyle: 'italic' }}>
+          <span className="wr-thinking-dots" aria-hidden="true">
+            {[0, 1, 2].map((i) => <span key={i} className="dot-thinking" style={{ animationDelay: `${i * 0.2}s` }} />)}
           </span>
           <span className="wr-thinking-copy">
             {THINKING_MESSAGES[msgIndex]}
@@ -935,6 +935,7 @@ function ScoreGauge({
             pathLength={circumference}
             strokeDasharray={`${dash} ${gap}`}
             strokeDashoffset="0"
+            transform="rotate(-110 42 42)"
           />
           <circle
             className="wr-gauge-fill"
@@ -943,6 +944,7 @@ function ScoreGauge({
             r={radius}
             pathLength={circumference}
             strokeDasharray={`${dash} ${gap}`}
+            transform="rotate(-110 42 42)"
             style={
               {
                 '--gauge-offset': progressOffset,
@@ -1157,7 +1159,7 @@ function WriteDiffBlock({
       {!streaming && (
         <div className="wr-diff-before">
           <div className="wr-diff-header">
-            <span className="wr-diff-label before">Before</span>
+            <span className="wr-diff-label before">Original Draft</span>
           </div>
           <div className={`wr-diff-text${isLong && !beforeExpanded ? ' collapsed' : ''}`}>
             {before}
@@ -1176,7 +1178,7 @@ function WriteDiffBlock({
       <div className={`wr-diff-after${copied ? ' wr-just-copied' : ''}${streaming ? ' streaming' : ''}`}>
         <div className="wr-diff-header">
           <div className="wr-diff-title-row">
-            <span className="wr-diff-label after">{streaming ? 'Writing live' : 'After'}</span>
+            <span className="wr-diff-label after">{streaming ? 'Writing live' : 'Improved Version'}</span>
             {!streaming && (
               <button
                 className={`wr-diff-toggle${showDiff ? ' active' : ''}`}
@@ -1205,43 +1207,53 @@ function WriteDiffBlock({
             </button>
           </div>
         </div>
-        <div className="wr-diff-text">
-          {showDiff && !streaming ? (
-            <DiffHighlight before={before} after={after} onStateChange={setWorkingDraft} />
-          ) : (
-            <>
-              <AnimatedAfterText text={renderAfterText} animate={!streaming && !showDiff} />
-              {streaming && <span className="wr-streaming-cursor" />}
-            </>
-          )}
 
-          {/* Refinement Popover */}
-          {selection && selection.rect && !streaming && (
-            <div 
-              className="wr-refine-popover"
-              style={{
-                top: selection.rect.top - 50 + window.scrollY,
-                left: selection.rect.left + (selection.rect.width / 2) - 130
-              }}
-            >
-              <input 
-                className="wr-refine-input"
-                placeholder="How should I change this?..."
-                value={refinePrompt}
-                onChange={(e) => setRefinePrompt(e.target.value)}
-                autoFocus
-                onKeyDown={(e) => e.key === 'Enter' && handleRefine()}
-              />
-              <button 
-                className="wr-refine-btn"
-                disabled={isRefining || !refinePrompt.trim()}
-                onClick={handleRefine}
-              >
-                {isRefining ? '...' : 'Refine'}
-              </button>
-            </div>
+        {/* ── PREMIUM: Virtual Sheet of Paper ── */}
+        <div className={streaming ? "" : "wr-paper-artifact"}>
+          {!streaming && (
+            <h2 className="wr-premium-header">
+              {mode ? (mode.charAt(0).toUpperCase() + mode.slice(1)) : "Text"} Refinement
+            </h2>
           )}
+          <div className={streaming ? "wr-diff-text" : "wr-premium-body"}>
+            {showDiff && !streaming ? (
+              <DiffHighlight before={before} after={after} onStateChange={setWorkingDraft} />
+            ) : (
+              <>
+                <AnimatedAfterText text={renderAfterText} animate={!streaming && !showDiff} />
+                {streaming && <span className="wr-streaming-cursor" />}
+              </>
+            )}
+          </div>
         </div>
+
+        {/* Refinement Popover */}
+        {selection && selection.rect && !streaming && (
+          <div 
+            className="wr-refine-popover"
+            style={{
+              top: selection.rect.top - 50 + window.scrollY,
+              left: selection.rect.left + (selection.rect.width / 2) - 130
+            }}
+          >
+            <input 
+              className="wr-refine-input"
+              placeholder="How should I change this?..."
+              value={refinePrompt}
+              onChange={(e) => setRefinePrompt(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && handleRefine()}
+            />
+            <button 
+              className="wr-refine-btn"
+              disabled={isRefining || !refinePrompt.trim()}
+              onClick={handleRefine}
+            >
+              {isRefining ? '...' : 'Refine'}
+            </button>
+          </div>
+        )}
+
         <div className="wr-diff-meta">
           <span>
             {afterStats.words} words
@@ -1583,10 +1595,14 @@ function ShareModal({
   const drawCard = useCallback(() => {
     if (!open || !payload || !canvasRef.current) return
     const canvas = canvasRef.current
-    canvas.width = 1080
-    canvas.height = 1080
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = 1080 * dpr
+    canvas.height = 1080 * dpr
+    canvas.style.width = '1080px'
+    canvas.style.height = '1080px'
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+    ctx.scale(dpr, dpr)
 
     const styles = window.getComputedStyle(document.documentElement)
     const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback
@@ -2252,7 +2268,6 @@ function spawnConfetti(target: HTMLElement) {
 
 const MILESTONES: Record<number, string> = { 5: '🏆 5 texts improved! You\u2019re warming up.', 10: '⚡ 10x writer! Building momentum.', 25: '🔥 25 improvements — you\u2019re on fire!', 50: '👑 50 texts! Writing mastery unlocked.' }
 
-
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value)
   useEffect(() => {
@@ -2263,7 +2278,60 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export default function WriteRightPage() {
+  const { getToken } = useAuth()
+  const { toasts, dismiss, showError } = useErrorToast()
+  const [input, setInput] = useState('')
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
+  // Persist sidebar state
+  useEffect(() => {
+    const saved = localStorage.getItem('wr:sidebarOpen')
+    if (saved !== null) setIsSidebarOpen(saved === 'true')
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('wr:sidebarOpen', isSidebarOpen.toString())
+  }, [isSidebarOpen])
+  const [tone, setTone] = useState<ToneOption>('Professional')
+  const [intensity, setIntensity] = useState(3)
+  const debouncedIntensity = useDebounce(intensity, 600)
+  const debouncedTone = useDebounce(tone, 600)
+  const [isMorphing, setIsMorphing] = useState(false)
+  const [mode, setMode] = useState<WritingMode>('email')
+  const [outputLang, setOutputLang] = useState<OutputLang>('en')
+  const [isTriageMode, setIsTriageMode] = useState(false)
+  const [triageItems, setTriageItems] = useState<TriageItem[]>([])
+  const [triageLoading, setTriageLoading] = useState(false)
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false)
+  const [showAdvancedTools, setShowAdvancedTools] = useState(false)
+
+  const { playClick, playShimmer, toggleMute, isMuted } = useHaptics()
+
+  // ── CLARITY SCORE (Real-time Flow Feedback) ──
+  const clarityScore = useMemo(() => {
+    if (!input.trim()) return 0
+    const text = input.trim()
+    const words = text.split(/\s+/).filter(Boolean)
+    const wordCount = words.length
+    const sentenceCount = text.split(/[.!?]+/).filter(Boolean).length || 1
+    const complexWordCount = words.filter(w => w.length > 8).length
+
+    const avgWordsPerSentence = wordCount / sentenceCount
+    const complexRatio = complexWordCount / wordCount
+
+    // Penalty for long sentences (> 18 words)
+    const lengthPenalty = Math.max(0, (avgWordsPerSentence - 15) * 3)
+    // Penalty for density of long "complex" words
+    const complexityPenalty = complexRatio * 60
+
+    const score = 100 - lengthPenalty - complexityPenalty
+    return Math.max(5, Math.min(100, Math.round(score)))
+  }, [input])
+
+  const prevScoreRef = useRef(clarityScore)
+  const [pulse, setPulse] = useState(false)
+  const [ghostText, setGhostText] = useState('')
+  const [ghosting, setGhosting] = useState(false)
 
   useEffect(() => {
     if (clarityScore > prevScoreRef.current + 2) { // Only pulse on noticeable improvement
@@ -2282,70 +2350,35 @@ export default function WriteRightPage() {
     return '#10b981' // Emerald
   }, [clarityScore])
 
-  const { getToken } = useAuth()
-  const { toasts, dismiss, showError } = useErrorToast()
-  const [input, setInput] = useState('')
-  const [tone, setTone] = useState<ToneOption>('Professional')
-  const [intensity, setIntensity] = useState(3)
-  const debouncedIntensity = useDebounce(intensity, 600)
-  const debouncedTone = useDebounce(tone, 600)
-  const [isMorphing, setIsMorphing] = useState(false)
-  const [mode, setMode] = useState<WritingMode>('email')
-  const [outputLang, setOutputLang] = useState<OutputLang>('en')
-  const [isTriageMode, setIsTriageMode] = useState(false)
-  const [triageItems, setTriageItems] = useState<TriageItem[]>([])
-  const [triageLoading, setTriageLoading] = useState(false)
-  const [voiceModalOpen, setVoiceModalOpen] = useState(false)
-  const [showAdvancedTools, setShowAdvancedTools] = useState(false)
-
-  const { playClick, playShimmer, toggleMute, isMuted } = useHaptics()
-
-  // Clarity Score (Average sentence length + Flesch-Kincaid-like simplicity)
-  const clarityScore = useMemo(() => {
-    if (!input.trim()) return 0
-    const words = input.trim().split(/\s+/).length
-    const sentences = input.split(/[.!?]+/).filter(Boolean).length || 1
-    const chars = input.replace(/\s/g, '').length
-
-    const avgWordsPerSentence = words / sentences
-    const avgCharsPerWord = chars / words
-
-    // Lower is better (simpler)
-    const score = avgWordsPerSentence + (avgCharsPerWord * 5)
-
-    // Convert to a 1-100 scale where higher is better clarity
-    // Ideal roughly: 15 words/sentence, 5 chars/word -> 15 + 25 = 40.
-    let mapped = 100 - ((score - 20) * 2)
-    return Math.max(0, Math.min(100, mapped))
-  }, [input])
-
-  const prevScoreRef = useRef(clarityScore)
-  const [pulse, setPulse] = useState(false)
-  const [ghostText, setGhostText] = useState('')
-  const [ghosting, setGhosting] = useState(false)
-
-  // Ghosting effect when intensity changes
+  // ── GHOSTING EFFECT (Tactile Feedback on Morph) ──
   useEffect(() => {
-    if (!input.trim() || isMorphing) return
+    if (!input.trim() || isMorphing || loading) return
+    
     setGhosting(true)
+    
+    // Choose base for ghosting: Improved text if exists, else input
+    const lastAiMsg = messages[messages.length - 1]
+    const baseText = (lastAiMsg?.role === 'ai' && lastAiMsg.kind === 'result') 
+      ? lastAiMsg.jobResult.improved_text 
+      : input
 
-    // Simple mock "morph" to show AI thinking
-    const words = input.split(' ')
+    const words = baseText.slice(0, 500).split(' ')
     const mockGhost = words.map((w, i) => {
-      if (i % 5 === 0 && w.length > 3) return w + '...'
+      // Visual "morphing" pattern
+      if (i % 8 === 0 && w.length > 2) return '●'.repeat(Math.min(w.length, 6))
       return w
     }).join(' ')
 
-    setGhostText(mockGhost)
+    setGhostText(mockGhost + (baseText.length > 500 ? '...' : ''))
 
     const timer = setTimeout(() => {
       setGhosting(false)
       setGhostText('')
-    }, 400) // Flicker duration
+    }, 450)
 
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intensity, isMorphing])
+  }, [intensity, tone])
 
   const [messages, setMessages] = useState<WriteRightMessage[]>([])
   const [loading, setLoading] = useState(false)
@@ -2580,6 +2613,8 @@ export default function WriteRightPage() {
 
   const [streamingText, setStreamingText] = useState('')
   const [streamingBefore, setStreamingBefore] = useState('')
+  const [isFocused, setIsFocused] = useState(false)
+  const isFocusMode = isFocused && input.length > 50
 
   const [fileBadge, setFileBadge] = useState<{ name: string; loading: boolean } | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
@@ -3131,6 +3166,7 @@ export default function WriteRightPage() {
     showError,
     todayKey,
     setChallengeDone,
+    playShimmer,
   ])
 
   useEffect(() => {
@@ -3286,457 +3322,471 @@ export default function WriteRightPage() {
     tone,
   ])
 
-  const sidebarVisible = chats.length > 0 || templates.length > 0 || hasStarted
+  const sidebarVisible = (chats.length > 0 || templates.length > 0 || hasStarted)
 
   return (
-    <div className={`chat-workspace ${sidebarVisible ? 'wr-workspace-with-sidebar' : ''}`} data-module="write">
-      {/* GAME-1: Achievement milestone banner */}
-      {achievementBanner && (
-        <div className="wr-achievement-banner" role="status">
-          {achievementBanner}
-          <button className="wr-achievement-banner-dismiss" onClick={() => setAchievementBanner(null)}>×</button>
-        </div>
-      )}
-      {sidebarVisible && (
-        <div className="wr-sidebar">
-          <div className="wr-sidebar-header">
-            <div className="wr-sidebar-brand">
-              <span className="wr-sidebar-brand-icon" aria-hidden="true" />
-              <span>WriteRight</span>
-              {stats && stats.streak.current >= 2 && (
-                <span className="wr-streak-badge">{stats.streak.current}d</span>
-              )}
-            </div>
-            <div className="wr-sidebar-actions">
-              <button className="wr-sidebar-new" onClick={() => handleModeChange('email')}>
-                <Plus size={14} /> New Chat
-              </button>
-              <button className="wr-sidebar-export" onClick={handleExport} disabled={isExporting} aria-label="Export writing history">
-                {isExporting ? '...' : <Download size={14} />}
-              </button>
-            </div>
+    <div className={`wr-workspace-container${isFocusMode ? ' wr-focus-mode' : ''}`}>
+      <div className={`chat-workspace ${sidebarVisible && isSidebarOpen ? 'wr-workspace-with-sidebar' : ''}`} data-module="write">
+        {/* GAME-1: Achievement milestone banner */}
+        {achievementBanner && (
+          <div className="wr-achievement-banner" role="status">
+            {achievementBanner}
+            <button className="wr-achievement-banner-dismiss" onClick={() => setAchievementBanner(null)}>×</button>
           </div>
+        )}
 
-          <div className="wr-search-bar">
-            <div className="wr-search-wrap">
-              <Search size={14} className="wr-search-icon" />
-              <input
-                className="wr-search-input"
-                placeholder="Search history..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              {searchQuery.trim() && (
-                <button className="wr-search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="wr-sidebar-list">
-            {searchQuery.trim() && (
-              <>
-                {searchLoading && <p className="wr-template-meta wr-sidebar-empty">Searching…</p>}
-                {!searchLoading && searchResults.length === 0 && (
-                  <p className="wr-template-meta wr-sidebar-empty">No matching chats.</p>
-                )}
-                {!searchLoading && searchResults.map((result) => (
-                  <div
-                    key={result.chatId}
-                    className="wr-search-result"
-                    onClick={() => { void selectChat(result.chatId, result.mode) }}
+        <AnimatePresence mode="wait">
+          {sidebarVisible && isSidebarOpen && (
+            <motion.div 
+              key="wr-sidebar"
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 248, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+              className="wr-sidebar"
+              style={{ overflow: 'hidden' }}
+            >
+              <div className="wr-sidebar-header">
+                <div className="wr-sidebar-brand">
+                  <span className="wr-sidebar-brand-icon" aria-hidden="true" />
+                  <span>WriteRight</span>
+                  <button 
+                    className="wr-sidebar-toggle-btn" 
+                    onClick={() => setIsSidebarOpen(false)}
+                    aria-label="Collapse sidebar"
                   >
-                    <div className="wr-sidebar-item-title">{highlightText(result.chatTitle, searchQuery)}</div>
-                    <div className="wr-search-snippet">{highlightText(result.messageSnippet, searchQuery)}</div>
-                  </div>
-                ))}
-              </>
-            )}
-
-            {!searchQuery.trim() && (
-              <>
-                <details className="wr-sidebar-section" open>
-                  <summary>Chats</summary>
-                  {chats.length === 0 && (
-                    <p className="wr-sidebar-empty">Your writing sessions will appear here.</p>
-                  )}
-                  {chats.map((c) => (
-                    <div
-                      key={c.id}
-                      className={`wr-sidebar-item${chatId === c.id ? ' active' : ''}`}
-                      data-mode={c.mode}
-                      onClick={() => { void selectChat(c.id, c.mode) }}
-                    >
-                      <div className="wr-sidebar-item-title">{c.title || 'New Conversation'}</div>
-                      <div className="wr-sidebar-item-meta">
-                        <span className="wr-sidebar-mode" aria-label={`${c.mode} mode`} />
-                        <div className="wr-sidebar-meta-right">
-                          {c.message_count > 0 && (
-                            <span className="wr-msg-count">{c.message_count}</span>
-                          )}
-                          <span className="wr-sidebar-time">
-                            {new Date(c.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                          </span>
-                        </div>
-                      </div>
-                      <button className="wr-sidebar-del" onClick={(e) => { void deleteChat(e, c.id) }} aria-label="Delete chat">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  ))}
-                </details>
-
-                <details className="wr-sidebar-section" open>
-                  <summary>Templates</summary>
-                  {templates.length === 0 && (
-                    <p className="wr-sidebar-empty">No templates saved yet.</p>
-                  )}
-                  {templates.map((template) => (
-                    <div
-                      key={template.id}
-                      className="wr-sidebar-item"
-                      data-mode={template.mode}
-                      onClick={() => {
-                        setInput(template.content.slice(0, CHAR_MAX))
-                        setMode(template.mode)
-                        setTone(template.tone)
-                        void markUsed(template.id)
-                        taRef.current?.focus()
-                      }}
-                    >
-                      <div className="wr-sidebar-item-title">{template.name}</div>
-                      <div className="wr-sidebar-item-meta">
-                        <span className="wr-sidebar-mode" aria-label={`${template.mode} mode`} />
-                        <span className="wr-use-badge">{template.use_count}</span>
-                      </div>
-                    </div>
-                  ))}
-                  <button
-                    className="wr-sidebar-template-manage"
-                    onClick={() => setTemplatesDrawerOpen(true)}
-                  >
-                    Manage templates
+                    <PanelLeftClose size={16} />
                   </button>
-                </details>
-              </>
-            )}
-          </div>
-          {!searchQuery.trim() && chats.length === 1 && (
-            <div className="wr-sidebar-onboard">
-              <p>Your history is saved here.</p>
-              <p>Each chat is a writing session you can revisit.</p>
-            </div>
-          )}
-
-          <StatsPanel
-            open={statsOpen}
-            loading={statsLoading}
-            stats={stats}
-            writingProfile={writingProfile}
-            onToggle={() => setStatsOpen((prev) => !prev)}
-          />
-        </div>
-      )}
-
-      <div className={sidebarVisible ? 'wr-workspace-main' : 'wr-workspace-main solo'}>
-        <VersionTimeline
-          open={versionPanelOpen}
-          versions={aiVersions}
-          onClose={() => setVersionPanelOpen(false)}
-          onRestore={(text) => {
-            setInput(text)
-            setVersionPanelOpen(false)
-            taRef.current?.focus()
-          }}
-        />
-        <div className="chat-scroll" ref={scrollRef}>
-          <div className="chat-scroll-inner">
-            {!hasStarted && (
-              <div className="chat-empty">
-                <div
-                  style={{
-                    width: 52,
-                    height: 52,
-                    borderRadius: 16,
-                    background: 'var(--wr-surface)',
-                    border: '1px solid var(--wr-border)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 24,
-                    marginBottom: 20,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                  }}
-                >
-                  ✍️
+                  {stats && stats.streak.current >= 2 && (
+                    <span className="wr-streak-badge">{stats.streak.current}d</span>
+                  )}
                 </div>
-                <h1 className="wr-hero-title">WriteRight</h1>
-                <p className="wr-hero-tagline">Improve your writing instantly.</p>
-
-                
-
-                <div className="chat-prompts-grid">
-                  {[...MODE_PROMPTS[mode]].sort((a,b) => (chipCounts[b.title] || 0) - (chipCounts[a.title] || 0)).map((p) => {
-                    const isNew = (chipCounts[p.title] || 0) === 0
-                    return (
-                    <button
-                      key={p.title}
-                      className="chat-prompt-chip"
-                      onClick={(e) => {
-                        // Ripple effect
-                        const btn = e.currentTarget
-                        const rect = btn.getBoundingClientRect()
-                        const dot = document.createElement('span')
-                        dot.className = 'wr-chip-ripple-dot'
-                        dot.style.left = `${e.clientX - rect.left}px`
-                        dot.style.top = `${e.clientY - rect.top}px`
-                        btn.appendChild(dot)
-                        setTimeout(() => dot.remove(), 500)
-                        const newCounts = { ...chipCounts, [p.title]: (chipCounts[p.title] || 0) + 1 }
-                        setChipCounts(newCounts)
-                        localStorage.setItem('wr:chipCounts', JSON.stringify(newCounts))
-                        void submitRef.current(p.full)
-                      }}
-                    >
-                      <span className="chat-prompt-chip-title">
-                        {p.title}
-                        {isNew && <span className="wr-new-dot" aria-hidden="true" />}
-                        <ArrowUpRight size={13} />
-                      </span>
-                      <span className="chat-prompt-chip-sub">{p.sub}</span>
-                    </button>
-                  )})}
+                <div className="wr-sidebar-actions">
+                  <button className="wr-sidebar-new" onClick={() => handleModeChange('email')}>
+                    <Plus size={14} /> New Chat
+                  </button>
+                  <button className="wr-sidebar-export" onClick={handleExport} disabled={isExporting} aria-label="Export writing history">
+                    {isExporting ? '...' : <Download size={14} />}
+                  </button>
                 </div>
-
-                {!challengeDismissed && (
-                  <div className={`wr-daily-chip${challengeDone ? ' done' : ''}`}>
-                    <div className="wr-daily-copy">
-                      <h4>Daily Challenge: {todayChallenge.title}</h4>
-                      <p>{todayChallenge.desc}</p>
-                    </div>
-                    {!challengeDone ? (
-                      <button
-                        className="wr-daily-accept-btn"
-                        onClick={() => {
-                          setInput(`Challenge: ${todayChallenge.desc}`)
-                          taRef.current?.focus()
-                        }}
-                      >
-                        Use prompt
-                      </button>
-                    ) : (
-                      <span className="wr-daily-done">Done for today</span>
-                    )}
-                    <button
-                      className="wr-daily-dismiss-btn"
-                      aria-label="Dismiss daily challenge"
-                      onClick={() => {
-                        setChallengeDismissed(true)
-                        try { localStorage.setItem('wr:cd:' + todayKey, '1') } catch {}
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
               </div>
-            )}
 
-            {hasStarted && (
-              <div className="chat-messages">
-                <div
-                  aria-live="polite"
-                  aria-atomic="true"
-                  className="wr-sr-only"
-                >
-                  {resultAnnouncement}
+              <div className="wr-search-bar">
+                <div className="wr-search-wrap">
+                  <Search size={14} className="wr-search-icon" />
+                  <input
+                    className="wr-search-input"
+                    placeholder="Search history..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  {searchQuery.trim() && (
+                    <button className="wr-search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
+              </div>
 
-                {isTriageMode ? (
-                  <div className="wr-triage-container">
-                    <div className="wr-triage-header">
-                      <div className="wr-triage-header-text">
-                        <h2 className="wr-triage-title">Inbox Zero Triage</h2>
-                        <p className="wr-triage-subtitle">AI-segmented view of your bulk emails and threads.</p>
-                      </div>
-                      <button 
-                        className="wr-triage-run-btn"
-                        onClick={handleTriage}
-                        disabled={triageLoading || !input.trim()}
-                      >
-                        {triageLoading ? 'Analyzing…' : 'Run Triage'}
-                      </button>
-                    </div>
-                    {triageItems.length > 0 ? (
-                      <TriageBoard 
-                        items={triageItems} 
-                        onStartDraft={(draft) => {
-                          setInput(draft)
-                          setIsTriageMode(false)
-                        }}
-                      />
-                    ) : (
-                      <div className="wr-triage-welcome">
-                        <div className="wr-triage-welcome-icon">📥</div>
-                        <h3>Ready to triage?</h3>
-                        <p>Paste your bulk emails or a long thread below and click &quot;Run Triage&quot;.</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
+              <div className="wr-sidebar-list">
+                {searchQuery.trim() && (
                   <>
-                    {messages.map((m, i) => {
-                  const isLastAi = m.role === 'ai' && i === messages.map((msg) => msg.role).lastIndexOf('ai')
-                  return (
-                    <React.Fragment key={m.id}>
-                      {isLastAi && aiVersions.length >= 2 && (
-                        <div className="wr-version-cta">
-                          <button
-                            className="wr-version-btn"
-                            onClick={() => setVersionPanelOpen(true)}
-                          >
-                            <RefreshCcw size={11} /> Version history ({aiVersions.length})
+                    {searchLoading && <p className="wr-template-meta wr-sidebar-empty">Searching…</p>}
+                    {!searchLoading && searchResults.length === 0 && (
+                      <p className="wr-template-meta wr-sidebar-empty">No matching chats.</p>
+                    )}
+                    {!searchLoading && searchResults.map((result) => (
+                      <div
+                        key={result.chatId}
+                        className="wr-search-result"
+                        onClick={() => { void selectChat(result.chatId, result.mode) }}
+                      >
+                        <div className="wr-sidebar-item-title">{highlightText(result.chatTitle, searchQuery)}</div>
+                        <div className="wr-search-snippet">{highlightText(result.messageSnippet, searchQuery)}</div>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {!searchQuery.trim() && (
+                  <>
+                    <details className="wr-sidebar-section" open>
+                      <summary>Chats</summary>
+                      {chats.length === 0 && (
+                        <p className="wr-sidebar-empty">Your writing sessions will appear here.</p>
+                      )}
+                      {chats.map((c) => (
+                        <div
+                          key={c.id}
+                          className={`wr-sidebar-item${chatId === c.id ? ' active' : ''}`}
+                          data-mode={c.mode}
+                          onClick={() => { void selectChat(c.id, c.mode) }}
+                        >
+                          <div className="wr-sidebar-item-title">{c.title || 'New Conversation'}</div>
+                          <div className="wr-sidebar-item-meta">
+                            <span className="wr-sidebar-mode" aria-label={`${c.mode} mode`} />
+                            <div className="wr-sidebar-meta-right">
+                              {c.message_count > 0 && (
+                                <span className="wr-msg-count">{c.message_count}</span>
+                              )}
+                              <span className="wr-sidebar-time">
+                                {new Date(c.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                              </span>
+                            </div>
+                          </div>
+                          <button className="wr-sidebar-del" onClick={(e) => { void deleteChat(e, c.id) }} aria-label="Delete chat">
+                            <Trash2 size={13} />
                           </button>
                         </div>
-                      )}
-                      {m.role === 'user' && (
-                        <UserMessage content={m.content} />
-                      )}
-                      {m.role === 'ai' && m.kind === 'result' && (
-                        <AIMessage
-                          content={(
-                            <WriteDiffBlock
-                              before={m.before}
-                              after={m.jobResult.improved_text}
-                              isMorphing={isMorphing && i === messages.length - 1}
-                              explanation={(() => {
+                      ))}
+                    </details>
 
-                                const explanationParts: string[] = []
-                                if (m.jobResult.teaching?.mistakes?.length) {
-                                  explanationParts.push(m.jobResult.teaching.mistakes[0])
-                                }
-                                if (m.jobResult.teaching?.explanations?.length) {
-                                  explanationParts.push(m.jobResult.teaching.explanations[0])
-                                }
-                                return explanationParts.join(' — ') || 'AI-improved version of your text.'
-                              })()}
-                              teaching={m.jobResult.teaching}
-                              followUp={m.jobResult.follow_up}
-                              suggestions={m.jobResult.suggestions}
-                              scores={m.jobResult.scores}
-                              prevScores={m.prevScores}
-                              englishVersion={m.jobResult.english_version}
-                              outputLang={m.outputLang}
-                              jobId={m.jobId}
-                              chatId={m.chatId}
-                              mode={m.mode}
-                              tone={m.tone}
-                              onSuggest={(suggestion) => { void submitRef.current(suggestion) }}
-                              onSaveTemplate={() => openSaveTemplateModal(m.jobResult.improved_text, m.mode, m.tone)}
-                              onShare={isUuidLike(m.jobId) && typeof m.chatId === 'string' ? () => openShareModal({
-                                before: m.before,
-                                after: m.jobResult.improved_text,
-                                mode: m.mode,
-                                tone: m.tone,
-                                chatId: m.chatId!,
-                                jobId: m.jobId!,
-                              }) : undefined}
-                            />
-                          )}
-                          emoji="✍️"
-                          moduleColor="var(--mod-write)"
-                        />
+                    <details className="wr-sidebar-section" open>
+                      <summary>Templates</summary>
+                      {templates.length === 0 && (
+                        <p className="wr-sidebar-empty">No templates saved yet.</p>
                       )}
-                      {m.role === 'ai' && m.kind === 'notice' && (
-                        <AIMessage
-                          content={
-                            m.content === 'Cancelled' || m.content.startsWith('Switched to ')
-                              ? <div className="wr-mode-divider">{m.content}</div>
-                              : m.content
-                          }
-                          emoji="✍️"
-                          moduleColor="var(--mod-write)"
-                        />
-                      )}
-                      {m.role === 'ai' && m.kind === 'error' && (
-                        <AIMessage
-                          content={(
-                            <InlineError
-                              message={m.content}
-                              onRetry={() => {
-                                setMessages((items) => items.filter((item) => item.id !== m.id))
-                                void submitRef.current(m.retryText)
-                              }}
-                            />
-                          )}
-                          emoji="✍️"
-                          moduleColor="var(--mod-write)"
-                        />
-                      )}
-                    </React.Fragment>
-                  )
-                })}
-              </>
-            )}
-
-            {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} />}
-
-                {loading && streamingText && (
-                  <AIMessage
-                    content={(
-                      <WriteDiffBlock
-                        before={streamingBefore || (lastSubmittedText ?? 'Your draft')}
-                        after={streamingText}
-                        explanation="Streaming response..."
-                        outputLang={outputLang}
-                        streaming
-                      />
-                    )}
-                    emoji="✍️"
-                    moduleColor="var(--mod-write)"
-                  />
+                      {templates.map((template) => (
+                        <div
+                          key={template.id}
+                          className="wr-sidebar-item"
+                          data-mode={template.mode}
+                          onClick={() => {
+                            setInput(template.content.slice(0, CHAR_MAX))
+                            setMode(template.mode)
+                            setTone(template.tone)
+                            void markUsed(template.id)
+                            taRef.current?.focus()
+                          }}
+                        >
+                          <div className="wr-sidebar-item-title">{template.name}</div>
+                          <div className="wr-sidebar-item-meta">
+                            <span className="wr-sidebar-mode" aria-label={`${template.mode} mode`} />
+                            <span className="wr-use-badge">{template.use_count}</span>
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        className="wr-sidebar-template-manage"
+                        onClick={() => setTemplatesDrawerOpen(true)}
+                      >
+                        Manage templates
+                      </button>
+                    </details>
+                  </>
                 )}
               </div>
-            )}
-          </div>
-        </div>
-
-        <div className="chat-input-bar">
-            {loading && (
-              <div className="wr-progress-bar" aria-hidden="true">
-                <div className="wr-progress-fill" />
-              </div>
-            )}
-            <div className="chat-input-bar-inner">
-              {shouldShowRantBanner && (
-                <div className="wr-rant-banner" role="alert">
-                  <div className="wr-rant-body">
-                    <p className="wr-rant-headline">This reads heated.</p>
-                    <p className="wr-rant-subtitle">Keep it as-is, or cool it down to a friendlier professional tone.</p>
-                  </div>
-                  <div className="wr-rant-actions-row">
-                    <button type="button" className="wr-rant-dismiss" onClick={() => setRantDismissed(true)}>
-                      Keep as-is
-                    </button>
-                    <button
-                      type="button"
-                      className="wr-rant-cool"
-                      onClick={() => {
-                        setRantDismissed(true)
-                        void submitRef.current(undefined, 'Friendly')
-                      }}
-                      disabled={loading || !input.trim()}
-                    >
-                      <Smile size={12} />
-                      Cool it down
-                    </button>
-                  </div>
+              {!searchQuery.trim() && chats.length === 1 && (
+                <div className="wr-sidebar-onboard">
+                  <p>Your history is saved here.</p>
+                  <p>Each chat is a writing session you can revisit.</p>
                 </div>
               )}
 
+              <StatsPanel
+                open={statsOpen}
+                loading={statsLoading}
+                stats={stats}
+                writingProfile={writingProfile}
+                onToggle={() => setStatsOpen((prev) => !prev)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className={sidebarVisible && isSidebarOpen ? 'wr-workspace-main' : 'wr-workspace-main solo'}>
+          {sidebarVisible && !isSidebarOpen && (
+            <button 
+              className="wr-sidebar-open-btn"
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label="Expand sidebar"
+            >
+              <PanelLeftOpen size={18} />
+            </button>
+          )}
+          <VersionTimeline
+            open={versionPanelOpen}
+            versions={aiVersions}
+            onClose={() => setVersionPanelOpen(false)}
+            onRestore={(text) => {
+              setInput(text)
+              setVersionPanelOpen(false)
+              taRef.current?.focus()
+            }}
+          />
+          <div className="chat-scroll" ref={scrollRef}>
+            <div className="chat-scroll-inner">
+              {!hasStarted && (
+                <div className="chat-empty">
+                  <div className="wr-chat-empty-icon" aria-hidden="true">
+                    ✍️
+                  </div>
+                  <h1 className="wr-hero-title">WriteRight</h1>
+                  <p className="wr-hero-tagline">Improve your writing instantly.</p>
+
+                  <div className="chat-prompts-grid">
+                    {[...MODE_PROMPTS[mode]].sort((a,b) => (chipCounts[b.title] || 0) - (chipCounts[a.title] || 0)).map((p) => {
+                      const isNew = (chipCounts[p.title] || 0) === 0
+                      return (
+                      <button
+                        key={p.title}
+                        className="chat-prompt-chip"
+                        onClick={(e) => {
+                          const btn = e.currentTarget
+                          const rect = btn.getBoundingClientRect()
+                          const dot = document.createElement('span')
+                          dot.className = 'wr-chip-ripple-dot'
+                          dot.style.left = `${e.clientX - rect.left}px`
+                          dot.style.top = `${e.clientY - rect.top}px`
+                          btn.appendChild(dot)
+                          setTimeout(() => dot.remove(), 500)
+                          const newCounts = { ...chipCounts, [p.title]: (chipCounts[p.title] || 0) + 1 }
+                          setChipCounts(newCounts)
+                          localStorage.setItem('wr:chipCounts', JSON.stringify(newCounts))
+                          void submitRef.current(p.full)
+                        }}
+                      >
+                        <span className="chat-prompt-chip-title">
+                          {p.title}
+                          {isNew && <span className="wr-new-dot" aria-hidden="true" />}
+                          <ArrowUpRight size={13} />
+                        </span>
+                        <span className="chat-prompt-chip-sub">{p.sub}</span>
+                      </button>
+                    )})}
+                  </div>
+
+                  {!challengeDismissed && (
+                    <div className={`wr-daily-chip${challengeDone ? ' done' : ''}`}>
+                      <div className="wr-daily-copy">
+                        <h4>Daily Challenge: {todayChallenge.title}</h4>
+                        <p>{todayChallenge.desc}</p>
+                      </div>
+                      {!challengeDone ? (
+                        <button
+                          className="wr-daily-accept-btn"
+                          onClick={() => {
+                            setInput(`Challenge: ${todayChallenge.desc}`)
+                            taRef.current?.focus()
+                          }}
+                        >
+                          Use prompt
+                        </button>
+                      ) : (
+                        <span className="wr-daily-done">Done for today</span>
+                      )}
+                      <button
+                        className="wr-daily-dismiss-btn"
+                        aria-label="Dismiss daily challenge"
+                        onClick={() => {
+                          setChallengeDismissed(true)
+                          try { localStorage.setItem('wr:cd:' + todayKey, '1') } catch {}
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {hasStarted && (
+                <div className="chat-messages">
+                  <div
+                    aria-live="polite"
+                    aria-atomic="true"
+                    className="wr-sr-only"
+                  >
+                    {resultAnnouncement}
+                  </div>
+
+                  {isTriageMode ? (
+                    <div className="wr-triage-container">
+                      <div className="wr-triage-header">
+                        <div className="wr-triage-header-text">
+                          <h2 className="wr-triage-title">Inbox Zero Triage</h2>
+                          <p className="wr-triage-subtitle">AI-segmented view of your bulk emails and threads.</p>
+                        </div>
+                        <button 
+                          className="wr-triage-run-btn"
+                          onClick={handleTriage}
+                          disabled={triageLoading || !input.trim()}
+                        >
+                          {triageLoading ? 'Analyzing…' : 'Run Triage'}
+                        </button>
+                      </div>
+                      {triageItems.length > 0 ? (
+                        <TriageBoard 
+                          items={triageItems} 
+                          onStartDraft={(draft) => {
+                            setInput(draft)
+                            setIsTriageMode(false)
+                          }}
+                        />
+                      ) : (
+                        <div className="wr-triage-welcome">
+                          <div className="wr-triage-welcome-icon">📥</div>
+                          <h3>Ready to triage?</h3>
+                          <p>Paste your bulk emails or a long thread below and click &quot;Run Triage&quot;.</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      {messages.map((m, i) => {
+                        const isLastAi = m.role === 'ai' && i === messages.map((msg) => msg.role).lastIndexOf('ai')
+                        return (
+                          <React.Fragment key={m.id}>
+                            {isLastAi && aiVersions.length >= 2 && (
+                              <div className="wr-version-cta">
+                                <button
+                                  className="wr-version-btn"
+                                  onClick={() => setVersionPanelOpen(true)}
+                                >
+                                  <RefreshCcw size={11} /> Version history ({aiVersions.length})
+                                </button>
+                              </div>
+                            )}
+                            {m.role === 'user' && (
+                              <UserMessage content={m.content} />
+                            )}
+                            {m.role === 'ai' && m.kind === 'result' && (
+                              <AIMessage
+                                content={(
+                                  <WriteDiffBlock
+                                    before={m.before}
+                                    after={m.jobResult.improved_text}
+                                    isMorphing={isMorphing && i === messages.length - 1}
+                                    explanation={(() => {
+                                      const explanationParts: string[] = []
+                                      if (m.jobResult.teaching?.mistakes?.length) {
+                                        explanationParts.push(m.jobResult.teaching.mistakes[0])
+                                      }
+                                      if (m.jobResult.teaching?.explanations?.length) {
+                                        explanationParts.push(m.jobResult.teaching.explanations[0])
+                                      }
+                                      return explanationParts.join(' — ') || 'AI-improved version of your text.'
+                                    })()}
+                                    teaching={m.jobResult.teaching}
+                                    followUp={m.jobResult.follow_up}
+                                    suggestions={m.jobResult.suggestions}
+                                    scores={m.jobResult.scores}
+                                    prevScores={m.prevScores}
+                                    englishVersion={m.jobResult.english_version}
+                                    outputLang={m.outputLang}
+                                    jobId={m.jobId}
+                                    chatId={m.chatId}
+                                    mode={m.mode}
+                                    tone={m.tone}
+                                    onSuggest={(suggestion) => { void submitRef.current(suggestion) }}
+                                    onSaveTemplate={() => openSaveTemplateModal(m.jobResult.improved_text, m.mode, m.tone)}
+                                    onShare={isUuidLike(m.jobId) && typeof m.chatId === 'string' ? () => openShareModal({
+                                      before: m.before,
+                                      after: m.jobResult.improved_text,
+                                      mode: m.mode,
+                                      tone: m.tone,
+                                      chatId: m.chatId!,
+                                      jobId: m.jobId!,
+                                    }) : undefined}
+                                  />
+                                )}
+                                emoji="✍️"
+                                moduleColor="var(--mod-write)"
+                              />
+                            )}
+                            {m.role === 'ai' && m.kind === 'notice' && (
+                              <AIMessage
+                                content={
+                                  m.content === 'Cancelled' || m.content.startsWith('Switched to ')
+                                    ? <div className="wr-mode-divider">{m.content}</div>
+                                    : m.content
+                                }
+                                emoji="✍️"
+                                moduleColor="var(--mod-write)"
+                              />
+                            )}
+                            {m.role === 'ai' && m.kind === 'error' && (
+                              <AIMessage
+                                content={(
+                                  <InlineError
+                                    message={m.content}
+                                    onRetry={() => {
+                                      setMessages((items) => items.filter((item) => item.id !== m.id))
+                                      void submitRef.current(m.retryText)
+                                    }}
+                                  />
+                                )}
+                                emoji="✍️"
+                                moduleColor="var(--mod-write)"
+                              />
+                            )}
+                          </React.Fragment>
+                        )
+                      })}
+                    </>
+                  )}
+
+                  {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} />}
+
+                  {loading && streamingText && (
+                    <AIMessage
+                      content={(
+                        <WriteDiffBlock
+                          before={streamingBefore || (lastSubmittedText ?? 'Your draft')}
+                          after={streamingText}
+                          explanation="Streaming response..."
+                          outputLang={outputLang}
+                          streaming
+                        />
+                      )}
+                      emoji="✍️"
+                      moduleColor="var(--mod-write)"
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Standard Input Bar ── */}
+          <div className="chat-input-bar">
+            <div className={`chat-input-bar-inner${loading ? ' wr-streaming-pulse' : ''}`}>
+              {loading && <div className="wr-ink-flow-container" aria-hidden="true" />}
+              <AnimatePresence>                {shouldShowRantBanner && (
+                  <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="wr-rant-banner" 
+                    role="alert"
+                  >
+                    <div className="wr-rant-body">
+                      <p className="wr-rant-headline">This reads heated.</p>
+                      <p className="wr-rant-subtitle">Keep it as-is, or cool it down to a friendlier professional tone.</p>
+                    </div>
+                    <div className="wr-rant-actions-row">
+                      <button type="button" className="wr-rant-dismiss" onClick={() => setRantDismissed(true)}>
+                        Keep as-is
+                      </button>
+                      <button
+                        type="button"
+                        className="wr-rant-cool"
+                        onClick={() => {
+                          setRantDismissed(true)
+                          void submitRef.current(undefined, 'Friendly')
+                        }}
+                        disabled={loading || !input.trim()}
+                      >
+                        <Smile size={12} />
+                        Cool it down
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {(fileBadge || fileError || draftSaveWarning) && (
-                <div className="wr-input-alerts">
+                <div className="wr-input-alerts wr-input-alerts-padded">
                   {fileBadge && (
                     <div className="wr-file-badge">
                       <span>{fileBadge.loading ? `Extracting ${fileBadge.name}…` : fileBadge.name}</span>
@@ -3750,314 +3800,315 @@ export default function WriteRightPage() {
                 </div>
               )}
 
-              {/* Structured Input Card */}
-              <div className="wr-input-card">
-                <div className="wr-input-header">
-                  <div className="wr-mode-bar">
-                    {MODES.map((m) => (
-                      <button
-                        key={m.id}
-                        className={`wr-mode-btn${mode === m.id ? ' active' : ''}`}
-                        onClick={() => handleModeChange(m.id)}
-                      >
-                        {m.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="wr-tone-bar">
-                    {TONES.map((t) => (
-                      <div key={t} className="wr-tone-tooltip-wrap">
-                        <button className={`tone-pill${tone === t ? ' active' : ''}`} onClick={() => setTone(t)}>
-                          {t}
-                        </button>
-                        <div className="wr-tone-tooltip">{TONE_DESCRIPTIONS[t]}</div>
-                        <TonePreviewTooltip text={input} tone={t} />
-                      </div>
-                    ))}
-                  </div>
+              <div className="wr-input-header">
+                <div className="wr-mode-bar">
+                  {MODES.map((m) => (
+                    <button
+                      key={m.id}
+                      className={`wr-mode-btn${mode === m.id ? ' active' : ''}`}
+                      onClick={() => handleModeChange(m.id)}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
                 </div>
-
-                <div className="chat-input-box wr-pulse-wrapper" style={{ '--writing-clarity-color': clarityColor } as React.CSSProperties}>
-                  {pulse && <div className="wr-pulse-anim" />}
-                  <textarea
-                    ref={taRef}
-                    className="chat-textarea"
-                    placeholder={MODE_PLACEHOLDERS[mode]}
-                    value={input}
-                    onChange={(e) => { playClick(); setInput(e.target.value) }}
-                    onInput={(e) => {
-                      const t = e.currentTarget
-                      t.style.height = 'auto'
-                      t.style.height = `${Math.min(t.scrollHeight, 200)}px`
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        void submitRef.current()
-                      }
-                    }}
-                    rows={3}
-                    maxLength={CHAR_MAX}
-                  />
-                  {ghosting && ghostText && (
-                    <div className="wr-ghost-text">
-                      {ghostText}
+                <div className="wr-tone-bar">
+                  {TONES.map((t) => (
+                    <div key={t} className="wr-tone-tooltip-wrap">
+                      <button className={`tone-pill${tone === t ? ' active' : ''}`} onClick={() => setTone(t)}>
+                        {t}
+                      </button>
+                      <div className="wr-tone-tooltip">{TONE_DESCRIPTIONS[t]}</div>
+                      <TonePreviewTooltip text={input} tone={t} />
                     </div>
-                  )}
-                  {charDisplay && (
-                    <p className={`wr-char-count${charClass ? ` ${charClass}` : ''}`}>
-                      {charDisplay}
-                    </p>
-                  )}
-                </div>
-
-                <div className="chat-input-footer">
-                  <div className="chat-tools-left">
-                    <button
-                      type="button"
-                      className={`chat-tool-btn${showAdvancedTools ? ' active' : ''}`}
-                      aria-label="More tools"
-                      onClick={() => setShowAdvancedTools(!showAdvancedTools)}
-                    >
-                      <Plus size={16} />
-                    </button>
-
-                    {voiceSupported && (
-                      <button
-                        type="button"
-                        className={`chat-tool-btn${isRecording ? ' active' : ''}`}
-                        aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
-                        aria-pressed={isRecording}
-                        onClick={toggleRecording}
-                      >
-                        {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
-                      </button>
-                    )}
-
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      hidden
-                      accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                      onChange={(e) => {
-                        const file = e.currentTarget.files?.[0]
-                        if (file) void handleFileExtract(file)
-                        e.currentTarget.value = ''
-                      }}
-                    />
-                    <button className="chat-tool-btn" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
-                      <Paperclip size={16} />
-                    </button>
-
-                    {isRecording && (
-                      <div className="wr-recording-indicator" aria-live="polite">
-                        <span className="wr-recording-dot" />
-                        Recording
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="chat-tools-right">
-                    <button
-                      type="button"
-                      className="wr-shortcut-btn"
-                      aria-label="Keyboard Shortcuts"
-                      onClick={() => setShowShortcutsModal(true)}
-                    >
-                      ?
-                      <div className="wr-shortcut-hint">
-                        Ctrl+Enter  Submit<br />
-                        Escape      Cancel<br />
-                        Ctrl+K      Focus<br />
-                        1-4         Change Mode<br />
-                        T           Cycle tone<br />
-                        N           New chat<br />
-                        Ctrl+S      Save output<br />
-                        Ctrl+Shift+C Copy output
-                      </div>
-                    </button>
-                    <button
-                      className="wr-send-btn"
-                      onClick={() => { void submitRef.current() }}
-                      disabled={!input.trim() || loading}
-                      aria-label="Improve text"
-                    >
-                      {loading
-                        ? <>{[0, 1, 2].map((i) => <span key={i} className="dot-thinking" style={{ animationDelay: `${i * 0.2}s` }} />)}</>
-                        : <><Wand2 size={13} strokeWidth={2.2} /> Improve</>
-                      }
-                    </button>
-                  </div>
+                  ))}
                 </div>
               </div>
 
-              {builderOpen && (
-                <div className="wr-builder-panel">
-                  <p className="wr-builder-heading">Brief</p>
-                  <input
-                    className="wr-builder-field"
-                    placeholder="Audience"
-                    value={builderObj.audience}
-                    onChange={(e) => setBuilderObj({ ...builderObj, audience: e.target.value })}
-                  />
-                  <input
-                    className="wr-builder-field"
-                    placeholder="Purpose"
-                    value={builderObj.purpose}
-                    onChange={(e) => setBuilderObj({ ...builderObj, purpose: e.target.value })}
-                  />
-                  <input
-                    className="wr-builder-field full"
-                    placeholder="Key points, comma separated"
-                    value={builderObj.points}
-                    onChange={(e) => setBuilderObj({ ...builderObj, points: e.target.value })}
-                  />
+              <div className="chat-input-box wr-pulse-wrapper" style={{ '--writing-clarity-color': clarityColor } as React.CSSProperties}>
+                {pulse && <div className="wr-pulse-anim" />}
+                <textarea
+                  ref={taRef}
+                  className="chat-textarea"
+                  placeholder={MODE_PLACEHOLDERS[mode]}
+                  value={input}
+                  onChange={(e) => { playClick(); setInput(e.target.value) }}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
+                  onInput={(e) => {
+                    const t = e.currentTarget
+                    t.style.height = 'auto'
+                    t.style.height = `${Math.min(t.scrollHeight, 200)}px`
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      void submitRef.current()
+                    }
+                  }}
+                  rows={3}
+                  maxLength={CHAR_MAX}
+                />
+                {ghosting && ghostText && (
+                  <div className="wr-ghost-text">
+                    {ghostText}
+                  </div>
+                )}
+                {charDisplay && (
+                  <p className={`wr-char-count${charClass ? ` ${charClass}` : ''}`}>
+                    {charDisplay}
+                  </p>
+                )}
+              </div>
+
+              <div className="chat-input-footer">
+                <div className="chat-tools-left">
                   <button
                     type="button"
-                    className="wr-builder-fill"
-                    onClick={() => {
-                      const hasContent = builderObj.audience.trim() ||
-                                        builderObj.purpose.trim() ||
-                                        builderObj.points.trim()
-                      if (!hasContent) return
-                      const prompt = `Audience: ${builderObj.audience}\\nPurpose: ${builderObj.purpose}\\nPoints to cover:\\n- ${builderObj.points.split(',').join('\\n- ')}`
-                      setInput(prompt)
-                      setBuilderOpen(false)
-                      setBuilderObj({ audience: '', purpose: '', points: '' })
-                    }}
+                    className={`chat-tool-btn${showAdvancedTools ? ' active' : ''}`}
+                    aria-label="More tools"
+                    onClick={() => setShowAdvancedTools(!showAdvancedTools)}
                   >
-                    Fill draft
+                    <Plus size={16} />
                   </button>
-                </div>
-              )}
-
-              {/* Advanced Tools Panel */}
-              {showAdvancedTools && (
-                <div className="wr-advanced-tools">
-                  {(mode === 'email' || mode === 'whatsapp') && (
-                    <select
-                      className="wr-lang-select"
-                      value={outputLang}
-                      onChange={(e) => setOutputLang(e.target.value as OutputLang)}
-                      aria-label="Translate output language"
-                    >
-                      {OUTPUT_LANG_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  )}
 
                   {voiceSupported && (
                     <button
                       type="button"
-                      className="wr-lang-pill"
-                      onClick={cycleVoiceLang}
-                      aria-label="Change voice input language"
+                      className={`chat-tool-btn${isRecording ? ' active' : ''}`}
+                      aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
+                      aria-pressed={isRecording}
+                      onClick={toggleRecording}
                     >
-                      {VOICE_LANGS.find((lang) => lang.id === voiceLang)?.label ?? 'AUTO'}
+                      {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    className={`chat-tool-btn${!isMuted ? ' active' : ''}`}
-                    onClick={toggleMute}
-                    aria-label="Toggle haptics"
-                    title="Mechanical haptics"
-                  >
-                    {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                  </button>
-                  <div className="wr-depth-menu">
-                    <button type="button" className="chat-tool-btn" aria-label="Rewrite depth">
-                      <Settings2 size={16} />
-                    </button>
-                    <div className="wr-intensity-popover">
-                      <div className="wr-intensity-head">
-                        <span>Depth</span>
-                        <strong>
-                          {intensity === 1 ? 'Preserve' :
-                           intensity === 2 ? 'Light' :
-                           intensity === 3 ? 'Standard' :
-                           intensity === 4 ? 'Active' :
-                           'Full'}
-                        </strong>
-                      </div>
-                      <input
-                        type="range"
-                        className="wr-intensity-slider"
-                        min="1"
-                        max="5"
-                        step="1"
-                        value={intensity}
-                        onChange={(e) => setIntensity(Number(e.target.value))}
-                        style={{ '--slider-pct': `${(intensity - 1) * 25}%` } as React.CSSProperties}
-                        aria-valuenow={intensity}
-                        aria-valuemin={1}
-                        aria-valuemax={5}
-                      />
-                    </div>
-                  </div>
-
-                  <button 
-                    className={`chat-tool-btn${isTriageMode ? ' active' : ''}`}
-                    aria-label="Inbox Triage Board"
-                    title="Bulk Inbox Triage"
-                    onClick={() => setIsTriageMode(!isTriageMode)}
-                  >
-                    <Layout size={16} />
-                  </button>
-
-                  <button 
-                    className="chat-tool-btn"
-                    aria-label="Brand Voice DNA"
-                    title="Train AI Voice"
-                    onClick={() => setVoiceModalOpen(true)}
-                  >
-                    <Fingerprint size={16} />
-                  </button>
-
-                  <button
-                    className="chat-tool-btn is-muted"
-                    aria-label="Paste or attach image (coming soon)"
-                    title="Image input — coming soon"
-                    onClick={() => {
-                      const btn = document.activeElement as HTMLButtonElement
-                      if (btn) {
-                        btn.setAttribute('data-tooltip', 'Coming soon!')
-                        setTimeout(() => btn.removeAttribute('data-tooltip'), 2000)
-                      }
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    hidden
+                    accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={(e) => {
+                      const file = e.currentTarget.files?.[0]
+                      if (file) void handleFileExtract(file)
+                      e.currentTarget.value = ''
                     }}
-                  >
-                    <ImagePlus size={16} />
+                  />
+                  <button className="chat-tool-btn" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
+                    <Paperclip size={16} />
                   </button>
 
+                  {isRecording && (
+                    <div className="wr-recording-indicator" aria-live="polite">
+                      <span className="wr-recording-dot" />
+                      Recording
+                    </div>
+                  )}
+                </div>
+
+                <div className="chat-tools-right">
                   <button
                     type="button"
-                    className={`chat-tool-btn${builderOpen ? ' active' : ''}`}
-                    onClick={() => setBuilderOpen((prev) => !prev)}
-                    aria-expanded={builderOpen}
-                    aria-label="Open writing brief"
+                    className="wr-shortcut-btn"
+                    aria-label="Keyboard Shortcuts"
+                    onClick={() => setShowShortcutsModal(true)}
                   >
-                    <LayoutTemplate size={16} />
+                    ?
+                    <div className="wr-shortcut-hint">
+                      Ctrl+Enter  Submit<br />
+                      Escape      Cancel<br />
+                      Ctrl+K      Focus<br />
+                      1-4         Change Mode<br />
+                      T           Cycle tone<br />
+                      N           New chat<br />
+                      Ctrl+S      Save output<br />
+                      Ctrl+Shift+C Copy output
+                    </div>
                   </button>
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
+                    className="wr-send-btn"
+                    onClick={() => { void submitRef.current() }}
+                    disabled={!input.trim() || loading}
+                    aria-label="Improve text"
+                  >
+                    {loading
+                      ? <>{[0, 1, 2].map((i) => <span key={i} className="dot-thinking" style={{ animationDelay: `${i * 0.2}s` }} />)}</>
+                      : <><Wand2 size={13} strokeWidth={2.2} /> Improve</>
+                    }
+                  </motion.button>
                 </div>
-              )}
-
-              {showShortcutTip && (
-                <button
-                  className="wr-shortcut-tip-toast"
-                  onClick={() => {
-                    setShowShortcutTip(false)
-                    try { localStorage.setItem('wr:shortcut-tip', '1') } catch {}
-                  }}
-                  type="button"
-                >
-                  Tip: press <kbd>T</kbd> to cycle tones · <kbd>1-4</kbd> switches modes
-                  <span className="wr-tip-dismiss">got it ×</span>
-                </button>
-              )}
+              </div>
             </div>
           </div>
+          
+          {builderOpen && (
+            <div className="wr-builder-panel">
+              <p className="wr-builder-heading">Brief</p>
+              <input
+                className="wr-builder-field"
+                placeholder="Audience"
+                value={builderObj.audience}
+                onChange={(e) => setBuilderObj({ ...builderObj, audience: e.target.value })}
+              />
+              <input
+                className="wr-builder-field"
+                placeholder="Purpose"
+                value={builderObj.purpose}
+                onChange={(e) => setBuilderObj({ ...builderObj, purpose: e.target.value })}
+              />
+              <input
+                className="wr-builder-field full"
+                placeholder="Key points, comma separated"
+                value={builderObj.points}
+                onChange={(e) => setBuilderObj({ ...builderObj, points: e.target.value })}
+              />
+              <button
+                type="button"
+                className="wr-builder-fill"
+                onClick={() => {
+                  const hasContent = builderObj.audience.trim() ||
+                                    builderObj.purpose.trim() ||
+                                    builderObj.points.trim()
+                  if (!hasContent) return
+                  const prompt = `Audience: ${builderObj.audience}\nPurpose: ${builderObj.purpose}\nPoints to cover:\n- ${builderObj.points.split(',').join('\n- ')}`
+                  setInput(prompt)
+                  setBuilderOpen(false)
+                  setBuilderObj({ audience: '', purpose: '', points: '' })
+                }}
+              >
+                Fill draft
+              </button>
+            </div>
+          )}
+
+          {/* Advanced Tools Panel */}
+          {showAdvancedTools && (
+            <div className="wr-advanced-tools">
+              {(mode === 'email' || mode === 'whatsapp') && (
+                <select
+                  className="wr-lang-select"
+                  value={outputLang}
+                  onChange={(e) => setOutputLang(e.target.value as OutputLang)}
+                  aria-label="Translate output language"
+                >
+                  {OUTPUT_LANG_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              )}
+
+              {voiceSupported && (
+                <button
+                  type="button"
+                  className="wr-lang-pill"
+                  onClick={cycleVoiceLang}
+                  aria-label="Change voice input language"
+                >
+                  {VOICE_LANGS.find((lang) => lang.id === voiceLang)?.label ?? 'AUTO'}
+                </button>
+              )}
+
+              <button
+                type="button"
+                className={`chat-tool-btn${!isMuted ? ' active' : ''}`}
+                onClick={toggleMute}
+                aria-label="Toggle haptics"
+                title="Mechanical haptics"
+              >
+                {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              </button>
+              <div className="wr-depth-menu">
+                <button type="button" className="chat-tool-btn" aria-label="Rewrite depth">
+                  <Settings2 size={16} />
+                </button>
+                <div className="wr-intensity-popover">
+                  <div className="wr-intensity-head">
+                    <span>Depth</span>
+                    <strong>
+                      {intensity === 1 ? 'Preserve' :
+                       intensity === 2 ? 'Light' :
+                       intensity === 3 ? 'Standard' :
+                       intensity === 4 ? 'Active' :
+                       'Full'}
+                    </strong>
+                  </div>
+                  <input
+                    type="range"
+                    className="wr-intensity-slider"
+                    min="1"
+                    max="5"
+                    step="1"
+                    value={intensity}
+                    onChange={(e) => setIntensity(Number(e.target.value))}
+                    style={{ '--slider-pct': `${(intensity - 1) * 25}%` } as React.CSSProperties}
+                    aria-valuenow={intensity}
+                    aria-valuemin={1}
+                    aria-valuemax={5}
+                  />
+                </div>
+              </div>
+
+              <button 
+                className={`chat-tool-btn${isTriageMode ? ' active' : ''}`}
+                aria-label="Inbox Triage Board"
+                title="Bulk Inbox Triage"
+                onClick={() => setIsTriageMode(!isTriageMode)}
+              >
+                <Layout size={16} />
+              </button>
+
+              <button 
+                className="chat-tool-btn"
+                aria-label="Brand Voice DNA"
+                title="Train AI Voice"
+                onClick={() => setVoiceModalOpen(true)}
+              >
+                <Fingerprint size={16} />
+              </button>
+
+              <button
+                className="chat-tool-btn is-muted"
+                aria-label="Paste or attach image (coming soon)"
+                title="Image input — coming soon"
+                onClick={() => {
+                  const btn = document.activeElement as HTMLButtonElement
+                  if (btn) {
+                    btn.setAttribute('data-tooltip', 'Coming soon!')
+                    setTimeout(() => btn.removeAttribute('data-tooltip'), 2000)
+                  }
+                }}
+              >
+                <ImagePlus size={16} />
+              </button>
+
+              <button
+                type="button"
+                className={`chat-tool-btn${builderOpen ? ' active' : ''}`}
+                onClick={() => setBuilderOpen((prev) => !prev)}
+                aria-expanded={builderOpen}
+                aria-label="Open writing brief"
+              >
+                <LayoutTemplate size={16} />
+              </button>
+            </div>
+          )}
+
+          {showShortcutTip && (
+            <button
+              className="wr-shortcut-tip-toast"
+              onClick={() => {
+                setShowShortcutTip(false)
+                try { localStorage.setItem('wr:shortcut-tip', '1') } catch {}
+              }}
+              type="button"
+            >
+              Tip: press <kbd>T</kbd> to cycle tones · <kbd>1-4</kbd> switches modes
+              <span className="wr-tip-dismiss">got it ×</span>
+            </button>
+          )}
+        </div>
 
         <TemplatesDrawer
           open={templatesDrawerOpen}

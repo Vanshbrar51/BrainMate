@@ -348,7 +348,7 @@ fn validate_security_posture(config: &Config, internal_api_tokens: &[String]) ->
         anyhow::bail!("REQUIRE_TLS is set but no TLS certificates are provided");
     }
 
-    if internal_api_tokens.len() < 1 {
+    if internal_api_tokens.is_empty() {
         anyhow::bail!("INTERNAL_API_TOKEN must be configured for internal services");
     }
 

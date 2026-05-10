@@ -19,7 +19,8 @@ tracer = trace.get_tracer(__name__)
 router = APIRouter(tags=["modules"])
 
 
-async def verify_token(x_internal_api_token: Annotated[str | None, Header()] = None) -> None:
+async def verify_token(
+        x_internal_api_token: Annotated[str | None, Header()] = None) -> None:
     """Security dependency to verify the internal API token."""
     if x_internal_api_token != settings.internal_api_token:
         logger.warning("Unauthorized access attempt to modules router")
@@ -40,12 +41,12 @@ async def dev_helper(
             {"role": "system", "content": system},
             {"role": "user", "content": user}
         ]
-        
+
         result = await model_router.route_with_fallback(
             task_type="dev_helper",
             messages=messages
         )
-        
+
         return ModuleResponse(content=result.content)
 
 
@@ -63,12 +64,12 @@ async def study_mate(
             {"role": "system", "content": system},
             {"role": "user", "content": user}
         ]
-        
+
         result = await model_router.route_with_fallback(
             task_type="study_mate",
             messages=messages
         )
-        
+
         return ModuleResponse(content=result.content)
 
 
@@ -86,12 +87,12 @@ async def interview_pro(
             {"role": "system", "content": system},
             {"role": "user", "content": user}
         ]
-        
+
         result = await model_router.route_with_fallback(
             task_type="interview_pro",
             messages=messages
         )
-        
+
         return ModuleResponse(content=result.content)
 
 
@@ -104,16 +105,16 @@ async def content_flow(
     with tracer.start_as_current_span("router.modules.content_flow") as span:
         span.set_attribute("module", "content-flow")
         model_router = get_model_router()
-        system, user = build_content_flow_prompt(req.prompt, req.target_platform)
+        system, user = build_content_flow_prompt(
+            req.prompt, req.target_platform)
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user}
         ]
-        
+
         result = await model_router.route_with_fallback(
             task_type="content_flow",
             messages=messages
         )
-        
-        return ModuleResponse(content=result.content)
 
+        return ModuleResponse(content=result.content)

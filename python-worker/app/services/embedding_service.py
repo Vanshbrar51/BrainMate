@@ -1,7 +1,8 @@
 # python-worker/app/services/embedding_service.py — High-speed vector embedding generation
 #
 # Convers raw text into 768-dimensional vectors using Google AI Studio.
-# These vectors are used for semantic retrieval in the Brand Voice RAG pipeline.
+# These vectors are used for semantic retrieval in the Brand Voice RAG
+# pipeline.
 
 import logging
 import httpx
@@ -45,25 +46,25 @@ class EmbeddingService:
 
         try:
             response = await self._client.post(url, json=payload)
-            
+
             if response.status_code != 200:
                 logger.error(
-                    "Embedding API error %d: %s", 
-                    response.status_code, 
+                    "Embedding API error %d: %s",
+                    response.status_code,
                     response.text[:500]
                 )
                 response.raise_for_status()
 
             data = response.json()
             embedding = data.get("embedding", {}).get("values", [])
-            
+
             if not embedding:
                 logger.error("Embedding API returned empty values: %s", data)
                 raise ValueError("Empty embedding returned from API")
 
             return embedding
 
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to generate embedding for text")
             raise
 

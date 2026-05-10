@@ -8,7 +8,6 @@ import {
 } from "@/lib/tracing";
 
 const isProtectedRoute = createRouteMatcher([
-  "/dashboard(.*)",
   "/api/protected(.*)",
 ]);
 

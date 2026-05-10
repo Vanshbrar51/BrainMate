@@ -39,12 +39,15 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
     pool.execute(MIGRATION_TABLE).await?;
 
     // Check whether migration 0001 has already been applied.
-    // Use simple query without bind parameters.
-    let count: i64 = sqlx::query_scalar(
+    // Use persistent(false) so sqlx does NOT cache a named prepared statement
+    // (avoids "prepared statement sqlx_s_1 already exists" on PgBouncer restarts).
+    let row: (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM _brainmate_migrations WHERE id = '0001_auth_schema'",
     )
+    .persistent(false)
     .fetch_one(pool)
     .await?;
+    let count = row.0;
 
     if count > 0 {
         tracing::info!("migration 0001_auth_schema already applied — skipping");

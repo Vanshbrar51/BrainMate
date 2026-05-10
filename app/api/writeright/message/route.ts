@@ -75,6 +75,7 @@ async function fetchChatHistory(
     .select("id, role, content")
     .eq("chat_id", chatId)
     .neq("id", currentMessageId)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(HISTORY_LIMIT);
 

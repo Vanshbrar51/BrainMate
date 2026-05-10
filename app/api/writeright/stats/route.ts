@@ -98,32 +98,38 @@ export async function GET(req: Request) {
           .from("writeright_streaks")
           .select("current_streak, longest_streak, last_activity_date")
           .eq("user_id", userId)
+          .is("deleted_at", null)
           .maybeSingle(),
         supabase
           .from("writeright_usage")
           .select("id", { head: true, count: "exact" })
-          .eq("user_id", userId),
+          .eq("user_id", userId)
+          .is("deleted_at", null),
         supabase
           .from("writeright_ai_jobs")
           .select("metadata, created_at")
           .eq("user_id", userId)
           .eq("status", "completed")
+          .is("deleted_at", null)
           .limit(1000),
         supabase
           .from("writeright_usage")
           .select("created_at")
           .eq("user_id", userId)
+          .is("deleted_at", null)
           .gte("created_at", new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString()),
         supabase
           .from("writeright_achievements")
           .select("achievement")
           .eq("user_id", userId)
+          .is("deleted_at", null)
           .order("earned_at", { ascending: false }),
         supabase
           .from("writeright_ai_jobs")
           .select("output, created_at")
           .eq("user_id", userId)
           .eq("status", "completed")
+          .is("deleted_at", null)
           .gte("created_at", new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString())
           .not("output", "is", null)
           .limit(200),
@@ -131,6 +137,7 @@ export async function GET(req: Request) {
           .from("writeright_usage")
           .select("prompt_tokens, completion_tokens, total_tokens, model, created_at")
           .eq("user_id", userId)
+          .is("deleted_at", null)
           .gte("created_at", thirtyDaysAgo.toISOString())
           .order("created_at", { ascending: false }),
       ]);

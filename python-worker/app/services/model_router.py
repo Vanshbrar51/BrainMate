@@ -33,7 +33,6 @@ logger = logging.getLogger("writeright.model_router")
 
 class ModelTimeoutError(Exception):
     """Raised when the LLM call times out."""
-    pass
 
 
 class ModelRateLimitError(Exception):
@@ -46,7 +45,6 @@ class ModelRateLimitError(Exception):
 
 class ModelError(Exception):
     """Generic model call error."""
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +61,7 @@ _TASK_TEMPERATURES: dict[str, float] = {
     "json_repair": 0.1,
     "dev_helper": 0.3,    # Low temperature for precise code patches
     "study_mate": 0.7,    # Medium for creative analogies
-    "interview_pro": 0.6, # Balanced for dynamic questioning
+    "interview_pro": 0.6,  # Balanced for dynamic questioning
     "content_flow": 0.8,  # Higher for creative copywriting
 }
 
@@ -100,7 +98,8 @@ class ModelRouter:
 
     def _select_model(self, task_type: str) -> str:
         """Returns model string for task. Override via TASK_MODEL_MAP env var (JSON)."""
-        return self._task_model_map.get(task_type, get_settings().default_model)
+        return self._task_model_map.get(
+            task_type, get_settings().default_model)
 
     async def route(
         self,
@@ -118,7 +117,6 @@ class ModelRouter:
         max_tokens: int = 0,
         traceparent: str | None = None,
     ) -> ModelResponse:
-
         """Route a task to the appropriate model via Google AI Studio.
 
         Args:
@@ -155,7 +153,8 @@ class ModelRouter:
             "max_tokens": effective_max_tokens,
             "temperature": temperature,
             # response_format is intentionally omitted: nvidia/nemotron-3-super does not
-            # support json_object mode. JSON output is enforced via the system prompt instead.
+            # support json_object mode. JSON output is enforced via the system
+            # prompt instead.
         }
 
         # Retry loop with exponential backoff for 429s
@@ -263,7 +262,6 @@ class ModelRouter:
         on_token: Callable[[str, str], Awaitable[None]] | None = None,
         model_override: str | None = None,
     ) -> ModelResponse:
-
         """Route with streaming enabled and invoke callback for each token chunk."""
         model = model_override or self._select_model(task_type)
         effective_max_tokens = max_tokens or get_settings().max_output_tokens
@@ -311,7 +309,11 @@ class ModelRouter:
                     if response.status_code != 200:
                         body = await response.aread()
                         raise ModelError(
-                            f"Google AI Studio stream error {response.status_code}: {body[:500].decode(errors='ignore')}"
+                            f"Google AI Studio stream error {
+                                response.status_code}: {
+                                body[
+                                    :500].decode(
+                                    errors='ignore')}"
                         )
 
                     async for line in response.aiter_lines():
@@ -441,7 +443,8 @@ class ModelRouter:
 
             return ModelResponse(
                 content=content,
-                model=data.get("model", get_settings().anthropic_fallback_model),
+                model=data.get(
+                    "model", get_settings().anthropic_fallback_model),
                 prompt_tokens=usage.get("input_tokens", 0),
                 completion_tokens=usage.get("output_tokens", 0),
                 finish_reason=data.get("stop_reason", ""),
@@ -467,7 +470,6 @@ class ModelRouter:
         traceparent: str | None = None,
         on_token: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> ModelResponse:
-
         """Route with automatic Anthropic fallback on primary provider failure (F-BE-13)."""
         try:
             return await self.route_stream(task_type, messages, max_tokens, traceparent, on_token)

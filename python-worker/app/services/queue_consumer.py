@@ -160,7 +160,8 @@ async def consume_jobs(
     while True:
         try:
             now_ms = int(time.time() * 1000)
-            member = await redis_client.eval(ZPOPMIN_IF_DUE_SCRIPT, 1, JOBS_KEY, now_ms)  # type: ignore
+            # type: ignore
+            member = await redis_client.eval(ZPOPMIN_IF_DUE_SCRIPT, 1, JOBS_KEY, now_ms)
 
             if member is None:
                 await asyncio.sleep(poll_interval)
@@ -246,9 +247,11 @@ async def _process_job_safe(
 
                 import re
                 if '"improved_text": "' in full_text and _word_count_published < 500:
-                    match = re.search(r'"improved_text":\s*"((?:[^"\\]|\\.)*)', full_text)
+                    match = re.search(
+                        r'"improved_text":\s*"((?:[^"\\]|\\.)*)', full_text)
                     if match:
-                        so_far = match.group(1).replace('\\"', '"').replace('\\n', '\n')
+                        so_far = match.group(1).replace(
+                            '\\"', '"').replace('\\n', '\n')
                         words_so_far = so_far.split()
                         if len(words_so_far) > _word_count_published:
                             new_words = words_so_far[_word_count_published:]
@@ -269,7 +272,11 @@ async def _process_job_safe(
                 )
 
             result = await asyncio.wait_for(
-                process_job(job, get_settings(), on_stream_chunk=on_stream_chunk, on_status=on_status),
+                process_job(
+                    job,
+                    get_settings(),
+                    on_stream_chunk=on_stream_chunk,
+                    on_status=on_status),
                 timeout=float(get_settings().job_timeout_seconds),
             )
 
@@ -311,7 +318,8 @@ async def _process_job_safe(
             await _handle_failure(
                 redis_client=redis_client,
                 job=job,
-                error=f"Job timed out after {get_settings().job_timeout_seconds}s",
+                error=f"Job timed out after {
+                    get_settings().job_timeout_seconds}s",
             )
 
         except Exception as exc:
@@ -371,9 +379,12 @@ async def _handle_failure(
                 "final_error": error[:500],
             }
             await redis_client.zadd(DEAD_LETTER_KEY, {json.dumps(dead_entry): time.time()})
-            await redis_client.expire(DEAD_LETTER_KEY, 7 * 24 * 3600)  # 7-day retention
+            # 7-day retention
+            await redis_client.expire(DEAD_LETTER_KEY, 7 * 24 * 3600)
         except Exception:
-            logger.warning("Failed to write to dead letter queue for job %s (non-fatal)", job.id)
+            logger.warning(
+                "Failed to write to dead letter queue for job %s (non-fatal)",
+                job.id)
 
         logger.error(
             '{"event": "job.failed", "job_id": "%s", "attempts": %d, "error": "%s"}',
@@ -414,7 +425,8 @@ async def _handle_failure(
 
 def _input_hash_for_cache(job: WritingJob) -> str:
     # BUG-02 FIX: intensity is a first-class cache dimension.
-    # Omitting it caused intensity=1 submissions to return intensity=5 cached results.
+    # Omitting it caused intensity=1 submissions to return intensity=5 cached
+    # results.
     cache_material = (
         f"{job.content}:{job.tone}:{job.mode}:"
         f"{job.output_language or 'en'}:{job.intensity}"

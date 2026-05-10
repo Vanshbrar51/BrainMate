@@ -51,7 +51,8 @@ logger = logging.getLogger("writeright.main")
 def _init_otel() -> None:
     """Initialize OpenTelemetry SDK if OTEL_ENDPOINT is configured."""
     if not settings.otel_endpoint:
-        logger.info("OTEL_ENDPOINT not set, skipping OpenTelemetry initialization")
+        logger.info(
+            "OTEL_ENDPOINT not set, skipping OpenTelemetry initialization")
         return
 
     try:
@@ -66,14 +67,18 @@ def _init_otel() -> None:
             "service.version": "0.1.0",
         })
 
-        exporter = OTLPSpanExporter(endpoint=settings.otel_endpoint, insecure=True)
+        exporter = OTLPSpanExporter(
+            endpoint=settings.otel_endpoint, insecure=True)
         provider = TracerProvider(resource=resource)
         provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
 
-        logger.info("OpenTelemetry initialized (endpoint=%s)", settings.otel_endpoint)
+        logger.info(
+            "OpenTelemetry initialized (endpoint=%s)",
+            settings.otel_endpoint)
     except ImportError:
-        logger.warning("OpenTelemetry packages not installed, tracing disabled")
+        logger.warning(
+            "OpenTelemetry packages not installed, tracing disabled")
     except Exception:
         logger.exception("Failed to initialize OpenTelemetry")
 
@@ -101,7 +106,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             decode_responses=False,
             max_connections=20,
         )
-        await redis_client.ping()
+        await redis_client.ping()  # type: ignore[misc]
         logger.info("Redis connected: %s", _mask_url(settings.redis_url))
     except Exception:
         logger.exception("Failed to connect to Redis — worker cannot start")
@@ -118,7 +123,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         supabase_ok = True
         logger.info("Supabase connected: %s", _mask_url(settings.supabase_url))
     except Exception:
-        logger.warning("Supabase connectivity check failed — will retry on first job")
+        logger.warning(
+            "Supabase connectivity check failed — will retry on first job")
 
     # 4. Set health check dependencies
     set_health_dependencies(

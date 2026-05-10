@@ -143,11 +143,13 @@ def _update_chat_title_sync(chat_id: str, new_title: str) -> None:
     try:
         # BUG-04 FIX: Read the current title before overwriting.
         # Only overwrite if the title is still auto-generated.
-        result = client.table("writeright_chats").select("title").eq("id", chat_id).single().execute()
-        if not result.data:
+        result = client.table("writeright_chats").select(
+            "title").eq("id", chat_id).single().execute()
+        if not result.data or not isinstance(result.data, dict):
             return
-        current = result.data.get("title", "")
-        # Auto-generated titles: start with 📝, are "Untitled Chat", or are raw long text
+        current = str(result.data.get("title", ""))
+        # Auto-generated titles: start with 📝, are "Untitled Chat", or are raw
+        # long text
         is_auto = (
             current.startswith("\U0001f4dd ")
             or current == "Untitled Chat"
@@ -155,7 +157,8 @@ def _update_chat_title_sync(chat_id: str, new_title: str) -> None:
         )
         if not is_auto:
             # User has renamed this chat — preserve it
-            logger.info("Skipping title update for chat %s (user-renamed: %r)", chat_id, current[:40])
+            logger.info(
+                "Skipping title update for chat %s (user-renamed: %r)", chat_id, current[:40])
             return
         client.table("writeright_chats").update(
             {"title": new_title, "updated_at": "now()"}
@@ -167,7 +170,6 @@ def _update_chat_title_sync(chat_id: str, new_title: str) -> None:
 async def update_chat_title(chat_id: str, new_title: str) -> None:
     """Update title for the given chat ID, only if not user-renamed."""
     await asyncio.to_thread(_update_chat_title_sync, chat_id, new_title)
-
 
 
 # ---------------------------------------------------------------------------
@@ -416,9 +418,12 @@ def _update_streak_and_achievements_sync(
             .eq("user_id", user_id)
             .execute()
         )
-        existing_set = {r["achievement"] for r in (existing_res.data or [])}
+        existing_set = {r["achievement"] for r in cast(
+            list[dict[str, Any]], existing_res.data or [])}
     except Exception:
-        logger.warning("Failed to fetch existing achievements for user_id=%s", user_id)
+        logger.warning(
+            "Failed to fetch existing achievements for user_id=%s",
+            user_id)
         existing_set = set()
 
     new_achievements = achievements - existing_set
@@ -439,7 +444,9 @@ def _update_streak_and_achievements_sync(
         client.table("writeright_achievements").insert(to_insert).execute()
     except Exception:
         # Fallback to individual inserts if batch fails (e.g. race condition)
-        logger.warning("Batch achievement insert failed for user_id=%s, falling back", user_id)
+        logger.warning(
+            "Batch achievement insert failed for user_id=%s, falling back",
+            user_id)
         for ach in to_insert:
             try:
                 client.table("writeright_achievements").insert(ach).execute()
@@ -635,7 +642,9 @@ async def match_voice_examples(
     try:
         return await asyncio.to_thread(_match_voice_examples_sync, user_id, embedding, count)
     except Exception:
-        logger.exception("Failed to match voice examples for user_id=%s", user_id)
+        logger.exception(
+            "Failed to match voice examples for user_id=%s",
+            user_id)
         return []
 
 
