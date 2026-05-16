@@ -44,7 +44,6 @@ import {
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
-
 } from 'lucide-react'
 import {
   UserMessage,
@@ -818,42 +817,34 @@ const THINKING_MESSAGES = [
 // ── CHANGED: [UI-6] Brain Wave Loading Animation ──
 function WriteRightThinking({ startTime }: { startTime: number | null }) {
   const [elapsed, setElapsed] = useState(0)
-  const [msgIndex, setMsgIndex] = useState(0)
+  const [idx, setIdx] = useState(0)
 
   useEffect(() => {
     if (!startTime) return
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTime) / 1000))
-    }, 1000)
-    return () => clearInterval(interval)
+    const t = setInterval(() => setElapsed(
+      Math.floor((Date.now() - startTime) / 1000)
+    ), 1000)
+    return () => clearInterval(t)
   }, [startTime])
 
   useEffect(() => {
-    const cycle = setInterval(() => {
-      setMsgIndex((prev) => (prev + 1) % THINKING_MESSAGES.length)
-    }, 2000)
-    return () => clearInterval(cycle)
+    const t = setInterval(() => setIdx(i => (i + 1) % THINKING_MESSAGES.length), 2200)
+    return () => clearInterval(t)
   }, [])
 
   return (
-    <div className="chat-msg-ai">
-      <div className="chat-msg-ai-header">
-        <div className="chat-msg-ai-avatar wr-thinking-avatar">
-          ✍️
+    <div className="wr-thinking">
+      <div className="wr-thinking-avatar">✍️</div>
+      <div className="wr-thinking-content">
+        <div className="wr-thinking-dots" aria-hidden="true">
+          <span className="wr-dot" /><span className="wr-dot" /><span className="wr-dot" />
         </div>
-        <span className="chat-msg-ai-label wr-thinking-label" style={{ fontStyle: 'italic' }}>
-          <span className="wr-thinking-dots" aria-hidden="true">
-            {[0, 1, 2].map((i) => <span key={i} className="dot-thinking" style={{ animationDelay: `${i * 0.2}s` }} />)}
-          </span>
-          <span className="wr-thinking-copy">
-            {THINKING_MESSAGES[msgIndex]}
-          </span>
-          {elapsed > 5 && (
-            <span className="wr-thinking-elapsed">
-              Taking a bit longer... ({elapsed}s)
-            </span>
-          )}
+        <span className="wr-thinking-text">
+          {THINKING_MESSAGES[idx]}
         </span>
+        {elapsed > 7 && (
+          <span className="wr-thinking-elapsed">({elapsed}s)</span>
+        )}
       </div>
     </div>
   )
@@ -924,8 +915,8 @@ function ScoreGauge({
   const progressOffset = dash - (dash * clamped) / 10
 
   return (
-    <div className="wr-score-gauge">
-      <div className="wr-gauge-wrap">
+    <div className="wr-gauge" aria-label={`${label}: ${clamped} out of 10`} role="img">
+      <div className="wr-gauge-svg-wrap">
         <svg className="wr-gauge-svg" viewBox="0 0 84 84" aria-hidden="true">
           <circle
             className="wr-gauge-track"
@@ -938,7 +929,7 @@ function ScoreGauge({
             transform="rotate(-110 42 42)"
           />
           <circle
-            className="wr-gauge-fill"
+            className="wr-gauge-arc"
             cx="42"
             cy="42"
             r={radius}
@@ -953,14 +944,14 @@ function ScoreGauge({
             }
           />
         </svg>
-        <span className="wr-gauge-number"><AnimatedNumber value={clamped} /></span>
+        <span className="wr-gauge-num"><AnimatedNumber value={clamped} /></span>
         {delta !== 0 && (
-          <span className={`wr-gauge-delta${delta > 0 ? ' up' : ' down'}`}>
+          <span className={`wr-gauge-delta ${delta > 0 ? 'pos' : 'neg'}`}>
             {delta > 0 ? `+${delta}` : delta}
           </span>
         )}
       </div>
-      <span className="wr-gauge-label">{label}</span>
+      <span className="wr-gauge-lbl">{label}</span>
     </div>
   )
 }
@@ -975,8 +966,8 @@ function ScoreCard({ scores, prevScores }: { scores?: AIQualityScores; prevScore
   ]
 
   return (
-    <div className="wr-score-card">
-      <div className="wr-score-gauges">
+    <div className="wr-scores">
+      <div className="wr-gauges-row">
         {rows.map((row) => (
           <ScoreGauge
             key={row.key}
@@ -986,7 +977,7 @@ function ScoreCard({ scores, prevScores }: { scores?: AIQualityScores; prevScore
           />
         ))}
       </div>
-      <div className="wr-verdict">
+      <div className="wr-verdict-row">
         {(() => {
           let verdictCls = 'pbadge-free'
           const v = (scores.verdict || '').toLowerCase()
@@ -1155,17 +1146,15 @@ function WriteDiffBlock({
   const afterReadability = computeReadability(renderAfterText)
 
   return (
-    <div className={`wr-diff-container${streaming ? ' streaming' : ''}${isMorphing ? ' morphing' : ''}`}>
+    <div className={`wr-result-card${streaming ? ' is-streaming' : ''}${isMorphing ? ' morphing' : ''}`}>
       {!streaming && (
-        <div className="wr-diff-before">
-          <div className="wr-diff-header">
-            <span className="wr-diff-label before">Original Draft</span>
-          </div>
-          <div className={`wr-diff-text${isLong && !beforeExpanded ? ' collapsed' : ''}`}>
+        <div className="wr-before">
+          <span className="wr-pane-label original">Original Draft</span>
+          <div className={`wr-before-text${isLong && !beforeExpanded ? ' clipped' : ''}`}>
             {before}
           </div>
           {isLong && (
-            <button className="wr-diff-expand-btn" onClick={() => setBeforeExpanded((v) => !v)}>
+            <button className="wr-expand-btn" onClick={() => setBeforeExpanded((v) => !v)}>
               {beforeExpanded
                 ? <><ChevronUp size={11} /> Show less</>
                 : <><ChevronDown size={11} /> Show all ({before.length} chars)</>
@@ -1175,10 +1164,10 @@ function WriteDiffBlock({
         </div>
       )}
 
-      <div className={`wr-diff-after${copied ? ' wr-just-copied' : ''}${streaming ? ' streaming' : ''}`}>
-        <div className="wr-diff-header">
-          <div className="wr-diff-title-row">
-            <span className="wr-diff-label after">{streaming ? 'Writing live' : 'Improved Version'}</span>
+      <div className={`wr-after${copied ? ' wr-just-copied' : ''}`}>
+        <div className="wr-after-header">
+          <div className="wr-after-header-left">
+            <span className="wr-pane-label improved">{streaming ? 'Writing live' : 'Improved Version'}</span>
             {!streaming && (
               <button
                 className={`wr-diff-toggle${showDiff ? ' active' : ''}`}
@@ -1191,46 +1180,38 @@ function WriteDiffBlock({
               </button>
             )}
           </div>
-          <div className="wr-diff-actions">
+          <div className="wr-action-r">
             {onSaveTemplate && (
-              <button className="wr-copy-btn wr-template-save-btn" onClick={onSaveTemplate}>
+              <button className="wr-action-btn" onClick={onSaveTemplate}>
                 <BookmarkPlus size={11} /> Save
               </button>
             )}
             {onShare && (
-              <button className="wr-copy-btn wr-share-btn" onClick={onShare}>
+              <button className="wr-action-btn" onClick={onShare}>
                 <Share2 size={11} /> Share
               </button>
             )}
-            <button className={`wr-copy-btn${copied ? ' copied' : ''}`} onClick={handleCopy}>
+            <button className={`wr-action-btn${copied ? ' copied' : ''}`} onClick={handleCopy}>
               {copied ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
             </button>
           </div>
         </div>
 
-        {/* ── PREMIUM: Virtual Sheet of Paper ── */}
-        <div className={streaming ? "" : "wr-paper-artifact"}>
-          {!streaming && (
-            <h2 className="wr-premium-header">
-              {mode ? (mode.charAt(0).toUpperCase() + mode.slice(1)) : "Text"} Refinement
-            </h2>
+        <div className="wr-improved-text">
+          {showDiff && !streaming ? (
+            <DiffHighlight before={before} after={after} onStateChange={setWorkingDraft} />
+          ) : (
+            <>
+              <AnimatedAfterText text={renderAfterText} animate={!streaming && !showDiff} />
+              {streaming && <span className="wr-cursor" />}
+            </>
           )}
-          <div className={streaming ? "wr-diff-text" : "wr-premium-body"}>
-            {showDiff && !streaming ? (
-              <DiffHighlight before={before} after={after} onStateChange={setWorkingDraft} />
-            ) : (
-              <>
-                <AnimatedAfterText text={renderAfterText} animate={!streaming && !showDiff} />
-                {streaming && <span className="wr-streaming-cursor" />}
-              </>
-            )}
-          </div>
         </div>
 
         {/* Refinement Popover */}
         {selection && selection.rect && !streaming && (
           <div 
-            className="wr-refine-popover"
+            className="wr-refine-pop"
             style={{
               top: selection.rect.top - 50 + window.scrollY,
               left: selection.rect.left + (selection.rect.width / 2) - 130
@@ -1245,7 +1226,7 @@ function WriteDiffBlock({
               onKeyDown={(e) => e.key === 'Enter' && handleRefine()}
             />
             <button 
-              className="wr-refine-btn"
+              className="wr-refine-submit"
               disabled={isRefining || !refinePrompt.trim()}
               onClick={handleRefine}
             >
@@ -1254,7 +1235,7 @@ function WriteDiffBlock({
           </div>
         )}
 
-        <div className="wr-diff-meta">
+        <div className="wr-text-meta">
           <span>
             {afterStats.words} words
             {deltaStr && <span className={`wr-word-delta${wordDelta <= 0 ? ' good' : ' up'}`}> {deltaStr}</span>}
@@ -1262,13 +1243,13 @@ function WriteDiffBlock({
           <span>~{afterStats.readSecs}s read</span>
         </div>
         {!streaming && (
-          <div className="wr-readability-row">
-            <span className="wr-readability-title">Readability:</span>
-            <span className={`wr-readability-label ${beforeReadability.cls}`}>{beforeReadability.label} ({beforeReadability.score})</span>
-            <span className="wr-readability-arrow-svg" aria-hidden="true">
+          <div className="wr-readability">
+            <span>Readability:</span>
+            <span className={`wr-readability-score ${beforeReadability.cls}`}>{beforeReadability.label} ({beforeReadability.score})</span>
+            <span className="wr-readability-arrow" aria-hidden="true">
               <ArrowRight size={12} />
             </span>
-            <span className={`wr-readability-label ${afterReadability.cls}${afterReadability.score > beforeReadability.score ? ' wr-readability-improved' : ''}`}>
+            <span className={`wr-readability-score ${afterReadability.cls}${afterReadability.score > beforeReadability.score ? ' wr-readability-improved' : ''}`}>
               {afterReadability.score < beforeReadability.score && <span title="Readability decreased" aria-label="Readability decreased">⚠️ </span>}
               {afterReadability.label} ({afterReadability.score})
             </span>
@@ -1292,15 +1273,15 @@ function WriteDiffBlock({
       )}
 
       {!streaming && (
-        <div className="chat-insight wr-result-insight">
-          <strong>Why: </strong>
-          {explanation}
+        <div className="wr-followup">
+          <div className="wr-followup-icon">Why: </div>
+          <p className="wr-followup-text">{explanation}</p>
         </div>
       )}
 
       {!streaming && teaching && teaching.mistakes.length > 0 && (
         <details className="wr-teaching">
-          <summary className="wr-teaching-title">
+          <summary className="wr-teaching-summary">
             {teaching.mistakes.length === 1
               ? '1 thing to note'
               : `${teaching.mistakes.length} things to note`
@@ -1309,20 +1290,20 @@ function WriteDiffBlock({
           {teaching.mistakes.map((mistake, i) => (
             <div
               key={`${mistake}-${i}`}
-              className="wr-teaching-item"
+              className="wr-fix-item"
               style={{ '--i': i } as React.CSSProperties}
             >
-              <div className="wr-teaching-bullet">{i + 1}</div>
-              <div>
-                <p className="wr-teaching-mistake">{mistake}</p>
+              <div className="wr-fix-num">{i + 1}</div>
+              <div className="wr-fix-body">
+                <p className="wr-fix-mistake">{mistake}</p>
                 {teaching.better_versions?.[i] && (
-                  <p className="wr-teaching-better">
-                    <span className="wr-teaching-better-label">Better:</span>
+                  <p className="wr-fix-better">
+                    <span className="wr-fix-better-lbl">Better:</span>
                     {`"${teaching.better_versions[i]}"`}
                   </p>
                 )}
                 {teaching.explanations?.[i] && (
-                  <p className="wr-teaching-explanation">{teaching.explanations[i]}</p>
+                  <p className="wr-fix-why">{teaching.explanations[i]}</p>
                 )}
               </div>
             </div>
@@ -1343,7 +1324,7 @@ function WriteDiffBlock({
             <button
               key={`${chip}-${i}`}
               type="button"
-              className="wr-suggestion-chip"
+              className="wr-sug-pill"
               onClick={() => onSuggest?.(chip)}
               disabled={!onSuggest}
             >
@@ -1354,10 +1335,10 @@ function WriteDiffBlock({
       )}
 
       {!streaming && canCollectFeedback && chatId && (
-        <div className="wr-feedback-bar">
-          <span className="wr-feedback-label">How was this result?</span>
+        <div className="wr-feedback">
+          <span className="wr-feedback-lbl">How was this result?</span>
           <button
-            className={`wr-fb-btn ${feedbackState === 'up' ? 'active up' : ''}`}
+            className={`wr-fb ${feedbackState === 'up' ? 'up' : ''}`}
             onClick={() => handleFeedback('up')}
             aria-label="This result was helpful"
             aria-pressed={feedbackState === 'up'}
@@ -1366,7 +1347,7 @@ function WriteDiffBlock({
             <ThumbsUp size={12} strokeWidth={feedbackState === 'up' ? 3 : 2} />
           </button>
           <button
-            className={`wr-fb-btn ${feedbackState === 'down' ? 'active down' : ''}`}
+            className={`wr-fb ${feedbackState === 'down' ? 'down' : ''}`}
             onClick={() => handleFeedback('down')}
             aria-label="This result needs improvement"
             aria-pressed={feedbackState === 'down'}
@@ -1382,7 +1363,7 @@ function WriteDiffBlock({
 
 function InlineError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="wr-error-msg">
+    <div className="wr-inline-error">
       <span>⚠️ {message}</span>
       <button className="wr-retry-btn" onClick={onRetry}>
         <RefreshCcw size={11} /> Retry
@@ -1407,21 +1388,21 @@ function SaveTemplateModal({
   if (!open) return null
 
   return (
-    <div className="wr-share-modal-overlay" onClick={onClose}>
-      <div className="wr-share-modal" onClick={(e) => e.stopPropagation()}>
-        <h3 className="wr-shortcuts-title wr-modal-title">Save As Template</h3>
+    <div className="wr-overlay" onClick={onClose}>
+      <div className="wr-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <h3 className="wr-modal-title">Save As Template</h3>
         <input
-          className="wr-search-input"
+          className="wr-search-field"
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={120}
           placeholder="Template name"
           autoFocus
         />
-        <div className="wr-share-actions wr-modal-actions">
-          <button className="wr-rant-dismiss" onClick={onClose}>Cancel</button>
+        <div className="wr-modal-footer">
+          <button className="wr-modal-cancel" onClick={onClose}>Cancel</button>
           <button
-            className="wr-send-btn"
+            className="wr-modal-confirm"
             onClick={() => onSave(name.trim() || defaultName)}
           >
             Save Template
@@ -1524,8 +1505,8 @@ function BrandVoiceModal({
   if (!open) return null
 
   return (
-    <div className="wr-modal-overlay" onClick={onClose}>
-      <div className="wr-modal-content wr-voice-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="wr-overlay" onClick={onClose}>
+      <div className="wr-modal wr-voice-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="wr-modal-header">
           <div className="wr-modal-header-icon"><Fingerprint size={20} /></div>
           <div>
@@ -1544,9 +1525,9 @@ function BrandVoiceModal({
             maxLength={2000}
           />
           <div className="wr-voice-input-footer">
-            <span className="wr-char-count">{newContent.length} / 2000</span>
+            <span className="wr-charcount">{newContent.length} / 2000</span>
             <button 
-              className="wr-send-btn" 
+              className="wr-modal-confirm" 
               onClick={handleAdd}
               disabled={saving || newContent.length < 20}
             >
@@ -1598,11 +1579,11 @@ function ShareModal({
     const dpr = window.devicePixelRatio || 1
     canvas.width = 1080 * dpr
     canvas.height = 1080 * dpr
-    canvas.style.width = '1080px'
-    canvas.style.height = '1080px'
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.scale(dpr, dpr)
+    canvas.style.width = '100%'
+    canvas.style.height = 'auto'
 
     const styles = window.getComputedStyle(document.documentElement)
     const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback
@@ -1714,9 +1695,9 @@ function ShareModal({
   if (!open || !payload) return null
 
   return (
-    <div className="wr-share-modal-overlay" onClick={onClose}>
-      <div className="wr-share-modal" onClick={(e) => e.stopPropagation()}>
-        <h3 className="wr-shortcuts-title wr-modal-title">Share Card</h3>
+    <div className="wr-overlay" onClick={onClose}>
+      <div className="wr-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <h3 className="wr-modal-title">Share Card</h3>
         <div className="wr-share-canvas-wrap">
           <canvas ref={canvasRef} className="wr-share-canvas" />
         </div>
@@ -1726,15 +1707,15 @@ function ShareModal({
             <p className="wr-followup-text wr-share-link-text">{shareUrl}</p>
           </div>
         )}
-        <div className="wr-share-actions">
-          <button className="wr-rant-dismiss" onClick={onClose}>Close</button>
-          <button className="wr-rant-dismiss" onClick={downloadPng}>Download PNG</button>
-          <button className="wr-rant-dismiss" onClick={() => void copyImage()}>Copy Image</button>
-          <button className="wr-rant-dismiss" onClick={() => void createShareLink()} disabled={busy}>
+        <div className="wr-modal-footer">
+          <button className="wr-modal-cancel" onClick={onClose}>Close</button>
+          <button className="wr-modal-cancel" onClick={downloadPng}>Download PNG</button>
+          <button className="wr-modal-cancel" onClick={() => void copyImage()}>Copy Image</button>
+          <button className="wr-modal-confirm" onClick={() => void createShareLink()} disabled={busy}>
             {busy ? 'Creating...' : 'Create Link'}
           </button>
           {shareUrl && (
-            <button className="wr-send-btn" onClick={() => void copyShareLink()}>
+            <button className="wr-modal-confirm" onClick={() => void copyShareLink()}>
               Copy Link
             </button>
           )}
@@ -1783,30 +1764,35 @@ function ShortcutsModal({
   ] as const
 
   return (
-    <div className="wr-shortcuts-overlay" onClick={onClose}>
+    <div className="wr-overlay" onClick={onClose}>
       <div
-        className="wr-shortcuts-modal"
+        className="wr-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Keyboard shortcuts"
       >
-        <h3 className="wr-shortcuts-title">Keyboard Shortcuts</h3>
+        <h3 className="wr-modal-title">Keyboard Shortcuts</h3>
         {groups.map((group) => (
-          <div key={group.label} className="wr-shortcuts-group">
-            <p className="wr-shortcuts-group-label">{group.label}</p>
+          <div key={group.label} className="wr-shortcut-section">
+            <p className="wr-shortcut-section-lbl">{group.label}</p>
             {group.items.map((item) => (
               <div key={`${group.label}-${item.desc}`} className="wr-shortcut-row">
                 <span className="wr-shortcut-desc">{item.desc}</span>
-                <span className="wr-shortcut-keys">
+                <div className="wr-shortcut-keys">
                   {item.keys.map((keyPart) => (
-                    <span key={`${item.desc}-${keyPart}`} className="wr-kbd">{keyPart}</span>
+                    <kbd key={`${item.desc}-${keyPart}`} className="wr-kbd">{keyPart}</kbd>
                   ))}
-                </span>
+                </div>
               </div>
             ))}
           </div>
         ))}
+        <div className="wr-modal-footer">
+          <button className="wr-modal-confirm" onClick={onClose}>
+            Got it
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -1836,26 +1822,26 @@ function StatsPanel({
         <span>{open ? '−' : '+'}</span>
       </button>
       {open && (
-        <>
-          {loading && <p className="wr-stat-label wr-stat-loading">Loading stats…</p>}
+        <div className="wr-stats-body">
+          {loading && <p className="wr-stat-lbl">Loading stats…</p>}
           {!loading && stats && (
             <>
               <div className="wr-stats-grid">
-                <div className="wr-stat-card">
-                  <div className="wr-stat-val">{stats.streak.current}</div>
-                  <div className="wr-stat-label">🔥 Days streak</div>
+                <div className="wr-stat-tile">
+                  <div className="wr-stat-num">{stats.streak.current}</div>
+                  <div className="wr-stat-lbl">🔥 Days streak</div>
                 </div>
-                <div className="wr-stat-card">
-                  <div className="wr-stat-val">{stats.total}</div>
-                  <div className="wr-stat-label">📝 Improvements</div>
+                <div className="wr-stat-tile">
+                  <div className="wr-stat-num">{stats.total}</div>
+                  <div className="wr-stat-lbl">📝 Improvements</div>
                 </div>
-                <div className="wr-stat-card">
-                  <div className="wr-stat-val">{topMode ? `${topMode.mode}` : '—'}</div>
-                  <div className="wr-stat-label">Favourite mode {topMode ? `(${topMode.percent}%)` : ''}</div>
+                <div className="wr-stat-tile">
+                  <div className="wr-stat-num">{topMode ? `${topMode.mode}` : '—'}</div>
+                  <div className="wr-stat-lbl">Favourite mode {topMode ? `(${topMode.percent}%)` : ''}</div>
                 </div>
-                <div className="wr-stat-card">
-                  <div className="wr-stat-val">{topTone ? `${topTone.tone}` : '—'}</div>
-                  <div className="wr-stat-label">Top tone {topTone ? `(${topTone.percent}%)` : ''}</div>
+                <div className="wr-stat-tile">
+                  <div className="wr-stat-num">{topTone ? `${topTone.tone}` : '—'}</div>
+                  <div className="wr-stat-lbl">Top tone {topTone ? `(${topTone.percent}%)` : ''}</div>
                 </div>
               </div>
               <div className="wr-sparkline">
@@ -1864,18 +1850,18 @@ function StatsPanel({
                   return (
                     <div
                       key={`spark-${idx}`}
-                      className="wr-sparkline-bar"
+                      className="wr-bar"
                       title={`${count} improvements`}
                       style={{ height: barH, '--i': idx, '--bar-h': barH } as React.CSSProperties}
                     />
                   )
                 })}
               </div>
-              <div className="wr-achievements">
+              <div className="wr-achievements-row">
                 {stats.achievements.map((achievement) => {
                   const meta = ACHIEVEMENT_META[achievement] ?? { emoji: '⭐', label: achievement }
                   return (
-                    <div key={achievement} className="wr-achievement">
+                    <div key={achievement} className="wr-achievement-badge">
                       {meta.emoji}
                       <div className="wr-achievement-tooltip">{meta.label}</div>
                     </div>
@@ -1884,7 +1870,7 @@ function StatsPanel({
               </div>
               {writingProfile && writingProfile.top_mistakes.length > 0 && (
                 <div className="wr-profile-block">
-                  <div className="wr-shortcuts-group-label">Your writing patterns</div>
+                  <div className="wr-section-header">Your writing patterns</div>
                   <div className="wr-profile-tags">
                     {writingProfile.top_mistakes.map(m => (
                       <span key={m} className="wr-profile-tag">{m}</span>
@@ -1894,17 +1880,17 @@ function StatsPanel({
               )}
               {stats.avg_clarity_by_day && stats.avg_clarity_by_day.some(v => v > 0) && (
                 <div>
-                  <div className="wr-shortcuts-group-label wr-clarity-title">
+                  <div className="wr-section-header">
                     Writing clarity trend
                   </div>
-                  <div className="wr-sparkline wr-clarity-sparkline">
+                  <div className="wr-sparkline">
                     {stats.avg_clarity_by_day.map((score, idx) => {
                       const h = score > 0 ? `${Math.round((score / 10) * 28)}px` : '3px'
-                      const color = score >= 8 ? 'var(--success)' : score >= 5 ? 'var(--warning)' : 'var(--bg-warm)'
+                      const color = score >= 8 ? 'var(--wr-success)' : score >= 5 ? 'var(--wr-warning)' : 'var(--wr-bg)'
                       return (
                         <div
                           key={idx}
-                          className="wr-sparkline-bar"
+                          className="wr-bar"
                           style={{ height: h, background: color, '--i': idx } as React.CSSProperties}
                           title={score > 0 ? `Day ${idx + 1}: ${score}/10 clarity` : 'No data'}
                         />
@@ -1915,7 +1901,7 @@ function StatsPanel({
               )}
             </>
           )}
-        </>
+        </div>
       )}
     </div>
   )
@@ -1948,75 +1934,82 @@ function TemplatesDrawer({
   )
 
   return (
-    <div className={`wr-drawer${open ? ' open' : ''}`}>
-      <div className="wr-drawer-header">
-        <span className="wr-drawer-title">Templates</span>
-        <button className="wr-rant-dismiss" onClick={onClose}>Close</button>
-      </div>
-      {(['email', 'paragraph', 'linkedin', 'whatsapp'] as const).map((mode) => (
-        <div key={mode}>
-          <p className="wr-shortcuts-group-label wr-template-group-label">{mode}</p>
-          {grouped[mode].map((template) => (
-            <div key={template.id} className="wr-template-item" onClick={() => onUse(template)}>
-              <div className="wr-template-row">
-                {editingTemplateId === template.id ? (
-                  <input
-                    className="wr-template-name-input"
-                    value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        setEditingTemplateId(null)
-                        setEditingName('')
-                      }
-                      if (e.key === 'Enter') {
-                        const nextName = editingName.trim()
-                        if (nextName) onRename(template.id, nextName)
-                        setEditingTemplateId(null)
-                        setEditingName('')
-                      }
-                    }}
-                    onBlur={() => {
-                      const nextName = editingName.trim()
-                      if (nextName && nextName !== template.name) onRename(template.id, nextName)
-                      setEditingTemplateId(null)
-                      setEditingName('')
-                    }}
-                    autoFocus
-                  />
-                ) : (
-                  <p className="wr-template-name">{template.name}</p>
-                )}
-                <span className="wr-use-badge">{template.use_count} uses</span>
-              </div>
-              <p className="wr-template-meta">{template.tone} • {template.content.slice(0, 70)}{template.content.length > 70 ? '…' : ''}</p>
-              <div className="wr-template-actions">
-                <button
-                  className="wr-rant-dismiss"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setEditingTemplateId(template.id)
-                    setEditingName(template.name)
-                  }}
-                >
-                  <Pencil size={11} /> Rename
-                </button>
-                <button
-                  className="wr-rant-dismiss"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDelete(template.id)
-                  }}
-                >
-                  <Trash2 size={11} /> Delete
-                </button>
-              </div>
+    <>
+      {open && <div className="wr-drawer-backdrop" onClick={onClose} />}
+      <div className={`wr-drawer${open ? ' open' : ''}`}>
+        <div className="wr-drawer-head">
+          <span className="wr-drawer-title">Templates</span>
+          <button className="wr-drawer-close" onClick={onClose}>×</button>
+        </div>
+        <div className="wr-drawer-scroll">
+          {(['email', 'paragraph', 'linkedin', 'whatsapp'] as const).map((mode) => (
+            <div key={mode}>
+              <p className="wr-section-header">{mode}</p>
+              {grouped[mode].map((template) => (
+                <div key={template.id} className="wr-template-row" onClick={() => onUse(template)}>
+                  <div>
+                    {editingTemplateId === template.id ? (
+                      <input
+                        className="wr-template-name-edit"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            setEditingTemplateId(null)
+                            setEditingName('')
+                          }
+                          if (e.key === 'Enter') {
+                            const nextName = editingName.trim()
+                            if (nextName) onRename(template.id, nextName)
+                            setEditingTemplateId(null)
+                            setEditingName('')
+                          }
+                        }}
+                        onBlur={() => {
+                          const nextName = editingName.trim()
+                          if (nextName && nextName !== template.name) onRename(template.id, nextName)
+                          setEditingTemplateId(null)
+                          setEditingName('')
+                        }}
+                        autoFocus
+                      />
+                    ) : (
+                      <p className="wr-template-name">{template.name}</p>
+                    )}
+                    <p className="wr-item-date">{template.tone} • {template.content.slice(0, 70)}{template.content.length > 70 ? '…' : ''}</p>
+                  </div>
+                  <div className="wr-template-meta-row">
+                    <span className="wr-item-count">{template.use_count} uses</span>
+                    <button
+                      className="wr-item-delete"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setEditingTemplateId(template.id)
+                        setEditingName(template.name)
+                      }}
+                      title="Rename"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                    <button
+                      className="wr-item-delete"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDelete(template.id)
+                      }}
+                      title="Delete"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           ))}
         </div>
-      ))}
-    </div>
+      </div>
+    </>
   )
 }
 
@@ -2175,31 +2168,31 @@ function VersionTimeline({
 
   return (
     <div
-      className={`wr-version-panel${open ? ' open' : ''}`}
+      className={`wr-drawer${open ? ' open' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-label="Version history"
       aria-hidden={!open}
     >
-      <div className="wr-drawer-header">
+      <div className="wr-drawer-head">
         <span className="wr-drawer-title">Version History</span>
-        <button className="wr-rant-dismiss" onClick={onClose}>Close</button>
+        <button className="wr-drawer-close" onClick={onClose}>×</button>
       </div>
-      <div>
+      <div className="wr-drawer-scroll">
         {versions.map((v) => (
-          <div key={v.versionNum} className="wr-version-card">
+          <div key={v.versionNum} className="wr-version-row">
             <div className="wr-version-head">
               <span className="wr-version-num">Version {v.versionNum}</span>
-              <span className="wr-version-meta">{v.words} words</span>
+              <span className="wr-version-ts">{v.words} words</span>
             </div>
-            <div className="wr-version-meta">
+            <div className="wr-version-ts">
               {new Date(v.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
             <div className="wr-version-preview">
               {v.text.slice(0, 60)}{v.text.length > 60 ? '…' : ''}
             </div>
             <button
-              className={`wr-rant-dismiss wr-version-restore${confirmId === v.versionNum ? ' wr-restore-confirm-btn' : ''}`}
+              className={`wr-restore-btn${confirmId === v.versionNum ? ' confirm' : ''}`}
               onClick={() => handleRestoreClick(v)}
               aria-label={confirmId === v.versionNum ? 'Click again to confirm restore' : 'Restore this version'}
             >
@@ -2282,6 +2275,7 @@ export default function WriteRightPage() {
   const { toasts, dismiss, showError } = useErrorToast()
   const [input, setInput] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // Persist sidebar state
   useEffect(() => {
@@ -2526,7 +2520,7 @@ export default function WriteRightPage() {
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
         e.preventDefault(); if (lastImprovedText) navigator.clipboard.writeText(lastImprovedText);
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault(); document.querySelector<HTMLInputElement>('.wr-search-input')?.focus();
+        e.preventDefault(); document.querySelector<HTMLInputElement>('.wr-search-field')?.focus();
       } else if (e.key === 'Escape') {
         // e.preventDefault();
       }
@@ -3322,86 +3316,71 @@ export default function WriteRightPage() {
     tone,
   ])
 
-  const sidebarVisible = (chats.length > 0 || templates.length > 0 || hasStarted)
 
   return (
-    <div className={`wr-workspace-container${isFocusMode ? ' wr-focus-mode' : ''}`}>
-      <div className={`chat-workspace ${sidebarVisible && isSidebarOpen ? 'wr-workspace-with-sidebar' : ''}`} data-module="write">
+    <div className={`wr-workspace-container${isFocusMode ? ' wr-focus-mode' : ''}`} data-module="write">
         {/* GAME-1: Achievement milestone banner */}
         {achievementBanner && (
           <div className="wr-achievement-banner" role="status">
             {achievementBanner}
-            <button className="wr-achievement-banner-dismiss" onClick={() => setAchievementBanner(null)}>×</button>
+            <button className="wr-achievement-close" onClick={() => setAchievementBanner(null)}>×</button>
           </div>
         )}
 
-        <AnimatePresence mode="wait">
-          {sidebarVisible && isSidebarOpen && (
-            <motion.div 
-              key="wr-sidebar"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 248, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-              className="wr-sidebar"
-              style={{ overflow: 'hidden' }}
-            >
-              <div className="wr-sidebar-header">
-                <div className="wr-sidebar-brand">
-                  <span className="wr-sidebar-brand-icon" aria-hidden="true" />
-                  <span>WriteRight</span>
-                  <button 
-                    className="wr-sidebar-toggle-btn" 
-                    onClick={() => setIsSidebarOpen(false)}
-                    aria-label="Collapse sidebar"
-                  >
-                    <PanelLeftClose size={16} />
-                  </button>
-                  {stats && stats.streak.current >= 2 && (
-                    <span className="wr-streak-badge">{stats.streak.current}d</span>
-                  )}
-                </div>
-                <div className="wr-sidebar-actions">
-                  <button className="wr-sidebar-new" onClick={() => handleModeChange('email')}>
-                    <Plus size={14} /> New Chat
-                  </button>
-                  <button className="wr-sidebar-export" onClick={handleExport} disabled={isExporting} aria-label="Export writing history">
-                    {isExporting ? '...' : <Download size={14} />}
-                  </button>
-                </div>
+        <div className={`wr-sidebar${!isSidebarOpen ? ' collapsed' : ''}`}>
+              <div className="wr-brand-row">
+                <span className="wr-brand-dot" aria-hidden="true">✦</span>
+                <span className="wr-brand-name">WriteRight</span>
+                {stats && stats.streak.current >= 2 && (
+                  <span className="wr-streak-badge">{stats.streak.current}d</span>
+                )}
+                <button 
+                  className="wr-sidebar-toggle" 
+                  onClick={() => setIsSidebarOpen(false)}
+                  aria-label="Collapse sidebar"
+                >
+                  <PanelLeftClose size={16} />
+                </button>
               </div>
 
-              <div className="wr-search-bar">
-                <div className="wr-search-wrap">
-                  <Search size={14} className="wr-search-icon" />
-                  <input
-                    className="wr-search-input"
-                    placeholder="Search history..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                  {searchQuery.trim() && (
-                    <button className="wr-search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
-                      <X size={12} />
-                    </button>
-                  )}
-                </div>
+              <div className="wr-sidebar-actions">
+                <button className="wr-btn-new" onClick={() => handleModeChange('email')}>
+                  <Plus size={14} /> New Chat
+                </button>
+                <button className="wr-btn-export" onClick={handleExport} disabled={isExporting} aria-label="Export writing history">
+                  {isExporting ? '...' : <Download size={14} />}
+                </button>
               </div>
 
-              <div className="wr-sidebar-list">
+              <div className="wr-search-wrapper">
+                <Search size={14} className="wr-search-icon-left" />
+                <input
+                  className="wr-search-field"
+                  placeholder="Search history..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery.trim() && (
+                  <button className="wr-search-clear-btn" onClick={() => setSearchQuery('')} aria-label="Clear search">
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+
+              <div className="wr-sidebar-scroll">
                 {searchQuery.trim() && (
                   <>
-                    {searchLoading && <p className="wr-template-meta wr-sidebar-empty">Searching…</p>}
+                    {searchLoading && <p className="wr-sidebar-empty-text-text">Searching…</p>}
                     {!searchLoading && searchResults.length === 0 && (
-                      <p className="wr-template-meta wr-sidebar-empty">No matching chats.</p>
+                      <p className="wr-sidebar-empty-text-text">No matching chats.</p>
                     )}
                     {!searchLoading && searchResults.map((result) => (
                       <div
                         key={result.chatId}
-                        className="wr-search-result"
+                        className="wr-item"
                         onClick={() => { void selectChat(result.chatId, result.mode) }}
                       >
-                        <div className="wr-sidebar-item-title">{highlightText(result.chatTitle, searchQuery)}</div>
+                        <div className="wr-item-title">{highlightText(result.chatTitle, searchQuery)}</div>
                         <div className="wr-search-snippet">{highlightText(result.messageSnippet, searchQuery)}</div>
                       </div>
                     ))}
@@ -3410,46 +3389,43 @@ export default function WriteRightPage() {
 
                 {!searchQuery.trim() && (
                   <>
-                    <details className="wr-sidebar-section" open>
-                      <summary>Chats</summary>
+                    <details open>
+                      <summary className="wr-section-header">Chats</summary>
                       {chats.length === 0 && (
-                        <p className="wr-sidebar-empty">Your writing sessions will appear here.</p>
+                        <p className="wr-sidebar-empty-text-text">Your writing sessions will appear here.</p>
                       )}
                       {chats.map((c) => (
                         <div
                           key={c.id}
-                          className={`wr-sidebar-item${chatId === c.id ? ' active' : ''}`}
+                          className={`wr-item${chatId === c.id ? ' is-active' : ''}`}
                           data-mode={c.mode}
                           onClick={() => { void selectChat(c.id, c.mode) }}
                         >
-                          <div className="wr-sidebar-item-title">{c.title || 'New Conversation'}</div>
-                          <div className="wr-sidebar-item-meta">
-                            <span className="wr-sidebar-mode" aria-label={`${c.mode} mode`} />
-                            <div className="wr-sidebar-meta-right">
-                              {c.message_count > 0 && (
-                                <span className="wr-msg-count">{c.message_count}</span>
-                              )}
-                              <span className="wr-sidebar-time">
-                                {new Date(c.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                              </span>
-                            </div>
+                          <div className="wr-item-title">{c.title || 'New Conversation'}</div>
+                          <div className="wr-item-meta">
+                            <span className="wr-item-date">
+                              {new Date(c.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                            </span>
+                            {c.message_count > 0 && (
+                              <span className="wr-item-count">{c.message_count}</span>
+                            )}
                           </div>
-                          <button className="wr-sidebar-del" onClick={(e) => { void deleteChat(e, c.id) }} aria-label="Delete chat">
+                          <button className="wr-item-delete" onClick={(e) => { void deleteChat(e, c.id) }} aria-label="Delete chat">
                             <Trash2 size={13} />
                           </button>
                         </div>
                       ))}
                     </details>
 
-                    <details className="wr-sidebar-section" open>
-                      <summary>Templates</summary>
+                    <details open>
+                      <summary className="wr-section-header">Templates</summary>
                       {templates.length === 0 && (
-                        <p className="wr-sidebar-empty">No templates saved yet.</p>
+                        <p className="wr-sidebar-empty-text-text">No templates saved yet.</p>
                       )}
                       {templates.map((template) => (
                         <div
                           key={template.id}
-                          className="wr-sidebar-item"
+                          className="wr-item"
                           data-mode={template.mode}
                           onClick={() => {
                             setInput(template.content.slice(0, CHAR_MAX))
@@ -3459,15 +3435,15 @@ export default function WriteRightPage() {
                             taRef.current?.focus()
                           }}
                         >
-                          <div className="wr-sidebar-item-title">{template.name}</div>
-                          <div className="wr-sidebar-item-meta">
-                            <span className="wr-sidebar-mode" aria-label={`${template.mode} mode`} />
-                            <span className="wr-use-badge">{template.use_count}</span>
+                          <div className="wr-item-title">{template.name}</div>
+                          <div className="wr-item-meta">
+                            <span className="wr-item-date">{template.tone}</span>
+                            <span className="wr-item-count">{template.use_count}</span>
                           </div>
                         </div>
                       ))}
                       <button
-                        className="wr-sidebar-template-manage"
+                        className="wr-manage-templates-btn"
                         onClick={() => setTemplatesDrawerOpen(true)}
                       >
                         Manage templates
@@ -3477,9 +3453,8 @@ export default function WriteRightPage() {
                 )}
               </div>
               {!searchQuery.trim() && chats.length === 1 && (
-                <div className="wr-sidebar-onboard">
-                  <p>Your history is saved here.</p>
-                  <p>Each chat is a writing session you can revisit.</p>
+                <div className="wr-onboard-hint">
+                  <p>Your history is saved here. Each chat is a writing session you can revisit.</p>
                 </div>
               )}
 
@@ -3490,14 +3465,12 @@ export default function WriteRightPage() {
                 writingProfile={writingProfile}
                 onToggle={() => setStatsOpen((prev) => !prev)}
               />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </div>
 
-        <div className={sidebarVisible && isSidebarOpen ? 'wr-workspace-main' : 'wr-workspace-main solo'}>
-          {sidebarVisible && !isSidebarOpen && (
+        <div className="wr-main">
+          {!isSidebarOpen && (
             <button 
-              className="wr-sidebar-open-btn"
+              className="wr-sidebar-reopen"
               onClick={() => setIsSidebarOpen(true)}
               aria-label="Expand sidebar"
             >
@@ -3514,28 +3487,28 @@ export default function WriteRightPage() {
               taRef.current?.focus()
             }}
           />
-          <div className="chat-scroll" ref={scrollRef}>
-            <div className="chat-scroll-inner">
+          <div className="wr-scroll" ref={scrollRef}>
+            <div className="wr-content">
               {!hasStarted && (
-                <div className="chat-empty">
-                  <div className="wr-chat-empty-icon" aria-hidden="true">
-                    ✍️
+                <div className="wr-empty">
+                  <div className="wr-empty-icon-wrap" aria-hidden="true">
+                    <Wand2 size={24} strokeWidth={1.7} />
                   </div>
-                  <h1 className="wr-hero-title">WriteRight</h1>
-                  <p className="wr-hero-tagline">Improve your writing instantly.</p>
+                  <h1 className="wr-empty-title">WriteRight</h1>
+                  <p className="wr-empty-sub">How would you like to improve this?</p>
 
-                  <div className="chat-prompts-grid">
+                  <div className="wr-chips-grid">
                     {[...MODE_PROMPTS[mode]].sort((a,b) => (chipCounts[b.title] || 0) - (chipCounts[a.title] || 0)).map((p) => {
                       const isNew = (chipCounts[p.title] || 0) === 0
                       return (
                       <button
                         key={p.title}
-                        className="chat-prompt-chip"
+                        className="wr-chip"
                         onClick={(e) => {
                           const btn = e.currentTarget
                           const rect = btn.getBoundingClientRect()
                           const dot = document.createElement('span')
-                          dot.className = 'wr-chip-ripple-dot'
+                          dot.className = 'wr-ripple'
                           dot.style.left = `${e.clientX - rect.left}px`
                           dot.style.top = `${e.clientY - rect.top}px`
                           btn.appendChild(dot)
@@ -3546,25 +3519,26 @@ export default function WriteRightPage() {
                           void submitRef.current(p.full)
                         }}
                       >
-                        <span className="chat-prompt-chip-title">
+                        <span className="wr-chip-title-row">
                           {p.title}
-                          {isNew && <span className="wr-new-dot" aria-hidden="true" />}
-                          <ArrowUpRight size={13} />
+                          {isNew && <span className="wr-chip-new-dot" aria-hidden="true" />}
+                          <ArrowUpRight size={13} className="wr-chip-arrow" />
                         </span>
-                        <span className="chat-prompt-chip-sub">{p.sub}</span>
+                        <span className="wr-chip-sub">{p.sub}</span>
                       </button>
                     )})}
                   </div>
 
                   {!challengeDismissed && (
-                    <div className={`wr-daily-chip${challengeDone ? ' done' : ''}`}>
-                      <div className="wr-daily-copy">
-                        <h4>Daily Challenge: {todayChallenge.title}</h4>
-                        <p>{todayChallenge.desc}</p>
+                    <div className={`wr-challenge${challengeDone ? ' done' : ''}`}>
+                      <div className="wr-challenge-icon">🎯</div>
+                      <div className="wr-challenge-body">
+                        <p className="wr-challenge-title">Daily Challenge: {todayChallenge.title}</p>
+                        <p className="wr-challenge-desc">{todayChallenge.desc}</p>
                       </div>
                       {!challengeDone ? (
                         <button
-                          className="wr-daily-accept-btn"
+                          className="wr-challenge-action"
                           onClick={() => {
                             setInput(`Challenge: ${todayChallenge.desc}`)
                             taRef.current?.focus()
@@ -3573,10 +3547,10 @@ export default function WriteRightPage() {
                           Use prompt
                         </button>
                       ) : (
-                        <span className="wr-daily-done">Done for today</span>
+                        <span className="wr-challenge-done-label">Done for today</span>
                       )}
                       <button
-                        className="wr-daily-dismiss-btn"
+                        className="wr-challenge-dismiss"
                         aria-label="Dismiss daily challenge"
                         onClick={() => {
                           setChallengeDismissed(true)
@@ -3591,11 +3565,11 @@ export default function WriteRightPage() {
               )}
 
               {hasStarted && (
-                <div className="chat-messages">
+                <div className="wr-messages">
                   <div
                     aria-live="polite"
                     aria-atomic="true"
-                    className="wr-sr-only"
+                    className="wr-sr"
                   >
                     {resultAnnouncement}
                   </div>
@@ -3640,7 +3614,7 @@ export default function WriteRightPage() {
                             {isLastAi && aiVersions.length >= 2 && (
                               <div className="wr-version-cta">
                                 <button
-                                  className="wr-version-btn"
+                                  className="wr-version-cta-btn"
                                   onClick={() => setVersionPanelOpen(true)}
                                 >
                                   <RefreshCcw size={11} /> Version history ({aiVersions.length})
@@ -3648,77 +3622,80 @@ export default function WriteRightPage() {
                               </div>
                             )}
                             {m.role === 'user' && (
-                              <UserMessage content={m.content} />
+                              <div className="wr-user-row">
+                                <div className="wr-user-bubble">{m.content}</div>
+                              </div>
                             )}
                             {m.role === 'ai' && m.kind === 'result' && (
-                              <AIMessage
-                                content={(
-                                  <WriteDiffBlock
-                                    before={m.before}
-                                    after={m.jobResult.improved_text}
-                                    isMorphing={isMorphing && i === messages.length - 1}
-                                    explanation={(() => {
-                                      const explanationParts: string[] = []
-                                      if (m.jobResult.teaching?.mistakes?.length) {
-                                        explanationParts.push(m.jobResult.teaching.mistakes[0])
-                                      }
-                                      if (m.jobResult.teaching?.explanations?.length) {
-                                        explanationParts.push(m.jobResult.teaching.explanations[0])
-                                      }
-                                      return explanationParts.join(' — ') || 'AI-improved version of your text.'
-                                    })()}
-                                    teaching={m.jobResult.teaching}
-                                    followUp={m.jobResult.follow_up}
-                                    suggestions={m.jobResult.suggestions}
-                                    scores={m.jobResult.scores}
-                                    prevScores={m.prevScores}
-                                    englishVersion={m.jobResult.english_version}
-                                    outputLang={m.outputLang}
-                                    jobId={m.jobId}
-                                    chatId={m.chatId}
-                                    mode={m.mode}
-                                    tone={m.tone}
-                                    onSuggest={(suggestion) => { void submitRef.current(suggestion) }}
-                                    onSaveTemplate={() => openSaveTemplateModal(m.jobResult.improved_text, m.mode, m.tone)}
-                                    onShare={isUuidLike(m.jobId) && typeof m.chatId === 'string' ? () => openShareModal({
-                                      before: m.before,
-                                      after: m.jobResult.improved_text,
-                                      mode: m.mode,
-                                      tone: m.tone,
-                                      chatId: m.chatId!,
-                                      jobId: m.jobId!,
-                                    }) : undefined}
-                                  />
-                                )}
-                                emoji="✍️"
-                                moduleColor="var(--mod-write)"
-                              />
+                              <div className="wr-ai-row">
+                                <div className="wr-ai-header">
+                                  <div className="wr-ai-avatar">✍️</div>
+                                  <span className="wr-ai-label">Writeright</span>
+                                </div>
+                                <WriteDiffBlock
+                                  before={m.before}
+                                  after={m.jobResult.improved_text}
+                                  isMorphing={isMorphing && i === messages.length - 1}
+                                  explanation={(() => {
+                                    const explanationParts: string[] = []
+                                    if (m.jobResult.teaching?.mistakes?.length) {
+                                      explanationParts.push(m.jobResult.teaching.mistakes[0])
+                                    }
+                                    if (m.jobResult.teaching?.explanations?.length) {
+                                      explanationParts.push(m.jobResult.teaching.explanations[0])
+                                    }
+                                    return explanationParts.join(' — ') || 'AI-improved version of your text.'
+                                  })()}
+                                  teaching={m.jobResult.teaching}
+                                  followUp={m.jobResult.follow_up}
+                                  suggestions={m.jobResult.suggestions}
+                                  scores={m.jobResult.scores}
+                                  prevScores={m.prevScores}
+                                  englishVersion={m.jobResult.english_version}
+                                  outputLang={m.outputLang}
+                                  jobId={m.jobId}
+                                  chatId={m.chatId}
+                                  mode={m.mode}
+                                  tone={m.tone}
+                                  onSuggest={(suggestion) => { void submitRef.current(suggestion) }}
+                                  onSaveTemplate={() => openSaveTemplateModal(m.jobResult.improved_text, m.mode, m.tone)}
+                                  onShare={isUuidLike(m.jobId) && typeof m.chatId === 'string' ? () => openShareModal({
+                                    before: m.before,
+                                    after: m.jobResult.improved_text,
+                                    mode: m.mode,
+                                    tone: m.tone,
+                                    chatId: m.chatId!,
+                                    jobId: m.jobId!,
+                                  }) : undefined}
+                                />
+                              </div>
                             )}
                             {m.role === 'ai' && m.kind === 'notice' && (
-                              <AIMessage
-                                content={
-                                  m.content === 'Cancelled' || m.content.startsWith('Switched to ')
-                                    ? <div className="wr-mode-divider">{m.content}</div>
-                                    : m.content
+                              <div className="wr-ai-row">
+                                <div className="wr-ai-header">
+                                  <div className="wr-ai-avatar">✍️</div>
+                                  <span className="wr-ai-label">Notice</span>
+                                </div>
+                                {m.content === 'Cancelled' || m.content.startsWith('Switched to ')
+                                  ? <div className="wr-divider-line">{m.content}</div>
+                                  : <div className="wr-improved-text">{m.content}</div>
                                 }
-                                emoji="✍️"
-                                moduleColor="var(--mod-write)"
-                              />
+                              </div>
                             )}
                             {m.role === 'ai' && m.kind === 'error' && (
-                              <AIMessage
-                                content={(
-                                  <InlineError
-                                    message={m.content}
-                                    onRetry={() => {
-                                      setMessages((items) => items.filter((item) => item.id !== m.id))
-                                      void submitRef.current(m.retryText)
-                                    }}
-                                  />
-                                )}
-                                emoji="✍️"
-                                moduleColor="var(--mod-write)"
-                              />
+                              <div className="wr-ai-row">
+                                <div className="wr-ai-header">
+                                  <div className="wr-ai-avatar">✍️</div>
+                                  <span className="wr-ai-label">Error</span>
+                                </div>
+                                <InlineError
+                                  message={m.content}
+                                  onRetry={() => {
+                                    setMessages((items) => items.filter((item) => item.id !== m.id))
+                                    void submitRef.current(m.retryText)
+                                  }}
+                                />
+                              </div>
                             )}
                           </React.Fragment>
                         )
@@ -3729,19 +3706,19 @@ export default function WriteRightPage() {
                   {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} />}
 
                   {loading && streamingText && (
-                    <AIMessage
-                      content={(
-                        <WriteDiffBlock
-                          before={streamingBefore || (lastSubmittedText ?? 'Your draft')}
-                          after={streamingText}
-                          explanation="Streaming response..."
-                          outputLang={outputLang}
-                          streaming
-                        />
-                      )}
-                      emoji="✍️"
-                      moduleColor="var(--mod-write)"
-                    />
+                    <div className="wr-ai-row">
+                      <div className="wr-ai-header">
+                        <div className="wr-ai-avatar">✍️</div>
+                        <span className="wr-ai-label">Writing...</span>
+                      </div>
+                      <WriteDiffBlock
+                        before={streamingBefore || (lastSubmittedText ?? 'Your draft')}
+                        after={streamingText}
+                        explanation="Streaming response..."
+                        outputLang={outputLang}
+                        streaming
+                      />
+                    </div>
                   )}
                 </div>
               )}
@@ -3749,23 +3726,47 @@ export default function WriteRightPage() {
           </div>
 
           {/* ── Standard Input Bar ── */}
-          <div className="chat-input-bar">
-            <div className={`chat-input-bar-inner${loading ? ' wr-streaming-pulse' : ''}`}>
-              {loading && <div className="wr-ink-flow-container" aria-hidden="true" />}
-              <AnimatePresence>                {shouldShowRantBanner && (
+          <div className="wr-composer-bar">
+            <div className="wr-composer-bar-inner">
+              <div className={`wr-card${loading ? ' is-loading' : ''}`}>
+                <div className="wr-mode-row">
+                  {MODES.map((m) => (
+                    <button
+                      key={m.id}
+                      className={`wr-mode-tab${mode === m.id ? ' active' : ''}`}
+                      onClick={() => handleModeChange(m.id)}
+                      role="tab"
+                      aria-selected={mode === m.id}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="wr-tone-row">
+                  {TONES.map((t) => (
+                    <div key={t} className="wr-tone-wrap">
+                      <button className={`wr-tone-pill${tone === t ? ' active' : ''}`} onClick={() => setTone(t)}>
+                        {t}
+                      </button>
+                      <div className="wr-tone-tip">{TONE_DESCRIPTIONS[t]}</div>
+                      <TonePreviewTooltip text={input} tone={t} />
+                    </div>
+                  ))}
+                </div>
+
+                <AnimatePresence>
+                {shouldShowRantBanner && (
                   <motion.div 
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
-                    className="wr-rant-banner" 
+                    className="wr-rant" 
                     role="alert"
                   >
-                    <div className="wr-rant-body">
-                      <p className="wr-rant-headline">This reads heated.</p>
-                      <p className="wr-rant-subtitle">Keep it as-is, or cool it down to a friendlier professional tone.</p>
-                    </div>
-                    <div className="wr-rant-actions-row">
-                      <button type="button" className="wr-rant-dismiss" onClick={() => setRantDismissed(true)}>
+                    <p className="wr-rant-head">This reads heated.</p>
+                    <p className="wr-rant-sub">Keep it as-is, or cool it down to a friendlier professional tone.</p>
+                    <div className="wr-rant-btns">
+                      <button type="button" className="wr-rant-keep" onClick={() => setRantDismissed(true)}>
                         Keep as-is
                       </button>
                       <button
@@ -3783,190 +3784,166 @@ export default function WriteRightPage() {
                     </div>
                   </motion.div>
                 )}
-              </AnimatePresence>
+                </AnimatePresence>
 
-              {(fileBadge || fileError || draftSaveWarning) && (
-                <div className="wr-input-alerts wr-input-alerts-padded">
-                  {fileBadge && (
-                    <div className="wr-file-badge">
-                      <span>{fileBadge.loading ? `Extracting ${fileBadge.name}…` : fileBadge.name}</span>
-                      <button className="wr-file-badge-remove" onClick={() => setFileBadge(null)} aria-label="Remove file badge">
-                        <X size={12} />
-                      </button>
-                    </div>
-                  )}
-                  {fileError && <div className="wr-error-msg"><span>{fileError}</span></div>}
-                  {draftSaveWarning && <div className="wr-error-msg"><span>{draftSaveWarning}</span></div>}
-                </div>
-              )}
-
-              <div className="wr-input-header">
-                <div className="wr-mode-bar">
-                  {MODES.map((m) => (
-                    <button
-                      key={m.id}
-                      className={`wr-mode-btn${mode === m.id ? ' active' : ''}`}
-                      onClick={() => handleModeChange(m.id)}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="wr-tone-bar">
-                  {TONES.map((t) => (
-                    <div key={t} className="wr-tone-tooltip-wrap">
-                      <button className={`tone-pill${tone === t ? ' active' : ''}`} onClick={() => setTone(t)}>
-                        {t}
-                      </button>
-                      <div className="wr-tone-tooltip">{TONE_DESCRIPTIONS[t]}</div>
-                      <TonePreviewTooltip text={input} tone={t} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="chat-input-box wr-pulse-wrapper" style={{ '--writing-clarity-color': clarityColor } as React.CSSProperties}>
-                {pulse && <div className="wr-pulse-anim" />}
-                <textarea
-                  ref={taRef}
-                  className="chat-textarea"
-                  placeholder={MODE_PLACEHOLDERS[mode]}
-                  value={input}
-                  onChange={(e) => { playClick(); setInput(e.target.value) }}
-                  onFocus={() => setIsFocused(true)}
-                  onBlur={() => setIsFocused(false)}
-                  onInput={(e) => {
-                    const t = e.currentTarget
-                    t.style.height = 'auto'
-                    t.style.height = `${Math.min(t.scrollHeight, 200)}px`
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      void submitRef.current()
-                    }
-                  }}
-                  rows={3}
-                  maxLength={CHAR_MAX}
-                />
-                {ghosting && ghostText && (
-                  <div className="wr-ghost-text">
-                    {ghostText}
+                {(fileBadge || fileError || draftSaveWarning) && (
+                  <div className="wr-alerts">
+                    {fileBadge && (
+                      <div className="wr-file-chip">
+                        <span>{fileBadge.loading ? `Extracting ${fileBadge.name}…` : fileBadge.name}</span>
+                        <button className="wr-file-chip-remove" onClick={() => setFileBadge(null)} aria-label="Remove file badge">
+                          <X size={12} />
+                        </button>
+                      </div>
+                    )}
+                    {fileError && <div className="wr-alert-row"><span>{fileError}</span></div>}
+                    {draftSaveWarning && <div className="wr-alert-row"><span>{draftSaveWarning}</span></div>}
                   </div>
                 )}
-                {charDisplay && (
-                  <p className={`wr-char-count${charClass ? ` ${charClass}` : ''}`}>
-                    {charDisplay}
-                  </p>
-                )}
-              </div>
 
-              <div className="chat-input-footer">
-                <div className="chat-tools-left">
-                  <button
-                    type="button"
-                    className={`chat-tool-btn${showAdvancedTools ? ' active' : ''}`}
-                    aria-label="More tools"
-                    onClick={() => setShowAdvancedTools(!showAdvancedTools)}
-                  >
-                    <Plus size={16} />
-                  </button>
-
-                  {voiceSupported && (
-                    <button
-                      type="button"
-                      className={`chat-tool-btn${isRecording ? ' active' : ''}`}
-                      aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
-                      aria-pressed={isRecording}
-                      onClick={toggleRecording}
-                    >
-                      {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
-                    </button>
-                  )}
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    hidden
-                    accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    onChange={(e) => {
-                      const file = e.currentTarget.files?.[0]
-                      if (file) void handleFileExtract(file)
-                      e.currentTarget.value = ''
+                <div className="wr-textarea-wrap wr-pulse-wrap" style={{ '--writing-clarity-color': clarityColor } as React.CSSProperties}>
+                  {pulse && <div className="wr-pulse-ring" />}
+                  <textarea
+                    ref={taRef}
+                    className="wr-textarea"
+                    placeholder={MODE_PLACEHOLDERS[mode]}
+                    value={input}
+                    onChange={(e) => { playClick(); setInput(e.target.value) }}
+                    onFocus={() => setIsFocused(true)}
+                    onBlur={() => setIsFocused(false)}
+                    onInput={(e) => {
+                      const t = e.currentTarget
+                      t.style.height = 'auto'
+                      t.style.height = `${Math.min(t.scrollHeight, 220)}px`
                     }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        void submitRef.current()
+                      }
+                    }}
+                    rows={3}
+                    maxLength={CHAR_MAX}
                   />
-                  <button className="chat-tool-btn" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
-                    <Paperclip size={16} />
-                  </button>
-
-                  {isRecording && (
-                    <div className="wr-recording-indicator" aria-live="polite">
-                      <span className="wr-recording-dot" />
-                      Recording
+                  {ghosting && ghostText && (
+                    <div className="wr-ghost">
+                      {ghostText}
                     </div>
+                  )}
+                  {charDisplay && (
+                    <p className={`wr-charcount${charClass ? ` ${charClass}` : ''}`}>
+                      {charDisplay}
+                    </p>
                   )}
                 </div>
 
-                <div className="chat-tools-right">
-                  <button
-                    type="button"
-                    className="wr-shortcut-btn"
-                    aria-label="Keyboard Shortcuts"
-                    onClick={() => setShowShortcutsModal(true)}
-                  >
-                    ?
-                    <div className="wr-shortcut-hint">
-                      Ctrl+Enter  Submit<br />
-                      Escape      Cancel<br />
-                      Ctrl+K      Focus<br />
-                      1-4         Change Mode<br />
-                      T           Cycle tone<br />
-                      N           New chat<br />
-                      Ctrl+S      Save output<br />
-                      Ctrl+Shift+C Copy output
-                    </div>
-                  </button>
-                  <motion.button
-                    whileTap={{ scale: 0.96 }}
-                    className="wr-send-btn"
-                    onClick={() => { void submitRef.current() }}
-                    disabled={!input.trim() || loading}
-                    aria-label="Improve text"
-                  >
-                    {loading
-                      ? <>{[0, 1, 2].map((i) => <span key={i} className="dot-thinking" style={{ animationDelay: `${i * 0.2}s` }} />)}</>
-                      : <><Wand2 size={13} strokeWidth={2.2} /> Improve</>
-                    }
-                  </motion.button>
+                <div className="wr-footer">
+                  <div className="wr-tools-left">
+                    <button
+                      type="button"
+                      className={`wr-tool${showAdvancedTools ? ' active' : ''}`}
+                      aria-label="More tools"
+                      onClick={() => setShowAdvancedTools(!showAdvancedTools)}
+                    >
+                      <Plus size={16} />
+                    </button>
+
+                    {voiceSupported && (
+                      <button
+                        type="button"
+                        className={`wr-tool${isRecording ? ' active' : ''}`}
+                        aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
+                        aria-pressed={isRecording}
+                        onClick={toggleRecording}
+                      >
+                        {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
+                      </button>
+                    )}
+
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      hidden
+                      accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={(e) => {
+                        const file = e.currentTarget.files?.[0]
+                        if (file) void handleFileExtract(file)
+                        e.currentTarget.value = ''
+                      }}
+                    />
+                    <button className="wr-tool" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
+                      <Paperclip size={16} />
+                    </button>
+
+                    {isRecording && (
+                      <div className="wr-recording" aria-live="polite">
+                        <span className="wr-rec-dot" />
+                        Recording
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="wr-tools-right">
+                    <button
+                      type="button"
+                      className="wr-shortcut-q"
+                      aria-label="Keyboard Shortcuts"
+                      onClick={() => setShowShortcutsModal(true)}
+                    >
+                      ?
+                      <div className="wr-shortcut-tip">
+                        Ctrl+Enter  Submit<br />
+                        Escape      Cancel<br />
+                        Ctrl+K      Focus<br />
+                        1-4         Change Mode<br />
+                        T           Cycle tone<br />
+                        N           New chat<br />
+                        Ctrl+S      Save output<br />
+                        Ctrl+Shift+C Copy output
+                      </div>
+                    </button>
+                    <motion.button
+                      whileTap={{ scale: 0.96 }}
+                      className="wr-send"
+                      onClick={() => { void submitRef.current() }}
+                      disabled={!input.trim() || loading}
+                      aria-label="Improve text"
+                    >
+                      {loading
+                        ? <>{[0, 1, 2].map((i) => <span key={i} className="wr-dot" style={{ animationDelay: `${i * 0.2}s` }} />)}</>
+                        : <><Wand2 size={13} strokeWidth={2.2} /> Improve</>
+                      }
+                    </motion.button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-          
+
           {builderOpen && (
-            <div className="wr-builder-panel">
-              <p className="wr-builder-heading">Brief</p>
+            <div className="wr-builder">
+              <p className="wr-builder-head">Brief</p>
               <input
-                className="wr-builder-field"
+                className="wr-builder-input"
                 placeholder="Audience"
                 value={builderObj.audience}
                 onChange={(e) => setBuilderObj({ ...builderObj, audience: e.target.value })}
               />
               <input
-                className="wr-builder-field"
+                className="wr-builder-input"
                 placeholder="Purpose"
                 value={builderObj.purpose}
                 onChange={(e) => setBuilderObj({ ...builderObj, purpose: e.target.value })}
               />
               <input
-                className="wr-builder-field full"
+                className="wr-builder-input"
                 placeholder="Key points, comma separated"
                 value={builderObj.points}
                 onChange={(e) => setBuilderObj({ ...builderObj, points: e.target.value })}
               />
               <button
                 type="button"
-                className="wr-builder-fill"
+                className="wr-builder-submit"
                 onClick={() => {
                   const hasContent = builderObj.audience.trim() ||
                                     builderObj.purpose.trim() ||
@@ -3985,7 +3962,7 @@ export default function WriteRightPage() {
 
           {/* Advanced Tools Panel */}
           {showAdvancedTools && (
-            <div className="wr-advanced-tools">
+            <div className="wr-adv-panel">
               {(mode === 'email' || mode === 'whatsapp') && (
                 <select
                   className="wr-lang-select"
@@ -4012,21 +3989,21 @@ export default function WriteRightPage() {
 
               <button
                 type="button"
-                className={`chat-tool-btn${!isMuted ? ' active' : ''}`}
+                className={`wr-tool${!isMuted ? ' active' : ''}`}
                 onClick={toggleMute}
                 aria-label="Toggle haptics"
                 title="Mechanical haptics"
               >
                 {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </button>
-              <div className="wr-depth-menu">
-                <button type="button" className="chat-tool-btn" aria-label="Rewrite depth">
+              <div className="wr-depth-wrap">
+                <button type="button" className="wr-tool" aria-label="Rewrite depth">
                   <Settings2 size={16} />
                 </button>
-                <div className="wr-intensity-popover">
-                  <div className="wr-intensity-head">
+                <div className="wr-depth-pop">
+                  <div className="wr-depth-head">
                     <span>Depth</span>
-                    <strong>
+                    <strong className="wr-depth-val">
                       {intensity === 1 ? 'Preserve' :
                        intensity === 2 ? 'Light' :
                        intensity === 3 ? 'Standard' :
@@ -4036,7 +4013,7 @@ export default function WriteRightPage() {
                   </div>
                   <input
                     type="range"
-                    className="wr-intensity-slider"
+                    className="wr-depth-slider"
                     min="1"
                     max="5"
                     step="1"
@@ -4051,7 +4028,7 @@ export default function WriteRightPage() {
               </div>
 
               <button 
-                className={`chat-tool-btn${isTriageMode ? ' active' : ''}`}
+                className={`wr-tool${isTriageMode ? ' active' : ''}`}
                 aria-label="Inbox Triage Board"
                 title="Bulk Inbox Triage"
                 onClick={() => setIsTriageMode(!isTriageMode)}
@@ -4060,7 +4037,7 @@ export default function WriteRightPage() {
               </button>
 
               <button 
-                className="chat-tool-btn"
+                className="wr-tool"
                 aria-label="Brand Voice DNA"
                 title="Train AI Voice"
                 onClick={() => setVoiceModalOpen(true)}
@@ -4069,23 +4046,16 @@ export default function WriteRightPage() {
               </button>
 
               <button
-                className="chat-tool-btn is-muted"
+                className="wr-tool muted"
                 aria-label="Paste or attach image (coming soon)"
                 title="Image input — coming soon"
-                onClick={() => {
-                  const btn = document.activeElement as HTMLButtonElement
-                  if (btn) {
-                    btn.setAttribute('data-tooltip', 'Coming soon!')
-                    setTimeout(() => btn.removeAttribute('data-tooltip'), 2000)
-                  }
-                }}
               >
                 <ImagePlus size={16} />
               </button>
 
               <button
                 type="button"
-                className={`chat-tool-btn${builderOpen ? ' active' : ''}`}
+                className={`wr-tool${builderOpen ? ' active' : ''}`}
                 onClick={() => setBuilderOpen((prev) => !prev)}
                 aria-expanded={builderOpen}
                 aria-label="Open writing brief"
@@ -4097,7 +4067,7 @@ export default function WriteRightPage() {
 
           {showShortcutTip && (
             <button
-              className="wr-shortcut-tip-toast"
+              className="wr-tip-toast"
               onClick={() => {
                 setShowShortcutTip(false)
                 try { localStorage.setItem('wr:shortcut-tip', '1') } catch {}
@@ -4105,7 +4075,7 @@ export default function WriteRightPage() {
               type="button"
             >
               Tip: press <kbd>T</kbd> to cycle tones · <kbd>1-4</kbd> switches modes
-              <span className="wr-tip-dismiss">got it ×</span>
+              <span className="wr-tip-got-it">got it ×</span>
             </button>
           )}
         </div>
@@ -4124,7 +4094,6 @@ export default function WriteRightPage() {
           onDelete={(templateId) => { void deleteTemplate(templateId) }}
           onRename={(templateId, nextName) => { void renameTemplate(templateId, nextName) }}
         />
-      </div>
 
       <ShortcutsModal open={showShortcutsModal} onClose={() => setShowShortcutsModal(false)} />
       <SaveTemplateModal
@@ -4145,14 +4114,14 @@ export default function WriteRightPage() {
         onClose={() => setVoiceModalOpen(false)}
       />
 
-      <div className="wr-toast-container">
+      <div className="wr-toasts">
         {toasts.map((t) => (
           <div
             key={t.id}
             className={`wr-toast wr-toast-${t.type || 'info'}`}
           >
             <span>{t.msg}</span>
-            <div className="wr-toast-actions">
+            <div className="wr-toast-btns">
               {['QUEUE_ERROR', 'STREAM_ERROR'].includes(t.code || '') && (
                 <button
                   className="wr-toast-action"
@@ -4161,7 +4130,7 @@ export default function WriteRightPage() {
                   Retry
                 </button>
               )}
-              <button className="wr-toast-dismiss" onClick={() => dismiss(t.id)}>×</button>
+              <button className="wr-toast-close" onClick={() => dismiss(t.id)}>×</button>
             </div>
           </div>
         ))}

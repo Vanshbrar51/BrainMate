@@ -145,4 +145,67 @@ export async function GET(req: Request) {
   });
 }
 
+export async function POST(req: Request) {
+  return withErrorHandler(req, async () => {
+    return withSpan("api.writeright.export.post", async () => {
+      const { userId } = await auth();
+      if (!userId) throw createApiError("UNAUTHORIZED", "Unauthorized", 401);
+      addSpanAttributes({ "user.id": userId });
+
+      const body = await req.json().catch(() => {
+        throw createApiError("INVALID_BODY", "Invalid JSON body", 400);
+      }) as unknown;
+      if (!body || typeof body !== "object") {
+        throw createApiError("VALIDATION_ERROR", "Invalid input", 400);
+      }
+      const row = body as { format?: unknown; improvedText?: unknown; title?: unknown };
+      const format = typeof row.format === "string" ? row.format : "";
+      const improvedText = typeof row.improvedText === "string" ? row.improvedText : "";
+      const title = typeof row.title === "string" ? row.title : "Draft";
+      if (!improvedText.trim()) throw createApiError("VALIDATION_ERROR", "Text is required", 400);
+
+      getSupabaseAdmin();
+
+      if (format === "gmail") {
+        const mailtoUrl = `mailto:?body=${encodeURIComponent(improvedText)}&subject=${encodeURIComponent(title)}`;
+        return NextResponse.json({ mailto_url: mailtoUrl });
+      }
+
+      if (format === "notion") {
+        const token = process.env.NOTION_INTEGRATION_TOKEN;
+        const databaseId = process.env.NOTION_DATABASE_ID;
+        if (!token || !databaseId) {
+          throw createApiError("MISSING_SECRET", "Notion export unavailable", 503);
+        }
+        const res = await fetch("https://api.notion.com/v1/pages", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "Notion-Version": "2022-06-28",
+          },
+          body: JSON.stringify({
+            parent: { database_id: databaseId },
+            properties: {
+              Name: { title: [{ text: { content: title.slice(0, 120) } }] },
+            },
+            children: [{
+              object: "block",
+              type: "paragraph",
+              paragraph: {
+                rich_text: [{ type: "text", text: { content: improvedText.slice(0, 1900) } }],
+              },
+            }],
+          }),
+        });
+        if (!res.ok) throw createApiError("WORKER_ERROR", "Failed to export to Notion", 502);
+        const data = await res.json() as { url?: unknown };
+        return NextResponse.json({ notion_url: typeof data.url === "string" ? data.url : null });
+      }
+
+      throw createApiError("VALIDATION_ERROR", "Unsupported export format", 400);
+    });
+  });
+}
+
 // END FILE: app/api/writeright/export/route.ts

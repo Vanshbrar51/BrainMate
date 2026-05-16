@@ -6,6 +6,7 @@ import { withSpan, addSpanAttributes, traceLogFields } from "@/lib/tracing";
 import { checkRateLimit } from "@/lib/writeright-queue";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { FeedbackSchema } from "@/lib/writeright-validators";
+import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -70,6 +71,14 @@ export async function POST(req: Request) {
       if (fbError) {
         console.error("[api.writeright.feedback] failed:", { error: fbError.message, ...traceLogFields() });
         throw createApiError("DB_ERROR", "Failed to save feedback", 500);
+      }
+
+      if (!isCircuitOpen()) {
+        try {
+          await getRedisPool().del(ns("writeright", "stats", userId));
+        } catch {
+          // Non-fatal: stats will refresh when TTL expires.
+        }
       }
 
       return NextResponse.json({ success: true }, { status: 200 });

@@ -132,6 +132,7 @@ class WritingJob(BaseModel):
     output_language: str = "en"
     input_language: str = "auto"
     intensity: int = 3
+    quick: bool = False
     attempt: int = 0
     status: str = "pending"
     max_retries: int = 3

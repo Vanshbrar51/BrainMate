@@ -7,6 +7,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { GET as getQuota, TIER_LIMITS } from "@/app/api/writeright/quota/route";
+import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
 
 import {
   enqueueWriteRightJob,
@@ -25,7 +26,7 @@ import {
   traceLogFields,
   injectTraceContext,
 } from "@/lib/tracing";
-import { withErrorHandler, createApiError, type ErrorCode } from "@/lib/writeright-errors";
+import { withErrorHandler, createApiError, withTimeout, type ErrorCode } from "@/lib/writeright-errors";
 import { MessageSchema } from "@/lib/writeright-validators";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,54 @@ function sanitizeInput(text: string): string {
 function getMaxRequestsPerMinute(): number {
   const envVal = parseInt(process.env.WRITERIGHT_RATE_LIMIT_PER_MINUTE ?? "10", 10);
   return Number.isFinite(envVal) && envVal > 0 ? envVal : 10;
+}
+
+const TIER_RATE_LIMITS: Record<string, number> = {
+  free: 5,
+  pro: 30,
+  team: 120,
+};
+
+function currentPeriodKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+async function invalidateStatsCache(userId: string): Promise<void> {
+  if (isCircuitOpen()) return;
+  try {
+    await getRedisPool().del(ns("writeright", "stats", userId));
+  } catch {
+    // Non-fatal: stats will refresh when TTL expires.
+  }
+}
+
+async function incrementQuotaUsage(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  userId: string,
+  estimatedTokens: number,
+): Promise<void> {
+  try {
+    const { error } = await supabase.rpc("increment_wr_quota", {
+      p_user_id: userId,
+      p_period: currentPeriodKey(),
+      p_reqs: 1,
+      p_tokens: estimatedTokens,
+    });
+    if (error) {
+      await supabase.from("writeright_quota").upsert({
+        user_id: userId,
+        period_key: currentPeriodKey(),
+        requests: 1,
+        tokens: estimatedTokens,
+      }, {
+        onConflict: "user_id,period_key",
+        ignoreDuplicates: false,
+      });
+    }
+  } catch {
+    // Quota writes are non-fatal for request availability.
+  }
 }
 
 function normalizeIdempotencyKey(value: string | null): string | null {
@@ -117,7 +166,7 @@ function buildRateLimitHeaders(
 
 export async function POST(req: Request) {
   return withErrorHandler(req, async () => {
-    return withSpan("api.writeright.message.post", async () => {
+    return withTimeout(withSpan("api.writeright.message.post", async () => {
       // 1. Authenticate
       const { userId } = await auth();
       if (!userId) {
@@ -149,6 +198,7 @@ export async function POST(req: Request) {
         mode,
         output_language: outputLanguage,
         intensity,
+        quick,
       } = parsed.data;
 
       // 4. Sanitize text
@@ -181,7 +231,10 @@ export async function POST(req: Request) {
       };
 
       if (quota.exhausted.requests || quota.exhausted.tokens) {
-        throw createApiError("QUOTA_EXCEEDED", "Monthly limit reached. Upgrade for more.", 402);
+        throw createApiError("QUOTA_EXCEEDED", "Monthly limit reached. Upgrade for more.", 402, {
+          tier: quota.tier,
+          upgrade_url: "https://brainmate.ai/pricing",
+        });
       }
       
       const textLength = text.trim().length;
@@ -198,7 +251,7 @@ export async function POST(req: Request) {
       }
 
       // 5.5 Rate limit check
-      const limit = getMaxRequestsPerMinute();
+      const limit = TIER_RATE_LIMITS[quota.tier] ?? getMaxRequestsPerMinute();
       let rateLimitHeaders: Record<string, string> = {};
       try {
         const { allowed, remaining } = await checkRateLimit(userId, limit);
@@ -224,6 +277,25 @@ export async function POST(req: Request) {
         });
         // Graceful fallback: allow request if rate limit check itself fails
         rateLimitHeaders = buildRateLimitHeaders(limit, limit);
+      }
+
+      if (!isCircuitOpen()) {
+        try {
+          const queueDepth = await getRedisPool().zcard(ns("writeright", "jobs"));
+          if (queueDepth > 500) {
+            throw createApiError("QUEUE_ERROR", "Service is busy. Please try again in a moment.", 503, {
+              headers: { "Retry-After": "30" },
+            });
+          }
+          addSpanAttributes({ "writeright.queue_depth": queueDepth });
+        } catch (err) {
+          if (
+            err instanceof Error &&
+            (err as { code?: ErrorCode }).code === "QUEUE_ERROR"
+          ) {
+            throw err;
+          }
+        }
       }
 
       // 6. Verify chat belongs to user
@@ -255,9 +327,10 @@ export async function POST(req: Request) {
             tone,
             mode,
             output_language: outputLanguage,
-            intensity,
-            original_text: text,
-          },
+              intensity,
+              quick,
+              original_text: text,
+            },
         })
         .select("id, created_at")
         .single();
@@ -293,6 +366,7 @@ export async function POST(req: Request) {
               mode,
               output_language: outputLanguage,
               intensity,
+              quick,
               result_type: "ai_improvement",
               cached: true,
               input_hash: inputHash,
@@ -309,6 +383,8 @@ export async function POST(req: Request) {
           if (idempotencyKey) {
             await setIdempotentResponse(userId, idempotencyKey, responseBody);
           }
+          await incrementQuotaUsage(supabase, userId, Math.ceil(text.length / 4));
+          await invalidateStatsCache(userId);
 
           // ── CHANGED: [BE-3] Include rate limit headers on cached response ──
           return NextResponse.json(
@@ -336,6 +412,7 @@ export async function POST(req: Request) {
             mode,
             output_language: outputLanguage,
             intensity,
+            quick,
             input_length: text.length,
             input_hash: inputHash,
           },
@@ -377,12 +454,15 @@ export async function POST(req: Request) {
         output_language: outputLanguage,
         history,
         intensity,
+        quick,
         attempt: 0,
         traceparent: traceHeaders.traceparent,
       };
 
       try {
         await enqueueWriteRightJob(jobPayload);
+        await incrementQuotaUsage(supabase, userId, Math.ceil(text.length / 4));
+        await invalidateStatsCache(userId);
         addSpanEvent("job.enqueued", { job_id: job.id });
       } catch (err) {
         console.error("[api.writeright.message] Redis enqueue failed:", {
@@ -418,7 +498,7 @@ export async function POST(req: Request) {
         responseBody,
         { status: 202, headers: rateLimitHeaders },
       );
-    });
+    }), 30_000, "POST /api/writeright/message");
   });
 }
 

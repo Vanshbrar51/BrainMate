@@ -30,6 +30,7 @@ export interface WritingJobPayload {
   output_language?: string;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   intensity?: number;
+  quick?: boolean;
   attempt: number;
   traceparent?: string;
 }
@@ -118,17 +119,20 @@ export async function enqueueWriteRightJob(job: WritingJobPayload): Promise<void
 
   const redis = getRedisPool();
   const score = Date.now();
-  const member = JSON.stringify(job);
-
-  await redis.zadd(jobsKey(), score, member);
-
-  // Also set initial job status in HASH
-  await setJobStatus(job.id, "pending", 3600, {
-    created_at: new Date().toISOString(),
+  const now = new Date().toISOString();
+  const statusKey = jobStatusKey(job.id);
+  const pipeline = redis.pipeline();
+  pipeline.zadd(jobsKey(), score, JSON.stringify(job));
+  pipeline.hset(statusKey, {
+    status: "pending",
+    updated_at: now,
+    created_at: now,
     user_id: job.userId,
     chat_id: job.chatId,
     output_language: job.output_language ?? "en",
   });
+  pipeline.expire(statusKey, 3600);
+  await pipeline.exec();
 }
 
 // ---------------------------------------------------------------------------

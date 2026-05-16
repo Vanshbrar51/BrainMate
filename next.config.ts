@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/api/:path*",
+        headers: [{ key: "Content-Type", value: "application/json" }],
+      },
+      {
         source: "/:path*",
         headers: [
           { key: "X-Frame-Options", value: "DENY" },

@@ -7,6 +7,25 @@
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    process.on("unhandledRejection", (reason) => {
+      console.error(JSON.stringify({
+        event: "unhandled_rejection",
+        reason: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+        ts: new Date().toISOString(),
+      }));
+    });
+
+    process.on("uncaughtException", (err) => {
+      console.error(JSON.stringify({
+        event: "uncaught_exception",
+        error: err.message,
+        stack: err.stack,
+        ts: new Date().toISOString(),
+      }));
+      setTimeout(() => process.exit(1), 5000);
+    });
+
     // Initialize OpenTelemetry first so all subsequent spans are captured.
     await import('./lib/opentelemetry');
 

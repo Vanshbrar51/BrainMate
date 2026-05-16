@@ -14,7 +14,16 @@ function countSyllables(word: string): number {
 }
 
 function calculateFleschKincaid(text: string) {
-  if (!text.trim()) return { score: 0, label: "Empty", grade_level: 0, avg_sentence_length: 0 };
+  if (!text.trim()) {
+    return {
+      score: 0,
+      label: "Very Difficult",
+      grade_level: 0,
+      avg_sentence_length: 0,
+      avg_syllables_per_word: 0,
+      suggestions: ["Add a sentence to analyze readability."],
+    };
+  }
 
   const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0).length || 1;
   const wordsArray = text.split(/\s+/).filter(w => w.trim().length > 0);
@@ -27,27 +36,34 @@ function calculateFleschKincaid(text: string) {
 
   const score = 206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / words);
   const gradeLevel = 0.39 * (words / sentences) + 11.8 * (syllables / words) - 15.59;
+  const avgSentenceLength = words / sentences;
+  const avgSyllables = syllables / words;
 
   let label = "Standard";
   if (score >= 90) label = "Very Easy";
   else if (score >= 80) label = "Easy";
-  else if (score >= 70) label = "Fairly Easy";
   else if (score >= 60) label = "Standard";
-  else if (score >= 50) label = "Fairly Difficult";
   else if (score >= 30) label = "Difficult";
-  else label = "Very Confusing";
+  else label = "Very Difficult";
+
+  const suggestions: string[] = [];
+  if (avgSentenceLength > 22) suggestions.push("Split long sentences into shorter ones.");
+  if (avgSyllables > 1.8) suggestions.push("Swap complex words for simpler alternatives.");
+  if (score < 60) suggestions.push("Put the main point earlier in the paragraph.");
 
   return {
     score: Math.max(0, Math.min(100, Math.round(score))),
     label,
     grade_level: Math.round(Math.max(0, gradeLevel) * 10) / 10,
-    avg_sentence_length: Math.round((words / sentences) * 10) / 10
+    avg_sentence_length: Math.round(avgSentenceLength * 10) / 10,
+    avg_syllables_per_word: Math.round(avgSyllables * 10) / 10,
+    suggestions: suggestions.slice(0, 3),
   };
 }
 
 export async function POST(req: Request) {
   return withErrorHandler(req, async () => {
-    return withSpan("api.writeright.readability", async () => {
+    return withSpan("api.writeright.readability.post", async () => {
       const { userId } = await auth();
       if (!userId) {
         throw createApiError("UNAUTHORIZED", "Not authenticated", 401);

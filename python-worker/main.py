@@ -13,8 +13,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import signal
 import sys
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -28,7 +30,7 @@ from app.routers.morph import router as morph_router
 from app.routers.triage import router as triage_router
 from app.routers.voice import router as voice_router
 from app.routers.modules import router as modules_router
-from app.services.queue_consumer import consume_jobs
+from app.services.queue_consumer import active_job_count, consume_jobs
 from app.services.ai_worker import close_model_router
 from app.services.embedding_service import close_embedding_service
 
@@ -42,6 +44,19 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("writeright.main")
+_shutdown_event = asyncio.Event()
+
+
+def handle_sigterm(*_args: object) -> None:
+    logger.info(json.dumps({
+        "event": "worker.shutdown_signal",
+        "active_jobs": active_job_count(),
+    }))
+    _shutdown_event.set()
+
+
+signal.signal(signal.SIGTERM, handle_sigterm)
+signal.signal(signal.SIGINT, handle_sigterm)
 
 # ---------------------------------------------------------------------------
 # OpenTelemetry (optional)
@@ -137,6 +152,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             worker_id=f"worker-{os.getpid()}",
             redis_client=redis_client,
             concurrency=settings.worker_concurrency,  # pass full concurrency
+            shutdown_event=_shutdown_event,
         ),
         name="writeright-worker-main",
     )
@@ -154,16 +170,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("WriteRight AI Worker shutting down")
 
-    # Cancel all worker tasks
-    for task in worker_tasks:
-        task.cancel()
+    _shutdown_event.set()
 
-    # Wait for tasks to finish (with timeout)
     if worker_tasks:
-        done, pending = await asyncio.wait(worker_tasks, timeout=10.0)
+        done, pending = await asyncio.wait(worker_tasks, timeout=35.0)
         for task in pending:
             logger.warning("Force-cancelling worker task: %s", task.get_name())
             task.cancel()
+        if done:
+            await asyncio.gather(*done, return_exceptions=True)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     # Close connections
     await close_model_router()

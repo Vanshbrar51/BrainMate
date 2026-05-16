@@ -113,4 +113,18 @@ export function logError(
   }
 }
 
+export function logAudit(
+  event: string,
+  userId: string,
+  meta?: Record<string, unknown>,
+): void {
+  console.log(JSON.stringify({
+    level: "AUDIT",
+    event,
+    user_id: userId,
+    ts: new Date().toISOString(),
+    ...(meta ?? {}),
+  }));
+}
+
 // END FILE: lib/writeright-logger.ts

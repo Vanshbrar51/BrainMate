@@ -6,6 +6,7 @@ from opentelemetry import trace
 
 from app.config import settings
 from app.models.job import ModuleRequest, ModuleResponse
+from pydantic import BaseModel, Field
 from app.services.ai_worker import get_model_router
 from app.services.prompt_builder import (
     build_dev_helper_prompt,
@@ -17,6 +18,11 @@ from app.services.prompt_builder import (
 logger = logging.getLogger("writeright.routers.modules")
 tracer = trace.get_tracer(__name__)
 router = APIRouter(tags=["modules"])
+
+
+class NameRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=500)
+    mode: str = Field(default="email", max_length=40)
 
 
 async def verify_token(
@@ -110,3 +116,24 @@ async def content_flow(
         )
 
         return ModuleResponse(content=result.content)
+
+
+@router.post("/generate-name")
+async def generate_template_name(
+    request: NameRequest,
+    _auth: None = Depends(verify_token),
+) -> dict[str, str]:
+    prompt = (
+        "Generate a short, descriptive name (max 6 words) for this "
+        f"{request.mode} template.\n"
+        f"Content preview: {request.content[:300]}\n\n"
+        "Respond with ONLY the name. No quotes. No explanation."
+    )
+    model_router = get_model_router()
+    result = await model_router.route(
+        "follow_up",
+        [{"role": "user", "content": prompt}],
+        max_tokens=30,
+        traceparent=None,
+    )
+    return {"name": result.content.strip().strip('"').strip("'")[:60]}

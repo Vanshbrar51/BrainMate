@@ -44,10 +44,11 @@ JOB_STATUS_PREFIX = "writeright:job:"
 JOB_RESULT_PREFIX = "writeright:result:"
 JOB_STREAM_PREFIX = "writeright:stream:"
 LOCK_PREFIX = "writeright:lock:"
-DEAD_LETTER_KEY = "writeright:jobs:dead"  # F-BE-12
 LOCK_TTL_SECS = get_settings().job_timeout_seconds * 3
 STATUS_TTL_SECS = 3600
 DEAD_LETTER_KEY = "writeright:jobs:dead"
+
+_active_jobs: set[str] = set()
 
 # Lua script: atomically pop one job whose score (scheduled time) <= now
 # Note: Next.js enqueues with Date.now() which is exactly Python's
@@ -129,6 +130,34 @@ async def _publish_stream_chunk(
     await redis_client.publish(channel, payload)
 
 
+async def _extend_lock(
+    redis_client: aioredis.Redis,
+    lock_key: str,
+    lock_value: str,
+    extension_secs: int = 60,
+) -> bool:
+    """Extend lock TTL only if this worker still owns the lock."""
+    current = await redis_client.get(lock_key)
+    current_value = current.decode("utf-8") if isinstance(current, bytes) else current
+    if current_value != lock_value:
+        return False
+    result = await redis_client.expire(lock_key, extension_secs)
+    return bool(result)
+
+
+async def _heartbeat_lock(
+    redis_client: aioredis.Redis,
+    lock_key: str,
+    lock_value: str,
+) -> None:
+    while True:
+        await asyncio.sleep(20)
+        extended = await _extend_lock(redis_client, lock_key, lock_value)
+        if not extended:
+            logger.warning(json.dumps({"event": "job.lock_lost", "key": lock_key}))
+            break
+
+
 # ---------------------------------------------------------------------------
 # Consumer Loop
 # ---------------------------------------------------------------------------
@@ -138,6 +167,7 @@ async def consume_jobs(
     worker_id: str,
     redis_client: aioredis.Redis,
     concurrency: int,
+    shutdown_event: asyncio.Event | None = None,
 ) -> None:
     """Main worker loop.
 
@@ -159,7 +189,7 @@ async def consume_jobs(
         poll_interval,
     )
 
-    while True:
+    while shutdown_event is None or not shutdown_event.is_set():
         try:
             now_ms = int(time.time() * 1000)
             # type: ignore
@@ -208,6 +238,17 @@ async def consume_jobs(
             logger.exception("Worker %s encountered an error in main loop", worker_id)
             await asyncio.sleep(poll_interval)
 
+    if active_tasks:
+        logger.info(json.dumps({"event": "worker.draining", "active": len(active_tasks)}))
+        done, pending = await asyncio.wait(active_tasks, timeout=30.0)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        if done:
+            await asyncio.gather(*done, return_exceptions=True)
+    logger.info(json.dumps({"event": "worker.shutdown_complete"}))
+
 
 async def _process_job_safe(
     worker_id: str,
@@ -234,6 +275,10 @@ async def _process_job_safe(
             logger.debug("Job %s already locked by another worker", job.id)
             return
 
+        _active_jobs.add(job.id)
+        heartbeat_task = asyncio.create_task(
+            _heartbeat_lock(redis_client, lock_key, lock_value)
+        )
         try:
             # 2. Update status to processing
             await _set_job_status(redis_client, job.id, "processing")
@@ -294,9 +339,8 @@ async def _process_job_safe(
             await _publish_result(redis_client, job.id, result_dict)
             try:
                 cache_key = f"writeright:cache:{_input_hash_for_cache(job)}"
-                await redis_client.setex(
-                    cache_key, STATUS_TTL_SECS, json.dumps(result_dict)
-                )
+                await redis_client.setex(cache_key, STATUS_TTL_SECS, json.dumps(result_dict))
+                await redis_client.delete(f"writeright:stats:{job.user_id}")
             except Exception:
                 logger.warning("Failed to cache result for job %s (non-fatal)", job.id)
 
@@ -334,8 +378,17 @@ async def _process_job_safe(
             )
 
         finally:
-            # Release lock
-            await redis_client.delete(lock_key)
+            heartbeat_task.cancel()
+            await asyncio.gather(heartbeat_task, return_exceptions=True)
+            current = await redis_client.get(lock_key)
+            current_value = current.decode("utf-8") if isinstance(current, bytes) else current
+            if current_value == lock_value:
+                await redis_client.delete(lock_key)
+            _active_jobs.discard(job.id)
+
+
+def active_job_count() -> int:
+    return len(_active_jobs)
 
 
 async def _handle_failure(

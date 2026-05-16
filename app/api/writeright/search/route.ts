@@ -87,9 +87,15 @@ export async function GET(req: Request) {
         throw createApiError("VALIDATION_ERROR", "Invalid query", 400, { issues: parsed.error.issues });
       }
       const { query: rawQuery } = parsed.data;
-      const safeQuery = sanitizeSearchQuery(rawQuery);
+      const displayQuery = sanitizeSearchQuery(rawQuery);
+      const safeQuery = displayQuery
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((word) => word.replace(/[^a-zA-Z0-9\u0900-\u097F]/g, ""))
+        .filter((word) => word.length > 1)
+        .join(" & ");
       if (!safeQuery) {
-        return NextResponse.json({ results: [] });
+        throw createApiError("VALIDATION_ERROR", "Query too short", 400);
       }
 
       addSpanAttributes({ "writeright.search.length": safeQuery.length });
@@ -108,6 +114,8 @@ export async function GET(req: Request) {
           .from("writeright_messages")
           .select("chat_id, content, created_at")
           .eq("user_id", userId)
+          .eq("role", "user")
+          .is("deleted_at", null)
           .textSearch("content", safeQuery, { type: 'websearch' })
           .order("created_at", { ascending: false })
           .limit(SEARCH_LIMIT),
@@ -168,7 +176,7 @@ export async function GET(req: Request) {
         resultsByChatId.set(chatId, {
           chatId,
           chatTitle: meta.title,
-          messageSnippet: snippetForQuery(row.content ?? "", safeQuery),
+          messageSnippet: snippetForQuery(row.content ?? "", displayQuery),
           mode: meta.mode,
           updatedAt: meta.updatedAt,
         });
@@ -179,7 +187,7 @@ export async function GET(req: Request) {
         resultsByChatId.set(row.id, {
           chatId: row.id,
           chatTitle: row.title ?? "Untitled Chat",
-          messageSnippet: `Title matches "${safeQuery}"`,
+          messageSnippet: `Title matches "${displayQuery}"`,
           mode: row.mode ?? "email",
           updatedAt: row.updated_at ?? new Date(0).toISOString(),
         });

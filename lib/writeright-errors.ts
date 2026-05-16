@@ -4,6 +4,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { getActiveTraceId } from "./tracing";
 import { logRequest } from "./writeright-logger";
 
 // ── NEW: [BE-1] Complete ErrorCode union ──
@@ -11,6 +12,8 @@ export type ErrorCode =
   | "CONFIRMATION_REQUIRED"
   | "QUOTA_EXCEEDED"
   | "TEXT_TOO_LONG"
+  | "FILE_TOO_LARGE"
+  | "CONFLICT"
   | "MISSING_SECRET"
   | "EXPIRED_TOKEN"
   | "INVALID_TOKEN"
@@ -23,24 +26,21 @@ export type ErrorCode =
   | "EMPTY_TEXT"
   | "INVALID_TONE"
   | "INVALID_MODE"
-  | "INVALID_CHAT_ID"
   | "INVALID_KEYS"
   | "CHAT_NOT_FOUND"
   | "NOT_FOUND"
   | "RATE_LIMITED"
-  | "QUOTA_EXCEEDED"
   | "DB_ERROR"
   | "QUEUE_ERROR"
   | "TIMEOUT"
   | "STREAM_ERROR"
-  | "MISSING_SECRET"
   | "WORKER_ERROR"
   | "INTERNAL_ERROR";
 
 // ── NEW: [BE-1] User-facing error copy table ──
 const USER_MESSAGES: Partial<Record<ErrorCode, string>> = {
   RATE_LIMITED: "You're moving fast! Wait a moment and try again.",
-  QUEUE_ERROR: "Our servers are busy. Please try again in a few seconds.",
+  QUEUE_ERROR: "Service is busy. Please try again in a moment.",
   TIMEOUT: "This took too long. Try with shorter text.",
   DB_ERROR: "Something went wrong saving your data.",
   UNAUTHORIZED: "Session expired. Please refresh.",
@@ -57,6 +57,12 @@ const USER_MESSAGES: Partial<Record<ErrorCode, string>> = {
   INVALID_BODY: "Invalid request format.",
   INVALID_KEYS: "Invalid request parameters.",
   WORKER_ERROR: "The AI worker encountered an error. Please try again.",
+  QUOTA_EXCEEDED: "Monthly limit reached. Upgrade for more.",
+  FILE_TOO_LARGE: "File exceeds the 4MB limit.",
+  INVALID_TOKEN: "Invalid share link.",
+  EXPIRED_TOKEN: "This share link has expired.",
+  MISSING_SECRET: "Share feature unavailable.",
+  CONFLICT: "This request was already processed.",
 };
 
 export class WriteRightError extends Error {
@@ -88,7 +94,7 @@ export function createApiError(
 ): WriteRightError {
   // Always prefer the safe user-facing copy
   const safeMessage = USER_MESSAGES[code] ?? msg;
-  const httpStatus = status ?? (code === "UNAUTHORIZED" ? 401 : code === "RATE_LIMITED" ? 429 : code === "NOT_FOUND" || code === "CHAT_NOT_FOUND" ? 404 : code === "VALIDATION_ERROR" || code === "INVALID_BODY" || code === "EMPTY_TEXT" || code === "MISSING_TEXT" ? 400 : 500);
+  const httpStatus = status ?? (code === "UNAUTHORIZED" ? 401 : code === "RATE_LIMITED" ? 429 : code === "QUOTA_EXCEEDED" ? 402 : code === "FILE_TOO_LARGE" ? 413 : code === "EXPIRED_TOKEN" ? 410 : code === "CONFLICT" ? 409 : code === "NOT_FOUND" || code === "CHAT_NOT_FOUND" ? 404 : code === "VALIDATION_ERROR" || code === "INVALID_BODY" || code === "EMPTY_TEXT" || code === "MISSING_TEXT" || code === "INVALID_TOKEN" ? 400 : 500);
   return new WriteRightError(code, safeMessage, httpStatus, meta);
 }
 
@@ -96,15 +102,39 @@ export function createApiError(
 export function toApiResponse(err: unknown): NextResponse {
   if (err instanceof WriteRightError) {
     const headers: Record<string, string> = {};
+    const meta = err.meta ?? {};
     // Attach rate limit headers if present in meta
-    if (err.meta?.headers && typeof err.meta.headers === "object") {
-      const rlHeaders = err.meta.headers as Record<string, string>;
+    if (meta.headers && typeof meta.headers === "object") {
+      const rlHeaders = meta.headers as Record<string, string>;
       for (const [key, value] of Object.entries(rlHeaders)) {
         headers[key] = value;
       }
     }
+
+    const body: Record<string, unknown> = {
+      error: err.code,
+      message: err.userMessage,
+    };
+    for (const [key, value] of Object.entries(meta)) {
+      if (key !== "headers") body[key] = value;
+    }
+    if (err.code === "QUOTA_EXCEEDED") {
+      body.upgrade_url = typeof body.upgrade_url === "string"
+        ? body.upgrade_url
+        : "https://brainmate.ai/pricing";
+    }
+    if (err.code === "INTERNAL_ERROR") {
+      body.request_id = getActiveTraceId() ?? "unknown";
+    }
+    if (err.code === "RATE_LIMITED") {
+      for (const [key, value] of Object.entries(headers)) body[key] = value;
+    }
+    if (err.code === "QUEUE_ERROR" && headers["Retry-After"]) {
+      body["Retry-After"] = headers["Retry-After"];
+    }
+
     return NextResponse.json(
-      { error: err.userMessage, code: err.code, meta: err.meta },
+      body,
       { status: err.statusHttp, headers },
     );
   }
@@ -112,8 +142,8 @@ export function toApiResponse(err: unknown): NextResponse {
   if (err instanceof ZodError) {
     return NextResponse.json(
       {
-        error: USER_MESSAGES.VALIDATION_ERROR ?? "Invalid input",
-        code: "VALIDATION_ERROR" as ErrorCode,
+        error: "VALIDATION_ERROR" as ErrorCode,
+        message: USER_MESSAGES.VALIDATION_ERROR ?? "Invalid input. Please check your data.",
         issues: err.issues,
       },
       { status: 400 },
@@ -127,8 +157,8 @@ export function toApiResponse(err: unknown): NextResponse {
   ) {
     return NextResponse.json(
       {
-        error: USER_MESSAGES.UNAUTHORIZED ?? "Session expired. Please refresh.",
-        code: "UNAUTHORIZED" as ErrorCode,
+        error: "UNAUTHORIZED" as ErrorCode,
+        message: USER_MESSAGES.UNAUTHORIZED ?? "Session expired. Please refresh.",
       },
       { status: 401 },
     );
@@ -137,11 +167,35 @@ export function toApiResponse(err: unknown): NextResponse {
   console.error("[WriteRight] Unhandled API error:", err);
   return NextResponse.json(
     {
-      error: USER_MESSAGES.INTERNAL_ERROR ?? "Something went wrong. We've been notified.",
-      code: "INTERNAL_ERROR" as ErrorCode,
+      error: "INTERNAL_ERROR" as ErrorCode,
+      message: USER_MESSAGES.INTERNAL_ERROR ?? "Something went wrong. We've been notified.",
+      request_id: getActiveTraceId() ?? "unknown",
     },
     { status: 500 },
   );
+}
+
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new WriteRightError(
+        "TIMEOUT",
+        `${label} timed out after ${ms}ms`,
+        503,
+      ));
+    }, ms);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // ── CHANGED: [BE-1] withErrorHandler with structured logging ──
@@ -173,7 +227,7 @@ export async function withErrorHandler(
         ? ((await response
             .clone()
             .json()
-            .catch(() => ({}))) as { code?: string }).code
+            .catch(() => ({}))) as { error?: string }).error
         : undefined,
   });
 

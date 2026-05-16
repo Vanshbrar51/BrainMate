@@ -142,3 +142,6 @@ BrainMate AI utilizes a highly specific custom CSS design system located in `app
 - **Typography:** `--font-display` (Instrument Serif), `--font-body` (Geist Sans), `--font-mono` (Geist Mono)
 
 By adhering to this structure, BrainMate AI maintains absolute consistency across microservices, state management, and user interfaces.
+
+# Command executed:
+zip -r brainmate-ai.zip . -x "*/target/*" ".next/*" ".env*" "node_modules/*" "*/venv/*" "*/.pytest_cache/*" "*/__pycache__/*" ".git/*" ".DS_Store" "*/.DS_Store"

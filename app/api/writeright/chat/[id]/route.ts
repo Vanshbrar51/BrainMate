@@ -16,6 +16,7 @@ import {
 } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { TemplateRenameSchema } from "@/lib/writeright-validators";
+import { logAudit } from "@/lib/writeright-logger";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -144,6 +145,7 @@ export async function DELETE(
       }
 
       addSpanEvent("chat.deleted", { chat_id: chatId });
+      logAudit("chat.deleted", userId, { chat_id: chatId });
 
       return NextResponse.json({ ok: true });
     });

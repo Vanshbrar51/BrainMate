@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { withSpan, addSpanAttributes, traceLogFields } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { getSupabaseAdmin } from "@/lib/supabase";
-import { getRedisPool, isCircuitOpen } from "@/lib/redis";
+import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -24,6 +24,8 @@ export async function GET(req: Request) {
       let supabaseOk = false;
       let redisLatency = -1;
       let supabaseLatency = -1;
+      let queueDepth = -1;
+      let deadLetterCount = -1;
 
       // Redis health check with latency
       try {
@@ -31,7 +33,7 @@ export async function GET(req: Request) {
           const start = performance.now();
           const pingPromise = getRedisPool().ping();
           const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("Redis ping timeout")), 500),
+            setTimeout(() => reject(createApiError("TIMEOUT", "Redis ping timeout", 503)), 500),
           );
           await Promise.race([pingPromise, timeoutPromise]);
           redisLatency = Math.round(performance.now() - start);
@@ -42,6 +44,18 @@ export async function GET(req: Request) {
           error: error instanceof Error ? error.message : String(error),
           ...traceLogFields(),
         });
+      }
+
+      if (redisOk) {
+        try {
+          const redis = getRedisPool();
+          [queueDepth, deadLetterCount] = await Promise.all([
+            redis.zcard(ns("writeright", "jobs")),
+            redis.zcard(ns("writeright", "jobs", "dead")),
+          ]);
+        } catch {
+          // Non-fatal: keep sentinel values.
+        }
       }
 
       // Supabase health check with latency
@@ -55,7 +69,7 @@ export async function GET(req: Request) {
           .limit(1);
 
         const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Supabase query timeout")), 1000),
+          setTimeout(() => reject(createApiError("TIMEOUT", "Supabase query timeout", 503)), 1000),
         );
 
         const result = await Promise.race([queryPromise, timeoutPromise]);
@@ -94,6 +108,8 @@ export async function GET(req: Request) {
           checks: {
             redis: redisOk,
             supabase: supabaseOk,
+            queue_depth: queueDepth,
+            dead_letter_count: deadLetterCount,
           },
           latency: {
             redis: redisLatency,

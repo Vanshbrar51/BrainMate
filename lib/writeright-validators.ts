@@ -22,6 +22,7 @@ export const MessageSchema = z.object({
     .optional()
     .default("en"),
   intensity: z.number().int().min(1).max(5).optional().default(3),
+  quick: z.boolean().optional().default(false),
 });
 
 // ── CHANGED: [BE-2] CreateChatSchema with defaults ──
@@ -62,7 +63,7 @@ export const ListChatsQuerySchema = z.object({
 // ── NEW: [BE-2] ExportSchema ──
 export const ExportSchema = z.object({
   format: z
-    .enum(["json", "txt", "markdown"])
+    .enum(["json", "txt", "markdown", "gmail", "notion"])
     .optional()
     .default("json"),
   from: z.string().optional(),

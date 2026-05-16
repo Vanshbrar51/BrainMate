@@ -32,7 +32,12 @@ function extractRateKey(userId: string): string {
 }
 
 function sanitizeExtractedText(text: string): string {
-  return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").trim();
+  return text
+    .replace(/<[^>]+>/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .trim();
 }
 
 async function checkExtractRateLimit(userId: string): Promise<{ allowed: boolean; remaining: number }> {
@@ -97,7 +102,9 @@ export async function POST(req: Request) {
         throw createApiError("VALIDATION_ERROR", "Unsupported file type", 400);
       }
       if (file.size > MAX_FILE_SIZE_BYTES) {
-        throw createApiError("VALIDATION_ERROR", "File exceeds 4MB limit", 413);
+        throw createApiError("FILE_TOO_LARGE", "File exceeds the 4MB limit.", 413, {
+          max_bytes: MAX_FILE_SIZE_BYTES,
+        });
       }
 
       const bytes = Buffer.from(await file.arrayBuffer());

@@ -104,6 +104,7 @@ export async function POST(
           // Cache result
           const cacheKey = ns("writeright", "cache", jobId);
           await redis.setex(cacheKey, 3600, JSON.stringify(result));
+          await redis.del(ns("writeright", "stats", job.user_id));
 
         } catch (err) {
           console.error("[api.writeright.job.complete] Redis update failed", {

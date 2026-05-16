@@ -6,6 +6,28 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 
 const VALID_MODES = ["email", "paragraph", "linkedin", "whatsapp"] as const;
 const VALID_TONES = ["Professional", "Friendly", "Concise", "Academic", "Assertive"] as const;
+const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://localhost:8000";
+const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || "dev-token";
+
+async function generateTemplateName(content: string, mode: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${PYTHON_WORKER_URL}/generate-name`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-API-Token": INTERNAL_API_TOKEN,
+      },
+      body: JSON.stringify({ content: content.slice(0, 500), mode }),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as unknown;
+    const name = data && typeof data === "object" ? (data as { name?: unknown }).name : null;
+    return typeof name === "string" && name.trim() ? name.trim().slice(0, 60) : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(req: Request) {
   return withErrorHandler(req, async () => {
@@ -59,7 +81,9 @@ export async function POST(req: Request) {
       const tone = VALID_TONES.includes((body.tone ?? "Professional") as (typeof VALID_TONES)[number])
         ? (body.tone as (typeof VALID_TONES)[number])
         : "Professional";
-      const name = (body.name?.trim() || content.slice(0, 50) || "Untitled Template").slice(0, 120);
+      const providedName = typeof body.name === "string" ? body.name.trim() : "";
+      const generatedName = providedName ? null : await generateTemplateName(content, mode);
+      const name = (providedName || generatedName || `${mode} template ${new Date().toLocaleDateString()}`).slice(0, 120);
 
       const supabase = getSupabaseAdmin();
       const { data, error } = await supabase

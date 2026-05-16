@@ -94,6 +94,7 @@ export async function POST(req: Request) {
       const now = Math.floor(Date.now() / 1000);
       const exp = now + SHARE_TTL_SECS;
       const secret =
+        process.env.WRITERIGHT_SHARE_SECRET ||
         process.env.WRITERIGHT_SHARE_JWT_SECRET ||
         process.env.NEXTAUTH_SECRET;
 
@@ -145,8 +146,18 @@ export async function POST(req: Request) {
 
       const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://brainmateai.com";
       const shareUrl = `${appBaseUrl.replace(/\/+$/, "")}/share/${token}`;
+      const cardUrl = `${appBaseUrl.replace(/\/+$/, "")}/api/writeright/og/${token}`;
 
-      return NextResponse.json({ shareUrl, expiresAt: expiresAtIso }, { status: 201 });
+      return NextResponse.json({
+        shareUrl,
+        expiresAt: expiresAtIso,
+        cardUrl,
+        og_meta: {
+          title: "I improved my writing score with WriteRight",
+          description: "A before-and-after writing improvement from BrainMate AI.",
+          image: cardUrl,
+        },
+      }, { status: 201 });
     });
   });
 }

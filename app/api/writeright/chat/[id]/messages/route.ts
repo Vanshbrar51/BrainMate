@@ -47,6 +47,8 @@ export async function GET(
       });
 
       const supabase = getSupabaseAdmin();
+      const { searchParams } = new URL(req.url);
+      const includeCompare = searchParams.get("compare") === "true";
 
       // Verify chat is not deleted and belongs to this user before fetching messages
       const { data: chat, error: chatError } = await supabase
@@ -61,12 +63,12 @@ export async function GET(
         throw createApiError("NOT_FOUND", "Chat not found", 404);
       }
 
-      // Fetch messages ordered by created_at ascending
       const { data: messages, error } = await supabase
         .from("writeright_messages")
         .select("id, chat_id, user_id, role, content, metadata, created_at")
         .eq("chat_id", chatId)
         .eq("user_id", userId)
+        .is("deleted_at", null)
         .order("created_at", { ascending: true });
 
       if (error) {
@@ -77,9 +79,49 @@ export async function GET(
         throw createApiError("DB_ERROR", "Failed to fetch messages", 500);
       }
 
-      addSpanAttributes({ "writeright.message_count": messages?.length ?? 0 });
+      const rows = messages ?? [];
+      let jobsByMessageId = new Map<string, unknown>();
 
-      return NextResponse.json({ messages: messages ?? [] });
+      if (includeCompare) {
+        const assistantJobIds = rows
+          .map((row) => {
+            const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+            return typeof metadata.job_id === "string" && metadata.job_id !== "cached"
+              ? metadata.job_id
+              : null;
+          })
+          .filter((jobId): jobId is string => Boolean(jobId));
+
+        if (assistantJobIds.length > 0) {
+          const { data: jobs, error: jobsError } = await supabase
+            .from("writeright_ai_jobs")
+            .select("id, output, status")
+            .eq("user_id", userId)
+            .in("id", assistantJobIds);
+          if (jobsError) throw createApiError("DB_ERROR", "Failed to fetch message scores", 500);
+          jobsByMessageId = new Map((jobs ?? []).map((job) => [job.id, job.output as unknown]));
+        }
+      }
+
+      const normalized = rows.map((row) => {
+        const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+        const jobId = typeof metadata.job_id === "string" ? metadata.job_id : null;
+        return {
+          ...row,
+          metadata: {
+            ...metadata,
+            input_hash: typeof metadata.input_hash === "string" ? metadata.input_hash : null,
+            original_text: typeof metadata.original_text === "string" ? metadata.original_text : null,
+          },
+          scores: includeCompare && jobId
+            ? ((jobsByMessageId.get(jobId) as { scores?: unknown } | undefined)?.scores ?? null)
+            : undefined,
+        };
+      });
+
+      addSpanAttributes({ "writeright.message_count": normalized.length });
+
+      return NextResponse.json({ messages: normalized });
     });
   });
 }

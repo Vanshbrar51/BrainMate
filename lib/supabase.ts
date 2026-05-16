@@ -55,3 +55,22 @@ export function getSupabaseAdmin(): SupabaseClient {
 
   return _client;
 }
+
+export function getSupabaseWithTiming(): {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  logSlow: (operationName: string, startMs: number) => void;
+} {
+  const supabase = getSupabaseAdmin();
+  const logSlow = (operationName: string, startMs: number) => {
+    const duration = Date.now() - startMs;
+    if (duration > 500) {
+      console.warn(JSON.stringify({
+        event: "slow_db_query",
+        operation: operationName,
+        duration_ms: duration,
+        ts: new Date().toISOString(),
+      }));
+    }
+  };
+  return { supabase, logSlow };
+}

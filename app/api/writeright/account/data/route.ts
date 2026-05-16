@@ -14,7 +14,7 @@ import {
   traceLogFields,
 } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
-import { logError } from "@/lib/writeright-logger";
+import { logAudit, logError } from "@/lib/writeright-logger";
 
 // ---------------------------------------------------------------------------
 // DELETE /api/writeright/account/data — GDPR erasure
@@ -60,6 +60,7 @@ export async function DELETE(req: Request) {
       }
 
       addSpanEvent("gdpr.erase_completed", { user_id: userId });
+      logAudit("gdpr.data_deleted", userId);
       console.error("[api.writeright.account.data] GDPR erasure completed", {
         user_id: userId,
         ...traceLogFields(),

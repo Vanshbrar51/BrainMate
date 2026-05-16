@@ -5,14 +5,6 @@ import { getRedisPool, ns, isCircuitOpen } from "@/lib/redis";
 import { withSpan, addSpanAttributes, traceLogFields } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 
-function base64Url(input: string | Buffer): string {
-  return Buffer.from(input)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
-
 async function checkPublicShareRateLimit(ip: string): Promise<{ allowed: boolean; remaining: number }> {
   if (isCircuitOpen()) return { allowed: true, remaining: 60 };
   const redis = getRedisPool();
@@ -45,29 +37,33 @@ export async function GET(
       }
 
       const [headerB64, payloadB64, signatureB64] = token.split(".");
-      const secret = process.env.WRITERIGHT_SHARE_JWT_SECRET || process.env.NEXTAUTH_SECRET;
+      const secret =
+        process.env.WRITERIGHT_SHARE_SECRET ||
+        process.env.WRITERIGHT_SHARE_JWT_SECRET ||
+        process.env.NEXTAUTH_SECRET;
 
       if (!secret) {
         console.error("[api.writeright.public.share] Missing share token secret", traceLogFields());
-        throw createApiError("MISSING_SECRET", "Server misconfigured", 500);
+        throw createApiError("MISSING_SECRET", "Share feature unavailable", 503);
       }
 
       const data = `${headerB64}.${payloadB64}`;
-      const expectedSignature = createHmac("sha256", secret).update(data).digest();
-      const expectedSignatureB64 = base64Url(expectedSignature);
+      const expectedSignatureB64 = createHmac("sha256", secret)
+        .update(data)
+        .digest("base64url");
 
       // Constant-time comparison
       const sig1 = Buffer.from(signatureB64);
       const sig2 = Buffer.from(expectedSignatureB64);
 
       if (sig1.length !== sig2.length || !timingSafeEqual(sig1, sig2)) {
-        throw createApiError("INVALID_TOKEN", "Invalid token signature", 401);
+        throw createApiError("INVALID_TOKEN", "Invalid or expired share link", 400);
       }
 
-      const payload = JSON.parse(Buffer.from(payloadB64, "base64").toString("utf-8"));
+      const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf-8")) as { exp?: number };
       const now = Math.floor(Date.now() / 1000);
       if (payload.exp && payload.exp < now) {
-        throw createApiError("EXPIRED_TOKEN", "Token has expired", 410);
+        throw createApiError("EXPIRED_TOKEN", "This share link has expired.", 410);
       }
 
       const supabase = getSupabaseAdmin();

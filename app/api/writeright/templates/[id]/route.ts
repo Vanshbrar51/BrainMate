@@ -7,6 +7,7 @@ import {
   traceLogFields,
 } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
+import { logAudit } from "@/lib/writeright-logger";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -93,6 +94,8 @@ export async function DELETE(
       if (!count) {
         throw createApiError("NOT_FOUND", "Template not found", 404);
       }
+
+      logAudit("template.deleted", userId, { template_id: id });
 
       return NextResponse.json({ ok: true });
     });
