@@ -47,3 +47,10 @@ eslint_output.txt
 .secrets/
 
 GEMINI.md
+.clerk/
+<<<<<<< HEAD
+
+# clerk configuration (can include secrets)
+/.clerk/
+=======
+>>>>>>> jules-clean-writeright-ui
