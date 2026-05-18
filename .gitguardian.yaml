@@ -1,0 +1,6 @@
+version: 2
+secret:
+  ignored-matches:
+    - match: "sk_test_vpT4CUi9t13tj7aww8r8YVmIgo1Qki6TmNG5HfDHBz"
+    - match: "pk_test_d2hvbGUtZHJha2UtNDIuY2xlcmsuYWNjb3VudHMuZGV2JA"
+    - match: "xu44ylkoegp8u8rn9a8yf94ru3laza1bnnallz4r"
