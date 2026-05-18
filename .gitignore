@@ -48,3 +48,6 @@ eslint_output.txt
 
 GEMINI.md
 .clerk/
+
+# clerk configuration (can include secrets)
+/.clerk/
