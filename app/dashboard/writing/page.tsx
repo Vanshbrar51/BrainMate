@@ -3336,14 +3336,14 @@ export default function WriteRightPage() {
 
   return (
     <div className={`wr-workspace-container${isFocusMode ? ' wr-focus-mode' : ''}`} data-module="write">
-        {/* Back to Dashboard button */}
+        {/* Fixed Back Button */}
         <button
           className="wr-back-btn"
           onClick={() => router.push('/dashboard')}
           aria-label="Back to Dashboard"
         >
           <ChevronLeft size={14} />
-          Dashboard
+          <span>Back</span>
         </button>
 
         {/* GAME-1: Achievement milestone banner */}
@@ -3354,32 +3354,38 @@ export default function WriteRightPage() {
           </div>
         )}
 
-        <div className={`wr-sidebar${!isSidebarOpen ? ' collapsed' : ''}`}>
-              <div className="wr-brand-row">
-                <span className="wr-brand-dot" aria-hidden="true">✦</span>
-                <span className="wr-brand-name">WriteRight</span>
-                {stats && stats.streak.current >= 2 && (
-                  <span className="wr-streak-badge">{stats.streak.current}d</span>
-                )}
-                <button 
-                  className="wr-sidebar-toggle" 
-                  onClick={() => setIsSidebarOpen(false)}
-                  aria-label="Collapse sidebar"
-                >
-                  <PanelLeftClose size={16} />
-                </button>
-              </div>
+        <div className="wr-left-col">
+          <div className="wr-rail">
+            <div className="wr-rail-top">
+              <button className="wr-rail-btn" onClick={() => setIsSidebarOpen(!isSidebarOpen)} aria-label="Toggle history">
+                {isSidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+              </button>
+              <button className="wr-rail-btn" onClick={() => handleModeChange('email')} aria-label="New Chat">
+                <Plus size={16} />
+              </button>
+              <button className="wr-rail-btn" onClick={() => { setIsSidebarOpen(true); setTimeout(() => (document.querySelector('.wr-search-field') as HTMLElement)?.focus(), 250) }} aria-label="Search">
+                <Search size={16} />
+              </button>
+            </div>
+            <div className="wr-rail-bottom">
+              <button className="wr-rail-btn" onClick={() => setStatsOpen(!statsOpen)} aria-label="Stats">
+                <BarChart3 size={16} />
+              </button>
+              <button className="wr-rail-btn" onClick={handleExport} disabled={isExporting} aria-label="Export">
+                {isExporting ? <Loader2 size={16} className="wr-spin" /> : <Download size={16} />}
+              </button>
+            </div>
+          </div>
 
-              <div className="wr-sidebar-actions">
-                <button className="wr-btn-new" onClick={() => handleModeChange('email')}>
-                  <Plus size={14} /> New Chat
-                </button>
-                <button className="wr-btn-export" onClick={handleExport} disabled={isExporting} aria-label="Export writing history">
-                  {isExporting ? '...' : <Download size={14} />}
-                </button>
-              </div>
+          <div className={`wr-drawer-panel${!isSidebarOpen ? ' collapsed' : ''}`}>
+            <div className="wr-drawer-header">
+              <span className="wr-drawer-title">WriteRight</span>
+              {stats && stats.streak.current >= 2 && (
+                <span className="wr-streak-badge">{stats.streak.current}d 🔥</span>
+              )}
+            </div>
 
-              <div className="wr-search-wrapper">
+            <div className="wr-search-wrapper">
                 <Search size={14} className="wr-search-icon-left" />
                 <input
                   className="wr-search-field"
@@ -3492,6 +3498,7 @@ export default function WriteRightPage() {
                 writingProfile={writingProfile}
                 onToggle={() => setStatsOpen((prev) => !prev)}
               />
+          </div>
         </div>
 
         <div className="wr-main" style={{ position: 'relative', overflow: 'hidden' }}>
