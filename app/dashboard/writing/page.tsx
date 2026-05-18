@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { useHaptics } from "@/lib/haptics"
 import { useAuth } from '@clerk/nextjs'
 import { useErrorToast } from '@/lib/writeright-toast'
@@ -21,6 +22,7 @@ import {
   RefreshCcw,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
   Trash2,
   Plus,
   Share2,
@@ -46,10 +48,6 @@ import {
   PanelLeftOpen,
 } from 'lucide-react'
 import {
-  UserMessage,
-  AIMessage,
-} from '@/components/dashboard/ChatMessage'
-import {
   WritingMode,
   ToneOption,
   VoiceLang,
@@ -66,6 +64,13 @@ import {
   ActionChecklist,
   TriageBoard,
 } from '@/components/dashboard/writeright/InteractiveComponents'
+import { useGmailIntegration, type GmailEmailItem } from '@/hooks/useGmailIntegration'
+import {
+  GmailConnectButton,
+  GmailConnectedBadge,
+  GmailPanel,
+  GmailEmailPreview,
+} from '@/components/dashboard/writeright/GmailComponents'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -2271,11 +2276,11 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export default function WriteRightPage() {
+  const router = useRouter()
   const { getToken } = useAuth()
   const { toasts, dismiss, showError } = useErrorToast()
   const [input, setInput] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // Persist sidebar state
   useEffect(() => {
@@ -2620,6 +2625,18 @@ export default function WriteRightPage() {
   const loadingStartRef = useRef<number | null>(null)
   const submitRef = useRef<(text?: string, forcedTone?: ToneOption) => Promise<void>>(async () => {})
   const pendingSubmissionRef = useRef<{ signature: string; key: string } | null>(null)
+
+  // ── Gmail Integration (isolated state) ──
+  const gmail = useGmailIntegration()
+  const handleGmailImport = useCallback((email: GmailEmailItem, action: 'improve' | 'summarize' | 'rewrite' | 'change_tone' | 'shorten' | 'professionalize' | 'reply') => {
+    const text = gmail.buildImportText(email, action)
+    setInput(text.slice(0, CHAR_MAX))
+    if (taRef.current) {
+      taRef.current.focus()
+      taRef.current.style.height = 'auto'
+      taRef.current.style.height = `${Math.min(taRef.current.scrollHeight, 320)}px`
+    }
+  }, [gmail, setInput])
 
   const {
     templates,
@@ -3319,6 +3336,16 @@ export default function WriteRightPage() {
 
   return (
     <div className={`wr-workspace-container${isFocusMode ? ' wr-focus-mode' : ''}`} data-module="write">
+        {/* Back to Dashboard button */}
+        <button
+          className="wr-back-btn"
+          onClick={() => router.push('/dashboard')}
+          aria-label="Back to Dashboard"
+        >
+          <ChevronLeft size={14} />
+          Dashboard
+        </button>
+
         {/* GAME-1: Achievement milestone banner */}
         {achievementBanner && (
           <div className="wr-achievement-banner" role="status">
@@ -3467,7 +3494,31 @@ export default function WriteRightPage() {
               />
         </div>
 
-        <div className="wr-main">
+        <div className="wr-main" style={{ position: 'relative', overflow: 'hidden' }}>
+          {/* Gmail Panel — slides in from right */}
+          {gmail.connectionStatus.connected && (
+            <GmailPanel
+              panel={gmail.panel}
+              connectionStatus={gmail.connectionStatus}
+              onClose={gmail.togglePanel}
+              onSelectEmail={(id) => { void gmail.selectEmail(id) }}
+              onRefresh={() => { void gmail.fetchEmails() }}
+              onFilterChange={gmail.setFilter}
+              onToggleUnread={gmail.toggleUnreadOnly}
+              onLoadMore={gmail.loadMore}
+              onDisconnect={() => { void gmail.disconnect() }}
+            />
+          )}
+
+          {/* Gmail Email Preview Overlay */}
+          {gmail.panel.previewOpen && gmail.panel.selectedEmail && (
+            <GmailEmailPreview
+              email={gmail.panel.selectedEmail}
+              onClose={gmail.closePreview}
+              onImport={handleGmailImport}
+            />
+          )}
+
           {!isSidebarOpen && (
             <button 
               className="wr-sidebar-reopen"
@@ -3492,7 +3543,7 @@ export default function WriteRightPage() {
               {!hasStarted && (
                 <div className="wr-empty">
                   <div className="wr-empty-icon-wrap" aria-hidden="true">
-                    <Wand2 size={24} strokeWidth={1.7} />
+                    <Wand2 size={28} strokeWidth={1.7} />
                   </div>
                   <h1 className="wr-empty-title">WriteRight</h1>
                   <p className="wr-empty-sub">How would you like to improve this?</p>
@@ -3874,6 +3925,20 @@ export default function WriteRightPage() {
                     <button className="wr-tool" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
                       <Paperclip size={16} />
                     </button>
+
+                    {/* Gmail integration button */}
+                    {gmail.connectionStatus.connected ? (
+                      <GmailConnectedBadge
+                        email={gmail.connectionStatus.connection?.gmail_email ?? ''}
+                        onTogglePanel={gmail.togglePanel}
+                        panelOpen={gmail.panel.isOpen}
+                      />
+                    ) : (
+                      <GmailConnectButton
+                        onConnect={gmail.connect}
+                        loading={gmail.connectionLoading}
+                      />
+                    )}
 
                     {isRecording && (
                       <div className="wr-recording" aria-live="polite">

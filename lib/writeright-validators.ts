@@ -100,4 +100,24 @@ export type ShareInput = z.infer<typeof ShareSchema>;
 export type TemplateCreateInput = z.infer<typeof TemplateCreateSchema>;
 export type TemplateRenameInput = z.infer<typeof TemplateRenameSchema>;
 
+// Gmail integration validators
+export const GmailImportSchema = z.object({
+  messageId: z.string().min(1).max(100, "Invalid Gmail message ID"),
+  subject: z.string().max(500).optional(),
+  action: z.enum([
+    "improve",
+    "summarize",
+    "rewrite",
+    "change_tone",
+    "shorten",
+    "professionalize",
+    "reply",
+  ]).optional().default("improve"),
+  targetTone: z.enum([
+    "Professional", "Friendly", "Concise", "Academic", "Assertive"
+  ]).optional().default("Professional"),
+});
+
+export type GmailImportInput = z.infer<typeof GmailImportSchema>;
+
 // END FILE: lib/writeright-validators.ts

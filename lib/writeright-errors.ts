@@ -35,7 +35,11 @@ export type ErrorCode =
   | "TIMEOUT"
   | "STREAM_ERROR"
   | "WORKER_ERROR"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  | "GMAIL_NOT_CONNECTED"
+  | "GMAIL_TOKEN_EXPIRED"
+  | "GMAIL_FETCH_FAILED"
+  | "GMAIL_QUOTA_EXCEEDED";
 
 // ── NEW: [BE-1] User-facing error copy table ──
 const USER_MESSAGES: Partial<Record<ErrorCode, string>> = {
@@ -63,6 +67,10 @@ const USER_MESSAGES: Partial<Record<ErrorCode, string>> = {
   EXPIRED_TOKEN: "This share link has expired.",
   MISSING_SECRET: "Share feature unavailable.",
   CONFLICT: "This request was already processed.",
+  GMAIL_NOT_CONNECTED: "Connect your Gmail account to import emails.",
+  GMAIL_TOKEN_EXPIRED: "Your Gmail connection expired. Please reconnect.",
+  GMAIL_FETCH_FAILED: "Could not fetch emails. Please try again.",
+  GMAIL_QUOTA_EXCEEDED: "Gmail API limit reached. Please wait a moment.",
 };
 
 export class WriteRightError extends Error {

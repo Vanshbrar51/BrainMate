@@ -598,8 +598,8 @@ def _update_writing_profile_sync(user_id: str, mistakes: list[str], count: int) 
     # We use upsert on a unique user_id field
     # In Supabase/PostgREST, we can just upsert. If it exists, it updates.
     client.table("writeright_writing_profiles").upsert(
-        upsert_data, on_conflict="user_id"
-    ).execute()  # type: ignore
+        cast(Any, upsert_data), on_conflict="user_id"
+    ).execute()
 
 
 async def update_writing_profile(user_id: str, mistakes: list[str], count: int) -> None:

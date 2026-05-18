@@ -19,7 +19,7 @@ import hashlib
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 
 import redis.asyncio as aioredis
 
@@ -192,8 +192,7 @@ async def consume_jobs(
     while shutdown_event is None or not shutdown_event.is_set():
         try:
             now_ms = int(time.time() * 1000)
-            # type: ignore
-            member = await redis_client.eval(ZPOPMIN_IF_DUE_SCRIPT, 1, JOBS_KEY, now_ms)
+            member = await cast(Any, redis_client.eval(ZPOPMIN_IF_DUE_SCRIPT, 1, JOBS_KEY, now_ms))
 
             if member is None:
                 await asyncio.sleep(poll_interval)
