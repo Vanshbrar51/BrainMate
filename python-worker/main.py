@@ -16,7 +16,6 @@ import asyncio
 import json
 import logging
 import os
-import signal
 import sys
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -47,16 +46,7 @@ logger = logging.getLogger("writeright.main")
 _shutdown_event = asyncio.Event()
 
 
-def handle_sigterm(*_args: object) -> None:
-    logger.info(json.dumps({
-        "event": "worker.shutdown_signal",
-        "active_jobs": active_job_count(),
-    }))
-    _shutdown_event.set()
 
-
-signal.signal(signal.SIGTERM, handle_sigterm)
-signal.signal(signal.SIGINT, handle_sigterm)
 
 # ---------------------------------------------------------------------------
 # OpenTelemetry (optional)
@@ -168,6 +158,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # --- SHUTDOWN ---
 
+    logger.info(json.dumps({
+        "event": "worker.shutdown",
+        "active_jobs": active_job_count(),
+    }))
     logger.info("WriteRight AI Worker shutting down")
 
     _shutdown_event.set()

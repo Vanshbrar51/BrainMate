@@ -42,15 +42,23 @@ eslint_output.txt
 
 # Rules for agents 
 .agent/
+.antigravitycli
 
 #
 .secrets/
 
 GEMINI.md
 .clerk/
-<<<<<<< HEAD
 
 # clerk configuration (can include secrets)
 /.clerk/
-=======
->>>>>>> jules-clean-writeright-ui
+
+# TLS certificates and private keys — NEVER commit to version control.
+# Generate locally or mount from a secret manager at deploy time.
+# See certs/README.md for instructions.
+certs/
+
+.agent/
+.kiro/
+.antigravitycli/
+AGENTS.md

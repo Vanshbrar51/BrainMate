@@ -51,6 +51,9 @@ export async function GET(req: Request) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
 
+        if (msg === "Auth gateway offline") {
+          throw createApiError("GATEWAY_OFFLINE", "Authentication gateway is offline", 503);
+        }
         if (msg.includes("No active Gmail connection")) {
           throw createApiError("GMAIL_NOT_CONNECTED", "Gmail not connected", 404);
         }

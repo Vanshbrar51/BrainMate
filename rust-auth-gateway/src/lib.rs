@@ -4,6 +4,7 @@ pub mod blacklist;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod gmail;
 pub mod jwks_cache;
 pub mod migrations;
 pub mod models;
@@ -220,6 +221,11 @@ pub async fn build_test_state() -> AppState {
         otp_pepper: "pepper".to_string(),
         db_url: None,
         db_max_connections: 20,
+        google_client_id: None,
+        google_client_secret: None,
+        google_redirect_uri: None,
+        gmail_token_encryption_key: None,
+        gmail_state_hmac_key: None,
     });
 
     let redis = Arc::new(RedisClient::new_in_memory());
@@ -298,6 +304,11 @@ pub async fn build_unavailable_test_state() -> AppState {
         otp_pepper: "pepper".to_string(),
         db_url: None,
         db_max_connections: 20,
+        google_client_id: None,
+        google_client_secret: None,
+        google_redirect_uri: None,
+        gmail_token_encryption_key: None,
+        gmail_state_hmac_key: None,
     });
 
     let redis = Arc::new(RedisClient::new_unavailable_in_memory());

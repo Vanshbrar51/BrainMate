@@ -18,23 +18,24 @@ BEGIN
   END IF;
 END $$;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_wr_shares_token_expires
+CREATE INDEX IF NOT EXISTS idx_wr_shares_token_expires
   ON writeright_shares (token, expires_at);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_wr_messages_chat_created
+CREATE INDEX IF NOT EXISTS idx_wr_messages_chat_created
   ON writeright_messages (chat_id, created_at DESC)
   WHERE deleted_at IS NULL;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_wr_jobs_pending
+CREATE INDEX IF NOT EXISTS idx_wr_jobs_pending
   ON writeright_ai_jobs (status, created_at ASC)
   WHERE status IN ('pending', 'processing') AND deleted_at IS NULL;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_wr_quota_user_period
+CREATE INDEX IF NOT EXISTS idx_wr_quota_user_period
   ON writeright_quota (user_id, period_key);
 
 CREATE OR REPLACE FUNCTION increment_wr_quota(
   p_user_id text, p_period text, p_reqs int, p_tokens int
-) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public AS $$
 BEGIN
   INSERT INTO writeright_quota (user_id, period_key, requests, tokens)
   VALUES (p_user_id, p_period, p_reqs, p_tokens)

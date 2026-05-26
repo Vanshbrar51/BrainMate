@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useHaptics } from "@/lib/haptics"
 import { useAuth } from '@clerk/nextjs'
 import { useErrorToast } from '@/lib/writeright-toast'
@@ -46,6 +47,10 @@ import {
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
+  Columns,
+  CheckCheck,
+  Maximize2,
+  Link2,
 } from 'lucide-react'
 import {
   WritingMode,
@@ -58,6 +63,8 @@ import {
   TriageResponse,
   WriteRightMessage,
   VoiceExample,
+  CoachMetrics,
+  GrammarIssue,
 } from '@/types/writeright'
 import {
   MeetingCard,
@@ -71,6 +78,14 @@ import {
   GmailPanel,
   GmailEmailPreview,
 } from '@/components/dashboard/writeright/GmailComponents'
+import { useWritingPreferences } from '@/hooks/useWritingPreferences'
+import { analyzeText } from '@/lib/writing-coach'
+import { CoachBar } from '@/components/dashboard/writeright/CoachBar'
+import { TemplatePanel } from '@/components/dashboard/writeright/TemplatePanel'
+import { AnalyticsView } from '@/components/dashboard/writeright/AnalyticsView'
+import { WriteSplitView } from '@/components/dashboard/writeright/WriteSplitView'
+import { GrammarOverlay } from '@/components/dashboard/writeright/GrammarOverlay'
+import { EmailChainView } from '@/components/dashboard/writeright/EmailChainView'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -115,7 +130,8 @@ interface ChatMessageRow {
   created_at?: string
 }
 
-interface SearchResultRow {  chatId: string
+interface SearchResultRow {
+  chatId: string
   chatTitle: string
   messageSnippet: string
   mode: string
@@ -220,10 +236,10 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike
 // ---------------------------------------------------------------------------
 
 const MODES: { id: WritingMode; label: string; Icon: React.ElementType; color: string }[] = [
-  { id: 'email',     label: 'Email',               Icon: Mail,          color: '#3B82F6' },
-  { id: 'paragraph', label: 'Paragraph',            Icon: MessageSquare, color: '#F59E0B' },
-  { id: 'linkedin',  label: 'LinkedIn',             Icon: Linkedin,      color: '#0A66C2' },
-  { id: 'whatsapp',  label: 'WhatsApp → Formal',    Icon: Globe,         color: '#25D366' },
+  { id: 'email', label: 'Email', Icon: Mail, color: '#3B82F6' },
+  { id: 'paragraph', label: 'Paragraph', Icon: MessageSquare, color: '#F59E0B' },
+  { id: 'linkedin', label: 'LinkedIn', Icon: Linkedin, color: '#0A66C2' },
+  { id: 'whatsapp', label: 'WhatsApp → Formal', Icon: Globe, color: '#25D366' },
 ]
 
 const MODE_PROMPTS: Record<WritingMode, { title: string; sub: string; full: string }[]> = {
@@ -338,17 +354,17 @@ function computeReadability(text: string) {
   if (!text || text.trim() === '') return { score: 0, label: 'Standard', cls: 'wr-readability-standard' }
   const words = text.trim().split(/\s+/).filter(Boolean)
   const wordCount = words.length || 1
-  
+
   const sentenceCount = text.split(/[.!?]+/).filter(s => s.trim().length > 0).length || 1
-  
+
   let syllableCount = 0
   words.forEach(w => { syllableCount += countSyllables(w) })
-  
+
   const score = Math.max(0, Math.min(100, Math.round(206.835 - 1.015 * (wordCount / sentenceCount) - 84.6 * (syllableCount / wordCount))))
-  
+
   let label = 'Standard'
   let cls = 'wr-readability-standard'
-  
+
   if (score >= 70) {
     label = 'Easy'
     cls = 'wr-readability-easy'
@@ -356,7 +372,7 @@ function computeReadability(text: string) {
     label = 'Complex'
     cls = 'wr-readability-complex'
   }
-  
+
   return { score, label, cls }
 }
 
@@ -1039,22 +1055,22 @@ function WriteDiffBlock({
   onSaveTemplate?: () => void
   onShare?: () => void
 }) {
-  const [feedbackState, setFeedbackState] = useState<'none'|'up'|'down'>('none')
+  const [feedbackState, setFeedbackState] = useState<'none' | 'up' | 'down'>('none')
   const canCollectFeedback = isUuidLike(jobId) && Boolean(chatId)
 
-  const handleFeedback = useCallback(async (rating: 'up'|'down') => {
+  const handleFeedback = useCallback(async (rating: 'up' | 'down') => {
     if (feedbackState !== 'none' || !canCollectFeedback || !chatId) return
     setFeedbackState(rating)
     try {
       await apiPost('/api/writeright/feedback', { jobId, chatId, rating, mode, tone })
     } catch { /* ignore */ }
   }, [canCollectFeedback, chatId, feedbackState, jobId, mode, tone])
-  
+
   const [beforeExpanded, setBeforeExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showEnglish, setShowEnglish] = useState(false)
   const [showDiff, setShowDiff] = useState(false)
-  
+
   // Phase 1: Interactive Draft & Selection
   const [workingDraft, setWorkingDraft] = useState(after)
   const [selection, setSelection] = useState<{ text: string; rect: DOMRect | null } | null>(null)
@@ -1215,14 +1231,14 @@ function WriteDiffBlock({
 
         {/* Refinement Popover */}
         {selection && selection.rect && !streaming && (
-          <div 
+          <div
             className="wr-refine-pop"
             style={{
               top: selection.rect.top - 50 + window.scrollY,
               left: selection.rect.left + (selection.rect.width / 2) - 130
             }}
           >
-            <input 
+            <input
               className="wr-refine-input"
               placeholder="How should I change this?..."
               value={refinePrompt}
@@ -1230,7 +1246,7 @@ function WriteDiffBlock({
               autoFocus
               onKeyDown={(e) => e.key === 'Enter' && handleRefine()}
             />
-            <button 
+            <button
               className="wr-refine-submit"
               disabled={isRefining || !refinePrompt.trim()}
               onClick={handleRefine}
@@ -1531,8 +1547,8 @@ function BrandVoiceModal({
           />
           <div className="wr-voice-input-footer">
             <span className="wr-charcount">{newContent.length} / 2000</span>
-            <button 
-              className="wr-modal-confirm" 
+            <button
+              className="wr-modal-confirm"
               onClick={handleAdd}
               disabled={saving || newContent.length < 20}
             >
@@ -1912,117 +1928,12 @@ function StatsPanel({
   )
 }
 
-function TemplatesDrawer({
-  open,
-  templates,
-  onClose,
-  onUse,
-  onDelete,
-  onRename,
-}: {
-  open: boolean
-  templates: TemplateRow[]
-  onClose: () => void
-  onUse: (template: TemplateRow) => void
-  onDelete: (templateId: string) => void
-  onRename: (templateId: string, nextName: string) => void
-}) {
-  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
-  const [editingName, setEditingName] = useState('')
-
-  const grouped = templates.reduce<Record<WritingMode, TemplateRow[]>>(
-    (acc, item) => {
-      acc[item.mode] = [...acc[item.mode], item]
-      return acc
-    },
-    { email: [], paragraph: [], linkedin: [], whatsapp: [] },
-  )
-
-  return (
-    <>
-      {open && <div className="wr-drawer-backdrop" onClick={onClose} />}
-      <div className={`wr-drawer${open ? ' open' : ''}`}>
-        <div className="wr-drawer-head">
-          <span className="wr-drawer-title">Templates</span>
-          <button className="wr-drawer-close" onClick={onClose}>×</button>
-        </div>
-        <div className="wr-drawer-scroll">
-          {(['email', 'paragraph', 'linkedin', 'whatsapp'] as const).map((mode) => (
-            <div key={mode}>
-              <p className="wr-section-header">{mode}</p>
-              {grouped[mode].map((template) => (
-                <div key={template.id} className="wr-template-row" onClick={() => onUse(template)}>
-                  <div>
-                    {editingTemplateId === template.id ? (
-                      <input
-                        className="wr-template-name-edit"
-                        value={editingName}
-                        onChange={(e) => setEditingName(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
-                            setEditingTemplateId(null)
-                            setEditingName('')
-                          }
-                          if (e.key === 'Enter') {
-                            const nextName = editingName.trim()
-                            if (nextName) onRename(template.id, nextName)
-                            setEditingTemplateId(null)
-                            setEditingName('')
-                          }
-                        }}
-                        onBlur={() => {
-                          const nextName = editingName.trim()
-                          if (nextName && nextName !== template.name) onRename(template.id, nextName)
-                          setEditingTemplateId(null)
-                          setEditingName('')
-                        }}
-                        autoFocus
-                      />
-                    ) : (
-                      <p className="wr-template-name">{template.name}</p>
-                    )}
-                    <p className="wr-item-date">{template.tone} • {template.content.slice(0, 70)}{template.content.length > 70 ? '…' : ''}</p>
-                  </div>
-                  <div className="wr-template-meta-row">
-                    <span className="wr-item-count">{template.use_count} uses</span>
-                    <button
-                      className="wr-item-delete"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setEditingTemplateId(template.id)
-                        setEditingName(template.name)
-                      }}
-                      title="Rename"
-                    >
-                      <Pencil size={11} />
-                    </button>
-                    <button
-                      className="wr-item-delete"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onDelete(template.id)
-                      }}
-                      title="Delete"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-    </>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // Main Page Component
 // ---------------------------------------------------------------------------
 
-function computeWordDiff(before: string, after: string): Array<{type: 'eq'|'del'|'ins', text: string}> {
+function computeWordDiff(before: string, after: string): Array<{ type: 'eq' | 'del' | 'ins', text: string }> {
   // Guard: skip diff for large inputs to prevent UI freeze
   if (before.length > 2000 || after.length > 2000) {
     return [{ type: 'ins', text: after }]
@@ -2045,9 +1956,9 @@ function computeWordDiff(before: string, after: string): Array<{type: 'eq'|'del'
     }
   }
 
-  const result: Array<{type: 'eq'|'del'|'ins', text: string}> = [];
+  const result: Array<{ type: 'eq' | 'del' | 'ins', text: string }> = [];
   let i = m, j = n;
-  
+
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && bTokens[i - 1] === aTokens[j - 1]) {
       result.push({ type: 'eq', text: bTokens[i - 1] });
@@ -2060,16 +1971,16 @@ function computeWordDiff(before: string, after: string): Array<{type: 'eq'|'del'
       i--;
     }
   }
-  
+
   return result.reverse();
 }
 
-function DiffHighlight({ 
-  before, 
-  after, 
-  onStateChange 
-}: { 
-  before: string; 
+function DiffHighlight({
+  before,
+  after,
+  onStateChange
+}: {
+  before: string;
   after: string;
   onStateChange?: (finalText: string) => void;
 }) {
@@ -2105,8 +2016,8 @@ function DiffHighlight({
         const isRejected = decisions[i];
         if (d.type === 'eq') return <span key={i}>{d.text}</span>;
         if (d.type === 'del') return (
-          <span 
-            key={i} 
+          <span
+            key={i}
             className={`wr-diff-del ${isRejected ? 'rejected' : 'accepted'}`}
             onClick={() => toggleDecision(i)}
             title={isRejected ? "Click to remove this part" : "Click to restore original"}
@@ -2115,8 +2026,8 @@ function DiffHighlight({
           </span>
         );
         if (d.type === 'ins') return (
-          <span 
-            key={i} 
+          <span
+            key={i}
             className={`wr-diff-ins ${isRejected ? 'rejected' : 'accepted'}`}
             onClick={() => toggleDecision(i)}
             title={isRejected ? "Click to accept suggestion" : "Click to reject suggestion"}
@@ -2130,85 +2041,6 @@ function DiffHighlight({
   );
 }
 
-function VersionTimeline({
-  open,
-  versions,
-  onClose,
-  onRestore,
-}: {
-  open: boolean
-  versions: Array<{ versionNum: number; timestamp: number; words: number; text: string }>
-  onClose: () => void
-  onRestore: (text: string) => void
-}) {
-  const [confirmId, setConfirmId] = useState<number | null>(null)
-  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleRestoreClick = useCallback((v: { versionNum: number; text: string }) => {
-    if (confirmId === v.versionNum) {
-      // Second click — confirm restore
-      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
-      confirmTimerRef.current = null
-      setConfirmId(null)
-      onRestore(v.text)
-    } else {
-      // First click — enter confirm mode
-      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
-      setConfirmId(v.versionNum)
-      confirmTimerRef.current = setTimeout(() => {
-        confirmTimerRef.current = null
-        setConfirmId(null)
-      }, 3000)
-    }
-  }, [confirmId, onRestore])
-
-  useEffect(() => {
-    return () => {
-      if (confirmTimerRef.current) {
-        clearTimeout(confirmTimerRef.current)
-        confirmTimerRef.current = null
-      }
-    }
-  }, [])
-
-  return (
-    <div
-      className={`wr-drawer${open ? ' open' : ''}`}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Version history"
-      aria-hidden={!open}
-    >
-      <div className="wr-drawer-head">
-        <span className="wr-drawer-title">Version History</span>
-        <button className="wr-drawer-close" onClick={onClose}>×</button>
-      </div>
-      <div className="wr-drawer-scroll">
-        {versions.map((v) => (
-          <div key={v.versionNum} className="wr-version-row">
-            <div className="wr-version-head">
-              <span className="wr-version-num">Version {v.versionNum}</span>
-              <span className="wr-version-ts">{v.words} words</span>
-            </div>
-            <div className="wr-version-ts">
-              {new Date(v.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </div>
-            <div className="wr-version-preview">
-              {v.text.slice(0, 60)}{v.text.length > 60 ? '…' : ''}
-            </div>
-            <button
-              className={`wr-restore-btn${confirmId === v.versionNum ? ' confirm' : ''}`}
-              onClick={() => handleRestoreClick(v)}
-              aria-label={confirmId === v.versionNum ? 'Click again to confirm restore' : 'Restore this version'}
-            >
-              {confirmId === v.versionNum ? 'Confirm restore?' : 'Restore this version'}
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 const TONE_HEURISTICS: Record<string, (t: string) => string> = {
   Concise: (t) => t.replace(/\b(just|simply|basically|actually|very|really)\b/gi, '').replace(/\s{2,}/g, ' ').trim(),
@@ -2222,11 +2054,11 @@ function TonePreviewTooltip({ text, tone }: { text: string; tone: string }) {
   if (text.length < 80) return null;
   const fn = TONE_HEURISTICS[tone];
   if (!fn) return null;
-  
+
   let preview = fn(text);
   if (preview === text) return null;
   if (preview.length > 100) preview = preview.slice(0, 100) + '...';
-  
+
   return (
     <div className="wr-tone-preview">
       <div className="wr-tone-preview-label">Live Preview</div>
@@ -2281,9 +2113,11 @@ export default function WriteRightPage() {
   const { toasts, dismiss, showError } = useErrorToast()
   const [input, setInput] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const [mounted, setMounted] = useState(false)
 
   // Persist sidebar state
   useEffect(() => {
+    setMounted(true)
     const saved = localStorage.getItem('wr:sidebarOpen')
     if (saved !== null) setIsSidebarOpen(saved === 'true')
   }, [])
@@ -2303,6 +2137,7 @@ export default function WriteRightPage() {
   const [triageLoading, setTriageLoading] = useState(false)
   const [voiceModalOpen, setVoiceModalOpen] = useState(false)
   const [showAdvancedTools, setShowAdvancedTools] = useState(false)
+  const [showSelectors, setShowSelectors] = useState(false)
 
   const { playClick, playShimmer, toggleMute, isMuted } = useHaptics()
 
@@ -2352,13 +2187,13 @@ export default function WriteRightPage() {
   // ── GHOSTING EFFECT (Tactile Feedback on Morph) ──
   useEffect(() => {
     if (!input.trim() || isMorphing || loading) return
-    
+
     setGhosting(true)
-    
+
     // Choose base for ghosting: Improved text if exists, else input
     const lastAiMsg = messages[messages.length - 1]
-    const baseText = (lastAiMsg?.role === 'ai' && lastAiMsg.kind === 'result') 
-      ? lastAiMsg.jobResult.improved_text 
+    const baseText = (lastAiMsg?.role === 'ai' && lastAiMsg.kind === 'result')
+      ? lastAiMsg.jobResult.improved_text
       : input
 
     const words = baseText.slice(0, 500).split(' ')
@@ -2389,8 +2224,8 @@ export default function WriteRightPage() {
   const [resultAnnouncement, setResultAnnouncement] = useState('')
 
   const handleMorph = useCallback(async (
-    lastMsg: Extract<WriteRightMessage, { kind: 'result' }>, 
-    newTone: ToneOption, 
+    lastMsg: Extract<WriteRightMessage, { kind: 'result' }>,
+    newTone: ToneOption,
     newIntensity: number
   ) => {
     setIsMorphing(true)
@@ -2422,7 +2257,7 @@ export default function WriteRightPage() {
         if (done) break
         const chunk = new TextDecoder().decode(value)
         morphedText += chunk
-        
+
         setMessages((prev) => {
           const next = [...prev]
           const last = next[next.length - 1]
@@ -2476,11 +2311,11 @@ export default function WriteRightPage() {
   }, [debouncedIntensity, debouncedTone, chatId, loading, isMorphing, messages, handleMorph])
 
   const [chats, setChats] = useState<ChatListItem[]>([])
-  
+
   const [writingProfile, setWritingProfile] = useState<{ top_mistakes: string[], improvement_count: number } | null>(null)
   const [draftSaveWarning, setDraftSaveWarning] = useState<string | null>(null)
-  
-  
+
+
   // Draft Auto-save
   useEffect(() => {
     if (chatId && input) {
@@ -2514,10 +2349,10 @@ export default function WriteRightPage() {
     try {
       const stored = localStorage.getItem('wr:chipCounts')
       if (stored) setChipCounts(JSON.parse(stored))
-    } catch {}
+    } catch { }
   }, [])
 
-  
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -2572,25 +2407,9 @@ export default function WriteRightPage() {
   const [builderOpen, setBuilderOpen] = useState(false)
   const [builderObj, setBuilderObj] = useState({ audience: '', purpose: '', points: '' })
 
-  const [versionPanelOpen, setVersionPanelOpen] = useState(false)
-  const aiVersions = useMemo(() => {
-    return messages
-      .filter((m): m is Extract<WriteRightMessage, { role: 'ai'; kind: 'result' }> => (
-        m.role === 'ai' && m.kind === 'result'
-      ))
-      .map((m, idx) => {
-        const text = m.jobResult.improved_text || ''
-        return {
-          versionNum: idx + 1,
-          timestamp: m.timestamp || Date.now(),
-          words: textStats(text).words,
-          text,
-        }
-      })
-      .reverse()
-  }, [messages])
 
-  const [templatesDrawerOpen, setTemplatesDrawerOpen] = useState(false)
+
+
 
   const [searchQuery, setSearchQuery] = useState('')
   const { loading: searchLoading, results: searchResults } = useWriterightSearch(searchQuery, true)
@@ -2613,7 +2432,140 @@ export default function WriteRightPage() {
   const [streamingText, setStreamingText] = useState('')
   const [streamingBefore, setStreamingBefore] = useState('')
   const [isFocused, setIsFocused] = useState(false)
-  const isFocusMode = isFocused && input.length > 50
+  
+  // ── Gmail Integration (isolated state) ──
+  const gmail = useGmailIntegration()
+
+  const [isFocusMode, setIsFocusMode] = useState(false)
+  const [isSplitView, setIsSplitView] = useState(false)
+  const [selectedSentenceIndex, setSelectedSentenceIndex] = useState<number | null>(null)
+  const [showGrammar, setShowGrammar] = useState(false)
+  const [grammarIssues, setGrammarIssues] = useState<GrammarIssue[]>([])
+  const [emailChainOpen, setEmailChainOpen] = useState(false)
+  const [isChainMode, setIsChainMode] = useState(false)
+  const [templatePanelOpen, setTemplatePanelOpen] = useState(false)
+  const [coachMetrics, setCoachMetrics] = useState<CoachMetrics | null>(null)
+  const [splitSelection, setSplitSelection] = useState<{ text: string; rect: DOMRect | null } | null>(null)
+  const [splitRefinePrompt, setSplitRefinePrompt] = useState('')
+  const [isSplitRefining, setIsSplitRefining] = useState(false)
+  const [analyticsOpen, setAnalyticsOpen] = useState(false)
+
+  const [activeFilter, setActiveFilter] = useState<'INBOX' | 'SENT' | 'DRAFT' | 'SCHEDULED'>('INBOX')
+  const handleActiveFilterChange = useCallback((filter: 'INBOX' | 'SENT' | 'DRAFT' | 'SCHEDULED') => {
+    setActiveFilter(filter)
+    if (filter !== 'SCHEDULED') {
+      gmail.setFilter(filter)
+    }
+  }, [gmail])
+
+  const { preferences, updatePreference, loading: prefsLoading } = useWritingPreferences()
+  const isFirstMount = useRef(true)
+
+  useEffect(() => {
+    if (!prefsLoading && preferences && isFirstMount.current) {
+      isFirstMount.current = false
+      setTone(preferences.preferredTone)
+      setMode(preferences.preferredMode)
+      setIntensity(preferences.preferredIntensity)
+      setOutputLang(preferences.preferredOutputLang)
+      setIsSidebarOpen(preferences.uiPreferences.sidebarOpen)
+      const uiPrefs = preferences.uiPreferences as Record<string, unknown>
+      setIsFocusMode(uiPrefs.focusModeEnabled === true || preferences.uiPreferences.analyticsOpen)
+    }
+  }, [preferences, prefsLoading])
+
+  useEffect(() => {
+    if (prefsLoading || isFirstMount.current) return
+    if (preferences.preferredTone !== tone) {
+      updatePreference('preferredTone', tone)
+    }
+  }, [tone, prefsLoading, updatePreference, preferences.preferredTone])
+
+  useEffect(() => {
+    if (prefsLoading || isFirstMount.current) return
+    if (preferences.preferredMode !== mode) {
+      updatePreference('preferredMode', mode)
+    }
+  }, [mode, prefsLoading, updatePreference, preferences.preferredMode])
+
+  useEffect(() => {
+    if (prefsLoading || isFirstMount.current) return
+    if (preferences.preferredIntensity !== intensity) {
+      updatePreference('preferredIntensity', intensity)
+    }
+  }, [intensity, prefsLoading, updatePreference, preferences.preferredIntensity])
+
+  useEffect(() => {
+    if (prefsLoading || isFirstMount.current) return
+    if (preferences.preferredOutputLang !== outputLang) {
+      updatePreference('preferredOutputLang', outputLang)
+    }
+  }, [outputLang, prefsLoading, updatePreference, preferences.preferredOutputLang])
+
+  useEffect(() => {
+    if (prefsLoading || isFirstMount.current) return
+    if (preferences.uiPreferences?.sidebarOpen !== isSidebarOpen) {
+      updatePreference('uiPreferences', {
+        ...preferences.uiPreferences,
+        sidebarOpen: isSidebarOpen
+      })
+    }
+  }, [isSidebarOpen, prefsLoading, updatePreference, preferences.uiPreferences])
+
+  useEffect(() => {
+    if (prefsLoading || isFirstMount.current) return
+    const uiPrefs = preferences.uiPreferences as Record<string, unknown>
+    if (uiPrefs?.analyticsOpen !== isFocusMode && uiPrefs?.focusModeEnabled !== isFocusMode) {
+      updatePreference('uiPreferences', {
+        ...preferences.uiPreferences,
+        analyticsOpen: isFocusMode
+      } as unknown as typeof preferences.uiPreferences)
+    }
+  }, [isFocusMode, prefsLoading, updatePreference, preferences.uiPreferences])
+
+  useEffect(() => {
+    if (input.trim().length >= 21 && isFocused) {
+      const timer = setTimeout(() => {
+        setCoachMetrics(analyzeText(input))
+      }, 400)
+      return () => clearTimeout(timer)
+    } else {
+      setCoachMetrics(null)
+    }
+  }, [input, isFocused])
+
+  const handleSelectSentence = (sentence: string, index: number, rect: DOMRect | null) => {
+    setSelectedSentenceIndex(index)
+    setSplitSelection({ text: sentence, rect })
+  }
+
+  const handleSplitRefine = async () => {
+    if (!splitSelection || !splitRefinePrompt.trim() || isSplitRefining) return
+    setIsSplitRefining(true)
+    try {
+      const res = await fetch('/api/writeright/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullText: lastImprovedText,
+          selectedText: splitSelection.text,
+          prompt: splitRefinePrompt,
+          mode,
+          tone
+        })
+      })
+      if (!res.ok) throw new Error('Refine failed')
+      const data = await res.json()
+      setLastImprovedText(prev => prev.replace(splitSelection.text, data.refinedText))
+      setSplitSelection(null)
+      setSelectedSentenceIndex(null)
+      setSplitRefinePrompt('')
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsSplitRefining(false)
+    }
+  }
 
   const [fileBadge, setFileBadge] = useState<{ name: string; loading: boolean } | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
@@ -2623,11 +2575,9 @@ export default function WriteRightPage() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const loadingStartRef = useRef<number | null>(null)
-  const submitRef = useRef<(text?: string, forcedTone?: ToneOption) => Promise<void>>(async () => {})
+  const submitRef = useRef<(text?: string, forcedTone?: ToneOption) => Promise<void>>(async () => { })
   const pendingSubmissionRef = useRef<{ signature: string; key: string } | null>(null)
 
-  // ── Gmail Integration (isolated state) ──
-  const gmail = useGmailIntegration()
   const handleGmailImport = useCallback((email: GmailEmailItem, action: 'improve' | 'summarize' | 'rewrite' | 'change_tone' | 'shorten' | 'professionalize' | 'reply') => {
     const text = gmail.buildImportText(email, action)
     setInput(text.slice(0, CHAR_MAX))
@@ -2769,7 +2719,6 @@ export default function WriteRightPage() {
         mode: saveTemplatePayload.mode,
         tone: saveTemplatePayload.tone,
       })
-      setTemplatesDrawerOpen(true)
       setSaveModalOpen(false)
     } catch (err) {
       console.error('Failed to save template', err)
@@ -2941,11 +2890,11 @@ export default function WriteRightPage() {
     setIsExporting(true)
     try {
       const data = await apiGet<{ chats?: ExportChat[] }>('/api/writeright/export')
-      
+
       const iframe = document.createElement('iframe')
       iframe.style.display = 'none'
       document.body.appendChild(iframe)
-      
+
       iframe.contentWindow?.document.open()
       iframe.contentWindow?.document.write(`
         <html><head><title>WriteRight History Export</title>
@@ -2966,8 +2915,8 @@ export default function WriteRightPage() {
                 <div class="${m.role === 'user' ? 'wr-export-user' : 'wr-export-ai'}">
                   <span style="font-size:12px;color:#666;">${m.role === 'user' ? 'You' : 'WriteRight'} (${new Date(m.timestamp).toLocaleDateString()})</span><br/>
                   ${m.role === 'ai'
-                    ? escapeHtml(safeExtractImproved(m.content))
-                    : escapeHtml(m.content)}
+          ? escapeHtml(safeExtractImproved(m.content))
+          : escapeHtml(m.content)}
                 </div>
               `).join('')}
             </div>
@@ -2975,7 +2924,7 @@ export default function WriteRightPage() {
         </body></html>
       `)
       iframe.contentWindow?.document.close()
-      
+
       setTimeout(() => {
         iframe.contentWindow?.focus()
         iframe.contentWindow?.print()
@@ -3095,7 +3044,7 @@ export default function WriteRightPage() {
       setLastImprovedText(result.improved_text); localStorage.removeItem(`wr:draft:${activeChatId}`)
       if (msg.startsWith('Challenge:')) {
         setChallengeDone(true)
-        try { localStorage.setItem('wr:c:' + todayKey, '1') } catch {}
+        try { localStorage.setItem('wr:c:' + todayKey, '1') } catch { }
       }
       setResultAnnouncement(result.scores?.verdict
         ? `WriteRight finished. Verdict: ${result.scores.verdict}`
@@ -3118,7 +3067,7 @@ export default function WriteRightPage() {
         try {
           const dismissed = localStorage.getItem('wr:shortcut-tip')
           if (!dismissed) setShowShortcutTip(true)
-        } catch {}
+        } catch { }
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -3215,6 +3164,12 @@ export default function WriteRightPage() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        setIsFocusMode((prev) => !prev)
+        return
+      }
+
       const meta = e.ctrlKey || e.metaKey
       const activeElement = document.activeElement
       const inTextArea = activeElement === taRef.current
@@ -3225,6 +3180,11 @@ export default function WriteRightPage() {
         (activeElement instanceof HTMLElement && activeElement.isContentEditable)
 
       if (e.key === 'Escape') {
+        setSplitSelection(null)
+        setSelectedSentenceIndex(null)
+        setTemplatePanelOpen(false)
+        setEmailChainOpen(false)
+        setShowGrammar(false)
         if (showShortcutsModal) {
           e.preventDefault()
           setShowShortcutsModal(false)
@@ -3336,229 +3296,271 @@ export default function WriteRightPage() {
 
   return (
     <div className={`wr-workspace-container${isFocusMode ? ' wr-focus-mode' : ''}`} data-module="write">
-        {/* Fixed Back Button */}
-        <button
-          className="wr-back-btn"
-          onClick={() => router.push('/dashboard')}
-          aria-label="Back to Dashboard"
-        >
-          <ChevronLeft size={14} />
-          <span>Back</span>
-        </button>
+      {/* GAME-1: Achievement milestone banner */}
+      {achievementBanner && (
+        <div className="wr-achievement-banner" role="status">
+          {achievementBanner}
+          <button className="wr-achievement-close" onClick={() => setAchievementBanner(null)}>×</button>
+        </div>
+      )}
 
-        {/* GAME-1: Achievement milestone banner */}
-        {achievementBanner && (
-          <div className="wr-achievement-banner" role="status">
-            {achievementBanner}
-            <button className="wr-achievement-close" onClick={() => setAchievementBanner(null)}>×</button>
+      <div className="wr-left-col">
+        <div className="wr-rail">
+
+          {/* Back Button — inside the rail so position:absolute resolves correctly */}
+          <button
+            className="wr-back-btn"
+            onClick={() => router.push('/dashboard')}
+            aria-label="Back to Dashboard"
+          >
+            <ChevronLeft size={14} />
+            <span>Back</span>
+          </button>
+
+          <div className="wr-rail-top">
+            <button className="wr-rail-btn" onClick={() => setIsSidebarOpen(!isSidebarOpen)} aria-label="Toggle history">
+              {isSidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+            </button>
+            <button className="wr-rail-btn" onClick={() => handleModeChange('email')} aria-label="New Chat">
+              <Plus size={16} />
+            </button>
+            <button className="wr-rail-btn" onClick={() => { setIsSidebarOpen(true); setTimeout(() => (document.querySelector('.wr-search-field') as HTMLElement)?.focus(), 250) }} aria-label="Search">
+              <Search size={16} />
+            </button>
           </div>
-        )}
-
-        <div className="wr-left-col">
-          <div className="wr-rail">
-            <div className="wr-rail-top">
-              <button className="wr-rail-btn" onClick={() => setIsSidebarOpen(!isSidebarOpen)} aria-label="Toggle history">
-                {isSidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-              </button>
-              <button className="wr-rail-btn" onClick={() => handleModeChange('email')} aria-label="New Chat">
-                <Plus size={16} />
-              </button>
-              <button className="wr-rail-btn" onClick={() => { setIsSidebarOpen(true); setTimeout(() => (document.querySelector('.wr-search-field') as HTMLElement)?.focus(), 250) }} aria-label="Search">
-                <Search size={16} />
-              </button>
-            </div>
-            <div className="wr-rail-bottom">
-              <button className="wr-rail-btn" onClick={() => setStatsOpen(!statsOpen)} aria-label="Stats">
-                <BarChart3 size={16} />
-              </button>
-              <button className="wr-rail-btn" onClick={handleExport} disabled={isExporting} aria-label="Export">
-                {isExporting ? <Loader2 size={16} className="wr-spin" /> : <Download size={16} />}
-              </button>
-            </div>
-          </div>
-
-          <div className={`wr-drawer-panel${!isSidebarOpen ? ' collapsed' : ''}`}>
-            <div className="wr-drawer-header">
-              <span className="wr-drawer-title">WriteRight</span>
-              {stats && stats.streak.current >= 2 && (
-                <span className="wr-streak-badge">{stats.streak.current}d 🔥</span>
-              )}
-            </div>
-
-            <div className="wr-search-wrapper">
-                <Search size={14} className="wr-search-icon-left" />
-                <input
-                  className="wr-search-field"
-                  placeholder="Search history..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                {searchQuery.trim() && (
-                  <button className="wr-search-clear-btn" onClick={() => setSearchQuery('')} aria-label="Clear search">
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-
-              <div className="wr-sidebar-scroll">
-                {searchQuery.trim() && (
-                  <>
-                    {searchLoading && <p className="wr-sidebar-empty-text-text">Searching…</p>}
-                    {!searchLoading && searchResults.length === 0 && (
-                      <p className="wr-sidebar-empty-text-text">No matching chats.</p>
-                    )}
-                    {!searchLoading && searchResults.map((result) => (
-                      <div
-                        key={result.chatId}
-                        className="wr-item"
-                        onClick={() => { void selectChat(result.chatId, result.mode) }}
-                      >
-                        <div className="wr-item-title">{highlightText(result.chatTitle, searchQuery)}</div>
-                        <div className="wr-search-snippet">{highlightText(result.messageSnippet, searchQuery)}</div>
-                      </div>
-                    ))}
-                  </>
-                )}
-
-                {!searchQuery.trim() && (
-                  <>
-                    <details open>
-                      <summary className="wr-section-header">Chats</summary>
-                      {chats.length === 0 && (
-                        <p className="wr-sidebar-empty-text-text">Your writing sessions will appear here.</p>
-                      )}
-                      {chats.map((c) => (
-                        <div
-                          key={c.id}
-                          className={`wr-item${chatId === c.id ? ' is-active' : ''}`}
-                          data-mode={c.mode}
-                          onClick={() => { void selectChat(c.id, c.mode) }}
-                        >
-                          <div className="wr-item-title">{c.title || 'New Conversation'}</div>
-                          <div className="wr-item-meta">
-                            <span className="wr-item-date">
-                              {new Date(c.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            </span>
-                            {c.message_count > 0 && (
-                              <span className="wr-item-count">{c.message_count}</span>
-                            )}
-                          </div>
-                          <button className="wr-item-delete" onClick={(e) => { void deleteChat(e, c.id) }} aria-label="Delete chat">
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      ))}
-                    </details>
-
-                    <details open>
-                      <summary className="wr-section-header">Templates</summary>
-                      {templates.length === 0 && (
-                        <p className="wr-sidebar-empty-text-text">No templates saved yet.</p>
-                      )}
-                      {templates.map((template) => (
-                        <div
-                          key={template.id}
-                          className="wr-item"
-                          data-mode={template.mode}
-                          onClick={() => {
-                            setInput(template.content.slice(0, CHAR_MAX))
-                            setMode(template.mode)
-                            setTone(template.tone)
-                            void markUsed(template.id)
-                            taRef.current?.focus()
-                          }}
-                        >
-                          <div className="wr-item-title">{template.name}</div>
-                          <div className="wr-item-meta">
-                            <span className="wr-item-date">{template.tone}</span>
-                            <span className="wr-item-count">{template.use_count}</span>
-                          </div>
-                        </div>
-                      ))}
-                      <button
-                        className="wr-manage-templates-btn"
-                        onClick={() => setTemplatesDrawerOpen(true)}
-                      >
-                        Manage templates
-                      </button>
-                    </details>
-                  </>
-                )}
-              </div>
-              {!searchQuery.trim() && chats.length === 1 && (
-                <div className="wr-onboard-hint">
-                  <p>Your history is saved here. Each chat is a writing session you can revisit.</p>
-                </div>
-              )}
-
-              <StatsPanel
-                open={statsOpen}
-                loading={statsLoading}
-                stats={stats}
-                writingProfile={writingProfile}
-                onToggle={() => setStatsOpen((prev) => !prev)}
-              />
+          <div className="wr-rail-bottom">
+            <button className="wr-rail-btn" onClick={() => setAnalyticsOpen(!analyticsOpen)} aria-label="Stats">
+              <BarChart3 size={16} />
+            </button>
+            <button className="wr-rail-btn" onClick={handleExport} disabled={isExporting} aria-label="Export">
+              {isExporting ? <Loader2 size={16} className="wr-spin" /> : <Download size={16} />}
+            </button>
           </div>
         </div>
 
-        <div className="wr-main" style={{ position: 'relative', overflow: 'hidden' }}>
-          {/* Gmail Panel — slides in from right */}
-          {gmail.connectionStatus.connected && (
-            <GmailPanel
-              panel={gmail.panel}
-              connectionStatus={gmail.connectionStatus}
-              onClose={gmail.togglePanel}
-              onSelectEmail={(id) => { void gmail.selectEmail(id) }}
-              onRefresh={() => { void gmail.fetchEmails() }}
-              onFilterChange={gmail.setFilter}
-              onToggleUnread={gmail.toggleUnreadOnly}
-              onLoadMore={gmail.loadMore}
-              onDisconnect={() => { void gmail.disconnect() }}
-            />
-          )}
+        <div className={`wr-drawer-panel${!isSidebarOpen ? ' collapsed' : ''}`}>
+          <div className="wr-drawer-header">
+            <span className="wr-drawer-title">WriteRight</span>
+            {stats && stats.streak.current >= 2 && (
+              <span className="wr-streak-badge">{stats.streak.current}d 🔥</span>
+            )}
+          </div>
 
-          {/* Gmail Email Preview Overlay */}
-          {gmail.panel.previewOpen && gmail.panel.selectedEmail && (
-            <GmailEmailPreview
-              email={gmail.panel.selectedEmail}
-              onClose={gmail.closePreview}
-              onImport={handleGmailImport}
+          <div className="wr-search-wrapper">
+            <Search size={14} className="wr-search-icon-left" />
+            <input
+              className="wr-search-field"
+              placeholder="Search history..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
             />
-          )}
+            {searchQuery.trim() && (
+              <button className="wr-search-clear-btn" onClick={() => setSearchQuery('')} aria-label="Clear search">
+                <X size={12} />
+              </button>
+            )}
+          </div>
 
-          {!isSidebarOpen && (
-            <button 
-              className="wr-sidebar-reopen"
-              onClick={() => setIsSidebarOpen(true)}
-              aria-label="Expand sidebar"
-            >
-              <PanelLeftOpen size={18} />
-            </button>
-          )}
-          <VersionTimeline
-            open={versionPanelOpen}
-            versions={aiVersions}
-            onClose={() => setVersionPanelOpen(false)}
-            onRestore={(text) => {
-              setInput(text)
-              setVersionPanelOpen(false)
-              taRef.current?.focus()
-            }}
-          />
-          <div className="wr-scroll" ref={scrollRef}>
-            <div className="wr-content">
-              {!hasStarted && (
-                <div className="wr-empty">
-                  <div className="wr-empty-icon-wrap" aria-hidden="true">
-                    <Wand2 size={28} strokeWidth={1.7} />
+          <div className="wr-sidebar-scroll">
+            {searchQuery.trim() && (
+              <>
+                {searchLoading && <p className="wr-sidebar-empty-text-text">Searching…</p>}
+                {!searchLoading && searchResults.length === 0 && (
+                  <p className="wr-sidebar-empty-text-text">No matching chats.</p>
+                )}
+                {!searchLoading && searchResults.map((result) => (
+                  <div
+                    key={result.chatId}
+                    className="wr-item"
+                    onClick={() => { void selectChat(result.chatId, result.mode) }}
+                  >
+                    <div className="wr-item-title">{highlightText(result.chatTitle, searchQuery)}</div>
+                    <div className="wr-search-snippet">{highlightText(result.messageSnippet, searchQuery)}</div>
                   </div>
-                  <h1 className="wr-empty-title">WriteRight</h1>
-                  <p className="wr-empty-sub">How would you like to improve this?</p>
+                ))}
+              </>
+            )}
 
-                  <div className="wr-chips-grid">
-                    {[...MODE_PROMPTS[mode]].sort((a,b) => (chipCounts[b.title] || 0) - (chipCounts[a.title] || 0)).map((p) => {
-                      const isNew = (chipCounts[p.title] || 0) === 0
-                      return (
+            {!searchQuery.trim() && (
+              <>
+                <details open>
+                  <summary className="wr-section-header">Chats</summary>
+                  {chats.length === 0 && (
+                    <p className="wr-sidebar-empty-text-text">Your writing sessions will appear here.</p>
+                  )}
+                  {chats.map((c) => (
+                    <div
+                      key={c.id}
+                      className={`wr-item${chatId === c.id ? ' is-active' : ''}`}
+                      data-mode={c.mode}
+                      onClick={() => { void selectChat(c.id, c.mode) }}
+                    >
+                      <div className="wr-item-title">{c.title || 'New Conversation'}</div>
+                      <div className="wr-item-meta">
+                        <span className="wr-item-date">
+                          {new Date(c.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+                        {c.message_count > 0 && (
+                          <span className="wr-item-count">{c.message_count}</span>
+                        )}
+                      </div>
+                      <button className="wr-item-delete" onClick={(e) => { void deleteChat(e, c.id) }} aria-label="Delete chat">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </details>
+
+                <details open>
+                  <summary className="wr-section-header flex items-center justify-between w-full">
+                    <span>Templates</span>
+                    <button
+                      type="button"
+                      className="wr-template-settings-btn"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setTemplatePanelOpen(true)
+                      }}
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', marginLeft: 'auto', display: 'flex', alignItems: 'center' }}
+                      title="Template Panel"
+                    >
+                      <Settings2 size={12} />
+                    </button>
+                  </summary>
+                  {templates.length === 0 && (
+                    <p className="wr-sidebar-empty-text-text">No templates saved yet.</p>
+                  )}
+                  {templates.map((template) => (
+                    <div
+                      key={template.id}
+                      className="wr-item"
+                      data-mode={template.mode}
+                      onClick={() => {
+                        setInput(template.content.slice(0, CHAR_MAX))
+                        setMode(template.mode)
+                        setTone(template.tone)
+                        void markUsed(template.id)
+                        taRef.current?.focus()
+                      }}
+                    >
+                      <div className="wr-item-title">{template.name}</div>
+                      <div className="wr-item-meta">
+                        <span className="wr-item-date">{template.tone}</span>
+                        <span className="wr-item-count">{template.use_count}</span>
+                      </div>
+                    </div>
+                  ))}
+                </details>
+              </>
+            )}
+          </div>
+          {!searchQuery.trim() && chats.length === 1 && (
+            <div className="wr-onboard-hint">
+              <p>Your history is saved here. Each chat is a writing session you can revisit.</p>
+            </div>
+          )}
+
+          {/* StatsPanel removed as it is now replaced by AnalyticsView */}
+        </div>
+      </div>
+
+      <div className="wr-main" style={{ position: 'relative', overflow: 'hidden' }}>
+        <div className="wr-plan-bar">
+          <div className="wr-plan-badge">
+            <span className="wr-plan-badge-dot" />
+            <span>Pro Plan</span>
+            <span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>
+            <Link href="/dashboard/account" className="wr-plan-upgrade">
+              Manage Plan
+            </Link>
+          </div>
+        </div>
+
+        {/* Gmail Panel — slides in from right */}
+        {gmail.connectionStatus.connected && (
+          <GmailPanel
+            panel={gmail.panel}
+            connectionStatus={gmail.connectionStatus}
+            onClose={gmail.togglePanel}
+            onSelectEmail={(id) => { void gmail.selectEmail(id) }}
+            onRefresh={() => { void gmail.fetchEmails() }}
+            onFilterChange={gmail.setFilter}
+            onToggleUnread={gmail.toggleUnreadOnly}
+            onLoadMore={gmail.loadMore}
+            onDisconnect={() => { void gmail.disconnect() }}
+            searchQuery={gmail.searchQuery}
+            setSearchQuery={gmail.setSearchQuery}
+            selectedEmails={gmail.selectedEmails}
+            onToggleSelect={gmail.toggleSelect}
+            unreadCount={gmail.unreadCount}
+            onOpenCompose={() => setEmailChainOpen(true)}
+            scheduledSends={gmail.scheduledSends}
+            onCancelScheduled={gmail.cancelScheduled}
+            onViewContact={gmail.fetchContactIntel}
+            activeFilter={activeFilter}
+            setActiveFilter={handleActiveFilterChange}
+            onFetchScheduled={gmail.fetchScheduledSends}
+          />
+        )}
+
+        {/* Gmail Email Preview Overlay */}
+        {gmail.panel.previewOpen && gmail.panel.selectedEmail && (
+          <GmailEmailPreview
+            email={gmail.panel.selectedEmail}
+            onClose={gmail.closePreview}
+            onImport={handleGmailImport}
+            onViewContact={gmail.fetchContactIntel}
+            smartComposeText={gmail.smartComposeText}
+            smartComposeLoading={gmail.smartComposeLoading}
+            onRunSmartCompose={gmail.smartCompose}
+            onClearSmartCompose={() => gmail.setSmartComposeText('')}
+            onUseDraft={(text) => { setInput(text.slice(0, CHAR_MAX)); gmail.closePreview(); }}
+            emailsList={gmail.panel.emails}
+          />
+        )}
+
+        {!isSidebarOpen && (
+          <button
+            className="wr-sidebar-reopen"
+            onClick={() => setIsSidebarOpen(true)}
+            aria-label="Expand sidebar"
+          >
+            <PanelLeftOpen size={18} />
+          </button>
+        )}
+
+        <div className="wr-scroll" ref={scrollRef}>
+          <div className="wr-content">
+            {templatePanelOpen ? (
+              <TemplatePanel
+                onUseTemplate={(content, tplMode, tplTone) => {
+                  setInput(content.slice(0, CHAR_MAX))
+                  setMode(tplMode)
+                  setTone(tplTone)
+                  setTemplatePanelOpen(false)
+                }}
+                onClose={() => setTemplatePanelOpen(false)}
+              />
+            ) : isSplitView ? (
+              <WriteSplitView
+                originalText={lastSubmittedText || ""}
+                improvedText={lastImprovedText || ""}
+                selectedSentenceIndex={selectedSentenceIndex}
+                onSelectSentence={handleSelectSentence}
+              />
+            ) : !hasStarted ? (
+              <div className="wr-empty">
+                <div className="wr-empty-icon-wrap" aria-hidden="true">
+                  <Wand2 size={28} strokeWidth={1.7} />
+                </div>
+                <h1 className="wr-empty-title">WriteRight</h1>
+                <p className="wr-empty-sub">How would you like to improve this?</p>
+
+                <div className="wr-chips-grid">
+                  {[...MODE_PROMPTS[mode]].sort((a, b) => (chipCounts[b.title] || 0) - (chipCounts[a.title] || 0)).map((p) => {
+                    const isNew = (chipCounts[p.title] || 0) === 0
+                    return (
                       <button
                         key={p.title}
                         className="wr-chip"
@@ -3583,242 +3585,233 @@ export default function WriteRightPage() {
                           <ArrowUpRight size={13} className="wr-chip-arrow" />
                         </span>
                         <span className="wr-chip-sub">{p.sub}</span>
+                        <span className="wr-chip-tooltip">{p.sub}</span>
                       </button>
-                    )})}
-                  </div>
+                    )
+                  })}
+                </div>
 
-                  {!challengeDismissed && (
-                    <div className={`wr-challenge${challengeDone ? ' done' : ''}`}>
-                      <div className="wr-challenge-icon">🎯</div>
-                      <div className="wr-challenge-body">
-                        <p className="wr-challenge-title">Daily Challenge: {todayChallenge.title}</p>
-                        <p className="wr-challenge-desc">{todayChallenge.desc}</p>
-                      </div>
-                      {!challengeDone ? (
-                        <button
-                          className="wr-challenge-action"
-                          onClick={() => {
-                            setInput(`Challenge: ${todayChallenge.desc}`)
-                            taRef.current?.focus()
-                          }}
-                        >
-                          Use prompt
-                        </button>
-                      ) : (
-                        <span className="wr-challenge-done-label">Done for today</span>
-                      )}
+                {!challengeDismissed && (
+                  <div className={`wr-challenge${challengeDone ? ' done' : ''}`}>
+                    <div className="wr-challenge-icon">🎯</div>
+                    <div className="wr-challenge-body">
+                      <p className="wr-challenge-title">Daily Challenge: {todayChallenge.title}</p>
+                      <p className="wr-challenge-desc">{todayChallenge.desc}</p>
+                    </div>
+                    {!challengeDone ? (
                       <button
-                        className="wr-challenge-dismiss"
-                        aria-label="Dismiss daily challenge"
+                        className="wr-challenge-action"
                         onClick={() => {
-                          setChallengeDismissed(true)
-                          try { localStorage.setItem('wr:cd:' + todayKey, '1') } catch {}
+                          setInput(`Challenge: ${todayChallenge.desc}`)
+                          taRef.current?.focus()
                         }}
                       >
-                        ×
+                        Use prompt
                       </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {hasStarted && (
-                <div className="wr-messages">
-                  <div
-                    aria-live="polite"
-                    aria-atomic="true"
-                    className="wr-sr"
-                  >
-                    {resultAnnouncement}
-                  </div>
-
-                  {isTriageMode ? (
-                    <div className="wr-triage-container">
-                      <div className="wr-triage-header">
-                        <div className="wr-triage-header-text">
-                          <h2 className="wr-triage-title">Inbox Zero Triage</h2>
-                          <p className="wr-triage-subtitle">AI-segmented view of your bulk emails and threads.</p>
-                        </div>
-                        <button 
-                          className="wr-triage-run-btn"
-                          onClick={handleTriage}
-                          disabled={triageLoading || !input.trim()}
-                        >
-                          {triageLoading ? 'Analyzing…' : 'Run Triage'}
-                        </button>
-                      </div>
-                      {triageItems.length > 0 ? (
-                        <TriageBoard 
-                          items={triageItems} 
-                          onStartDraft={(draft) => {
-                            setInput(draft)
-                            setIsTriageMode(false)
-                          }}
-                        />
-                      ) : (
-                        <div className="wr-triage-welcome">
-                          <div className="wr-triage-welcome-icon">📥</div>
-                          <h3>Ready to triage?</h3>
-                          <p>Paste your bulk emails or a long thread below and click &quot;Run Triage&quot;.</p>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      {messages.map((m, i) => {
-                        const isLastAi = m.role === 'ai' && i === messages.map((msg) => msg.role).lastIndexOf('ai')
-                        return (
-                          <React.Fragment key={m.id}>
-                            {isLastAi && aiVersions.length >= 2 && (
-                              <div className="wr-version-cta">
-                                <button
-                                  className="wr-version-cta-btn"
-                                  onClick={() => setVersionPanelOpen(true)}
-                                >
-                                  <RefreshCcw size={11} /> Version history ({aiVersions.length})
-                                </button>
-                              </div>
-                            )}
-                            {m.role === 'user' && (
-                              <div className="wr-user-row">
-                                <div className="wr-user-bubble">{m.content}</div>
-                              </div>
-                            )}
-                            {m.role === 'ai' && m.kind === 'result' && (
-                              <div className="wr-ai-row">
-                                <div className="wr-ai-header">
-                                  <div className="wr-ai-avatar">✍️</div>
-                                  <span className="wr-ai-label">Writeright</span>
-                                </div>
-                                <WriteDiffBlock
-                                  before={m.before}
-                                  after={m.jobResult.improved_text}
-                                  isMorphing={isMorphing && i === messages.length - 1}
-                                  explanation={(() => {
-                                    const explanationParts: string[] = []
-                                    if (m.jobResult.teaching?.mistakes?.length) {
-                                      explanationParts.push(m.jobResult.teaching.mistakes[0])
-                                    }
-                                    if (m.jobResult.teaching?.explanations?.length) {
-                                      explanationParts.push(m.jobResult.teaching.explanations[0])
-                                    }
-                                    return explanationParts.join(' — ') || 'AI-improved version of your text.'
-                                  })()}
-                                  teaching={m.jobResult.teaching}
-                                  followUp={m.jobResult.follow_up}
-                                  suggestions={m.jobResult.suggestions}
-                                  scores={m.jobResult.scores}
-                                  prevScores={m.prevScores}
-                                  englishVersion={m.jobResult.english_version}
-                                  outputLang={m.outputLang}
-                                  jobId={m.jobId}
-                                  chatId={m.chatId}
-                                  mode={m.mode}
-                                  tone={m.tone}
-                                  onSuggest={(suggestion) => { void submitRef.current(suggestion) }}
-                                  onSaveTemplate={() => openSaveTemplateModal(m.jobResult.improved_text, m.mode, m.tone)}
-                                  onShare={isUuidLike(m.jobId) && typeof m.chatId === 'string' ? () => openShareModal({
-                                    before: m.before,
-                                    after: m.jobResult.improved_text,
-                                    mode: m.mode,
-                                    tone: m.tone,
-                                    chatId: m.chatId!,
-                                    jobId: m.jobId!,
-                                  }) : undefined}
-                                />
-                              </div>
-                            )}
-                            {m.role === 'ai' && m.kind === 'notice' && (
-                              <div className="wr-ai-row">
-                                <div className="wr-ai-header">
-                                  <div className="wr-ai-avatar">✍️</div>
-                                  <span className="wr-ai-label">Notice</span>
-                                </div>
-                                {m.content === 'Cancelled' || m.content.startsWith('Switched to ')
-                                  ? <div className="wr-divider-line">{m.content}</div>
-                                  : <div className="wr-improved-text">{m.content}</div>
-                                }
-                              </div>
-                            )}
-                            {m.role === 'ai' && m.kind === 'error' && (
-                              <div className="wr-ai-row">
-                                <div className="wr-ai-header">
-                                  <div className="wr-ai-avatar">✍️</div>
-                                  <span className="wr-ai-label">Error</span>
-                                </div>
-                                <InlineError
-                                  message={m.content}
-                                  onRetry={() => {
-                                    setMessages((items) => items.filter((item) => item.id !== m.id))
-                                    void submitRef.current(m.retryText)
-                                  }}
-                                />
-                              </div>
-                            )}
-                          </React.Fragment>
-                        )
-                      })}
-                    </>
-                  )}
-
-                  {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} />}
-
-                  {loading && streamingText && (
-                    <div className="wr-ai-row">
-                      <div className="wr-ai-header">
-                        <div className="wr-ai-avatar">✍️</div>
-                        <span className="wr-ai-label">Writing...</span>
-                      </div>
-                      <WriteDiffBlock
-                        before={streamingBefore || (lastSubmittedText ?? 'Your draft')}
-                        after={streamingText}
-                        explanation="Streaming response..."
-                        outputLang={outputLang}
-                        streaming
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── Standard Input Bar ── */}
-          <div className="wr-composer-bar">
-            <div className="wr-composer-bar-inner">
-              <div className={`wr-card${loading ? ' is-loading' : ''}`}>
-                <div className="wr-mode-row">
-                  {MODES.map((m) => (
+                    ) : (
+                      <span className="wr-challenge-done-label">Done for today</span>
+                    )}
                     <button
-                      key={m.id}
-                      className={`wr-mode-tab${mode === m.id ? ' active' : ''}`}
-                      onClick={() => handleModeChange(m.id)}
-                      role="tab"
-                      aria-selected={mode === m.id}
+                      className="wr-challenge-dismiss"
+                      aria-label="Dismiss daily challenge"
+                      onClick={() => {
+                        setChallengeDismissed(true)
+                        try { localStorage.setItem('wr:cd:' + todayKey, '1') } catch { }
+                      }}
                     >
-                      {m.label}
+                      ×
                     </button>
-                  ))}
-                </div>
-                <div className="wr-tone-row">
-                  {TONES.map((t) => (
-                    <div key={t} className="wr-tone-wrap">
-                      <button className={`wr-tone-pill${tone === t ? ' active' : ''}`} onClick={() => setTone(t)}>
-                        {t}
-                      </button>
-                      <div className="wr-tone-tip">{TONE_DESCRIPTIONS[t]}</div>
-                      <TonePreviewTooltip text={input} tone={t} />
-                    </div>
-                  ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="wr-messages">
+                <div
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className="wr-sr"
+                >
+                  {resultAnnouncement}
                 </div>
 
-                <AnimatePresence>
+                {isTriageMode ? (
+                  <div className="wr-triage-container">
+                    <div className="wr-triage-header">
+                      <div className="wr-triage-header-text">
+                        <h2 className="wr-triage-title">Inbox Zero Triage</h2>
+                        <p className="wr-triage-subtitle">AI-segmented view of your bulk emails and threads.</p>
+                      </div>
+                      <button
+                        className="wr-triage-run-btn"
+                        onClick={handleTriage}
+                        disabled={triageLoading || !input.trim()}
+                      >
+                        {triageLoading ? 'Analyzing…' : 'Run Triage'}
+                      </button>
+                    </div>
+                    {triageItems.length > 0 ? (
+                      <TriageBoard
+                        items={triageItems}
+                        onStartDraft={(draft) => {
+                          setInput(draft)
+                          setIsTriageMode(false)
+                        }}
+                      />
+                    ) : (
+                      <div className="wr-triage-welcome">
+                        <div className="wr-triage-welcome-icon">📥</div>
+                        <h3>Ready to triage?</h3>
+                        <p>Paste your bulk emails or a long thread below and click &quot;Run Triage&quot;.</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {messages.map((m, i) => {
+                      const isLastAi = m.role === 'ai' && i === messages.map((msg) => msg.role).lastIndexOf('ai')
+                      return (
+                        <React.Fragment key={m.id}>
+
+                          {m.role === 'user' && (
+                            <div className="wr-user-row">
+                              <div className="wr-user-bubble">{m.content}</div>
+                            </div>
+                          )}
+                          {m.role === 'ai' && m.kind === 'result' && (
+                            <div className="wr-ai-row">
+                              <div className="wr-ai-header">
+                                <div className="wr-ai-avatar">✍️</div>
+                                <span className="wr-ai-label">Writeright</span>
+                              </div>
+                              <WriteDiffBlock
+                                before={m.before}
+                                after={m.jobResult.improved_text}
+                                isMorphing={isMorphing && i === messages.length - 1}
+                                explanation={(() => {
+                                  const explanationParts: string[] = []
+                                  if (m.jobResult.teaching?.mistakes?.length) {
+                                    explanationParts.push(m.jobResult.teaching.mistakes[0])
+                                  }
+                                  if (m.jobResult.teaching?.explanations?.length) {
+                                    explanationParts.push(m.jobResult.teaching.explanations[0])
+                                  }
+                                  return explanationParts.join(' — ') || 'AI-improved version of your text.'
+                                })()}
+                                teaching={m.jobResult.teaching}
+                                followUp={m.jobResult.follow_up}
+                                suggestions={m.jobResult.suggestions}
+                                scores={m.jobResult.scores}
+                                prevScores={m.prevScores}
+                                englishVersion={m.jobResult.english_version}
+                                outputLang={m.outputLang}
+                                jobId={m.jobId}
+                                chatId={m.chatId}
+                                mode={m.mode}
+                                tone={m.tone}
+                                onSuggest={(suggestion) => { void submitRef.current(suggestion) }}
+                                onSaveTemplate={() => openSaveTemplateModal(m.jobResult.improved_text, m.mode, m.tone)}
+                                onShare={isUuidLike(m.jobId) && typeof m.chatId === 'string' ? () => openShareModal({
+                                  before: m.before,
+                                  after: m.jobResult.improved_text,
+                                  mode: m.mode,
+                                  tone: m.tone,
+                                  chatId: m.chatId!,
+                                  jobId: m.jobId!,
+                                }) : undefined}
+                              />
+                            </div>
+                          )}
+                          {m.role === 'ai' && m.kind === 'notice' && (
+                            <div className="wr-ai-row">
+                              <div className="wr-ai-header">
+                                <div className="wr-ai-avatar">✍️</div>
+                                <span className="wr-ai-label">Notice</span>
+                              </div>
+                              {m.content === 'Cancelled' || m.content.startsWith('Switched to ')
+                                ? <div className="wr-divider-line">{m.content}</div>
+                                : <div className="wr-improved-text">{m.content}</div>
+                              }
+                            </div>
+                          )}
+                          {m.role === 'ai' && m.kind === 'error' && (
+                            <div className="wr-ai-row">
+                              <div className="wr-ai-header">
+                                <div className="wr-ai-avatar">✍️</div>
+                                <span className="wr-ai-label">Error</span>
+                              </div>
+                              <InlineError
+                                message={m.content}
+                                onRetry={() => {
+                                  setMessages((items) => items.filter((item) => item.id !== m.id))
+                                  void submitRef.current(m.retryText)
+                                }}
+                              />
+                            </div>
+                          )}
+                        </React.Fragment>
+                      )
+                    })}
+                  </>
+                )}
+
+                {loading && !streamingText && <WriteRightThinking startTime={loadingStartRef.current} />}
+
+                {loading && streamingText && (
+                  <div className="wr-ai-row">
+                    <div className="wr-ai-header">
+                      <div className="wr-ai-avatar">✍️</div>
+                      <span className="wr-ai-label">Writing...</span>
+                    </div>
+                    <WriteDiffBlock
+                      before={streamingBefore || (lastSubmittedText ?? 'Your draft')}
+                      after={streamingText}
+                      explanation="Streaming response..."
+                      outputLang={outputLang}
+                      streaming
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Standard Input Bar ── */}
+        <div className="wr-composer-bar">
+          <div className="wr-composer-bar-inner">
+            <div className={`wr-card${loading ? ' is-loading' : ''}${showSelectors ? ' show-selectors' : ''}`}>
+              <div className="wr-mode-row">
+                {MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    className={`wr-mode-tab${mode === m.id ? ' active' : ''}`}
+                    onClick={() => handleModeChange(m.id)}
+                    role="tab"
+                    aria-selected={mode === m.id}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <div className="wr-tone-row">
+                {TONES.map((t) => (
+                  <div key={t} className="wr-tone-wrap">
+                    <button className={`wr-tone-pill${tone === t ? ' active' : ''}`} onClick={() => setTone(t)}>
+                      {t}
+                    </button>
+                    <div className="wr-tone-tip">{TONE_DESCRIPTIONS[t]}</div>
+                    <TonePreviewTooltip text={input} tone={t} />
+                  </div>
+                ))}
+              </div>
+
+              <AnimatePresence>
                 {shouldShowRantBanner && (
-                  <motion.div 
+                  <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
-                    className="wr-rant" 
+                    className="wr-rant"
                     role="alert"
                   >
                     <p className="wr-rant-head">This reads heated.</p>
@@ -3842,25 +3835,29 @@ export default function WriteRightPage() {
                     </div>
                   </motion.div>
                 )}
-                </AnimatePresence>
+              </AnimatePresence>
 
-                {(fileBadge || fileError || draftSaveWarning) && (
-                  <div className="wr-alerts">
-                    {fileBadge && (
-                      <div className="wr-file-chip">
-                        <span>{fileBadge.loading ? `Extracting ${fileBadge.name}…` : fileBadge.name}</span>
-                        <button className="wr-file-chip-remove" onClick={() => setFileBadge(null)} aria-label="Remove file badge">
-                          <X size={12} />
-                        </button>
-                      </div>
-                    )}
-                    {fileError && <div className="wr-alert-row"><span>{fileError}</span></div>}
-                    {draftSaveWarning && <div className="wr-alert-row"><span>{draftSaveWarning}</span></div>}
-                  </div>
-                )}
+              {(fileBadge || fileError || draftSaveWarning) && (
+                <div className="wr-alerts">
+                  {fileBadge && (
+                    <div className="wr-file-chip">
+                      <span>{fileBadge.loading ? `Extracting ${fileBadge.name}…` : fileBadge.name}</span>
+                      <button className="wr-file-chip-remove" onClick={() => setFileBadge(null)} aria-label="Remove file badge">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  )}
+                  {fileError && <div className="wr-alert-row"><span>{fileError}</span></div>}
+                  {draftSaveWarning && <div className="wr-alert-row"><span>{draftSaveWarning}</span></div>}
+                </div>
+              )}
 
-                <div className="wr-textarea-wrap wr-pulse-wrap" style={{ '--writing-clarity-color': clarityColor } as React.CSSProperties}>
-                  {pulse && <div className="wr-pulse-ring" />}
+              <CoachBar metrics={coachMetrics!} visible={Boolean(coachMetrics && preferences?.uiPreferences?.coachBarEnabled !== false && !isFocusMode)} />
+              <div className="wr-textarea-wrap wr-pulse-wrap" style={{ '--writing-clarity-color': clarityColor } as React.CSSProperties}>
+                {pulse && <div className="wr-pulse-ring" />}
+                {showGrammar ? (
+                  <GrammarOverlay text={input} isActive={showGrammar} onChange={setInput} />
+                ) : (
                   <textarea
                     ref={taRef}
                     className="wr-textarea"
@@ -3883,289 +3880,334 @@ export default function WriteRightPage() {
                     rows={3}
                     maxLength={CHAR_MAX}
                   />
-                  {ghosting && ghostText && (
-                    <div className="wr-ghost">
-                      {ghostText}
+                )}
+                {ghosting && ghostText && (
+                  <div className="wr-ghost">
+                    {ghostText}
+                  </div>
+                )}
+                {charDisplay && (
+                  <p className={`wr-charcount${charClass ? ` ${charClass}` : ''}`}>
+                    {charDisplay}
+                  </p>
+                )}
+              </div>
+
+              <div className="wr-footer">
+                <div className="wr-tools-left">
+                  <button
+                    type="button"
+                    className={`wr-tool${showAdvancedTools ? ' active' : ''}`}
+                    aria-label="More tools"
+                    onClick={() => setShowAdvancedTools(!showAdvancedTools)}
+                  >
+                    <Plus size={16} />
+                  </button>
+
+                  {(mounted && voiceSupported) && (
+                    <button
+                      type="button"
+                      className={`wr-tool${isRecording ? ' active' : ''}`}
+                      aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
+                      aria-pressed={isRecording}
+                      onClick={toggleRecording}
+                    >
+                      {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
+                    </button>
+                  )}
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    hidden
+                    accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={(e) => {
+                      const file = e.currentTarget.files?.[0]
+                      if (file) void handleFileExtract(file)
+                      e.currentTarget.value = ''
+                    }}
+                  />
+                  <button className="wr-tool" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
+                    <Paperclip size={16} />
+                  </button>
+
+                  {/* Gmail integration button */}
+                  {gmail.connectionStatus.connected ? (
+                    <GmailConnectedBadge
+                      email={gmail.connectionStatus.connection?.gmail_email ?? ''}
+                      onTogglePanel={gmail.togglePanel}
+                      panelOpen={gmail.panel.isOpen}
+                      unreadCount={gmail.unreadCount}
+                    />
+                  ) : (
+                    <GmailConnectButton
+                      onConnect={gmail.connect}
+                      loading={gmail.connectionLoading}
+                    />
+                  )}
+
+                  {isRecording && (
+                    <div className="wr-recording" aria-live="polite">
+                      <span className="wr-rec-dot" />
+                      Recording
                     </div>
                   )}
-                  {charDisplay && (
-                    <p className={`wr-charcount${charClass ? ` ${charClass}` : ''}`}>
-                      {charDisplay}
-                    </p>
-                  )}
                 </div>
 
-                <div className="wr-footer">
-                  <div className="wr-tools-left">
-                    <button
-                      type="button"
-                      className={`wr-tool${showAdvancedTools ? ' active' : ''}`}
-                      aria-label="More tools"
-                      onClick={() => setShowAdvancedTools(!showAdvancedTools)}
-                    >
-                      <Plus size={16} />
-                    </button>
-
-                    {voiceSupported && (
-                      <button
-                        type="button"
-                        className={`wr-tool${isRecording ? ' active' : ''}`}
-                        aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
-                        aria-pressed={isRecording}
-                        onClick={toggleRecording}
-                      >
-                        {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
-                      </button>
-                    )}
-
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      hidden
-                      accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                      onChange={(e) => {
-                        const file = e.currentTarget.files?.[0]
-                        if (file) void handleFileExtract(file)
-                        e.currentTarget.value = ''
-                      }}
-                    />
-                    <button className="wr-tool" aria-label="Attach file" onClick={() => fileInputRef.current?.click()}>
-                      <Paperclip size={16} />
-                    </button>
-
-                    {/* Gmail integration button */}
-                    {gmail.connectionStatus.connected ? (
-                      <GmailConnectedBadge
-                        email={gmail.connectionStatus.connection?.gmail_email ?? ''}
-                        onTogglePanel={gmail.togglePanel}
-                        panelOpen={gmail.panel.isOpen}
-                      />
-                    ) : (
-                      <GmailConnectButton
-                        onConnect={gmail.connect}
-                        loading={gmail.connectionLoading}
-                      />
-                    )}
-
-                    {isRecording && (
-                      <div className="wr-recording" aria-live="polite">
-                        <span className="wr-rec-dot" />
-                        Recording
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="wr-tools-right">
-                    <button
-                      type="button"
-                      className="wr-shortcut-q"
-                      aria-label="Keyboard Shortcuts"
-                      onClick={() => setShowShortcutsModal(true)}
-                    >
-                      ?
-                      <div className="wr-shortcut-tip">
-                        Ctrl+Enter  Submit<br />
-                        Escape      Cancel<br />
-                        Ctrl+K      Focus<br />
-                        1-4         Change Mode<br />
-                        T           Cycle tone<br />
-                        N           New chat<br />
-                        Ctrl+S      Save output<br />
-                        Ctrl+Shift+C Copy output
-                      </div>
-                    </button>
-                    <motion.button
-                      whileTap={{ scale: 0.96 }}
-                      className="wr-send"
-                      onClick={() => { void submitRef.current() }}
-                      disabled={!input.trim() || loading}
-                      aria-label="Improve text"
-                    >
-                      {loading
-                        ? <>{[0, 1, 2].map((i) => <span key={i} className="wr-dot" style={{ animationDelay: `${i * 0.2}s` }} />)}</>
-                        : <><Wand2 size={13} strokeWidth={2.2} /> Improve</>
-                      }
-                    </motion.button>
-                  </div>
+                <div className="wr-tools-right">
+                  {/* Mode+Tone selector button — toggles the mode/tone rows */}
+                  <button
+                    type="button"
+                    className={`wr-selector-btn${showSelectors ? ' active' : ''}`}
+                    onClick={() => setShowSelectors(!showSelectors)}
+                    aria-label="Select mode and tone"
+                    aria-expanded={showSelectors}
+                  >
+                    {MODES.find(m => m.id === mode)?.label ?? 'Email'}
+                    <span style={{ color: '#9C9489', fontSize: '11px' }}>·</span>
+                    {tone}
+                    <ChevronDown size={12} className="wr-selector-chevron" />
+                  </button>
+                  <button
+                    type="button"
+                    className="wr-shortcut-q"
+                    aria-label="Keyboard Shortcuts"
+                    onClick={() => setShowShortcutsModal(true)}
+                  >
+                    ?
+                    <div className="wr-shortcut-tip">
+                      Ctrl+Enter  Submit<br />
+                      Escape      Cancel<br />
+                      Ctrl+K      Focus<br />
+                      1-4         Change Mode<br />
+                      T           Cycle tone<br />
+                      N           New chat<br />
+                      Ctrl+S      Save output<br />
+                      Ctrl+Shift+C Copy output
+                    </div>
+                  </button>
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
+                    className="wr-send"
+                    onClick={() => { void submitRef.current() }}
+                    disabled={!input.trim() || loading}
+                    aria-label="Improve text"
+                  >
+                    {loading
+                      ? <>{[0, 1, 2].map((i) => <span key={i} className="wr-dot" style={{ animationDelay: `${i * 0.2}s` }} />)}</>
+                      : <><Wand2 size={13} strokeWidth={2.2} /> Improve</>
+                    }
+                  </motion.button>
                 </div>
               </div>
+              {/* Advanced Tools Panel — floats above the footer */}
+              {showAdvancedTools && (
+                <div className="wr-adv-panel">
+                  {(mode === 'email' || mode === 'whatsapp') && (
+                    <select
+                      className="wr-lang-select"
+                      value={outputLang}
+                      onChange={(e) => setOutputLang(e.target.value as OutputLang)}
+                      aria-label="Translate output language"
+                    >
+                      {OUTPUT_LANG_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {(mounted && voiceSupported) && (
+                    <button
+                      type="button"
+                      className="wr-lang-pill"
+                      onClick={cycleVoiceLang}
+                      aria-label="Change voice input language"
+                    >
+                      {VOICE_LANGS.find((lang) => lang.id === voiceLang)?.label ?? 'AUTO'}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    className={`wr-tool${!isMuted ? ' active' : ''}`}
+                    onClick={toggleMute}
+                    aria-label="Toggle haptics"
+                    title="Mechanical haptics"
+                  >
+                    {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                  </button>
+                  <div className="wr-depth-wrap">
+                    <button type="button" className="wr-tool" aria-label="Rewrite depth">
+                      <Settings2 size={16} />
+                    </button>
+                    <div className="wr-depth-pop">
+                      <div className="wr-depth-head">
+                        <span>Depth</span>
+                        <strong className="wr-depth-val">
+                          {intensity === 1 ? 'Preserve' :
+                            intensity === 2 ? 'Light' :
+                              intensity === 3 ? 'Standard' :
+                                intensity === 4 ? 'Active' :
+                                  'Full'}
+                        </strong>
+                      </div>
+                      <input
+                        type="range"
+                        className="wr-depth-slider"
+                        min="1"
+                        max="5"
+                        step="1"
+                        value={intensity}
+                        onChange={(e) => setIntensity(Number(e.target.value))}
+                        style={{ '--slider-pct': `${(intensity - 1) * 25}%` } as React.CSSProperties}
+                        aria-valuenow={intensity}
+                        aria-valuemin={1}
+                        aria-valuemax={5}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    className={`wr-tool${isTriageMode ? ' active' : ''}`}
+                    aria-label="Inbox Triage Board"
+                    title="Bulk Inbox Triage"
+                    onClick={() => setIsTriageMode(!isTriageMode)}
+                  >
+                    <Layout size={16} />
+                  </button>
+
+                  <button
+                    className="wr-tool"
+                    aria-label="Brand Voice DNA"
+                    title="Train AI Voice"
+                    onClick={() => setVoiceModalOpen(true)}
+                  >
+                    <Fingerprint size={16} />
+                  </button>
+
+                  <button
+                    className="wr-tool muted"
+                    aria-label="Paste or attach image (coming soon)"
+                    title="Image input — coming soon"
+                  >
+                    <ImagePlus size={16} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`wr-tool${builderOpen ? ' active' : ''}`}
+                    onClick={() => setBuilderOpen((prev) => !prev)}
+                    aria-expanded={builderOpen}
+                    aria-label="Open writing brief"
+                  >
+                    <LayoutTemplate size={16} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`wr-tool${isSplitView ? ' active' : ''}`}
+                    onClick={() => setIsSplitView(!isSplitView)}
+                    aria-label="Toggle Split View"
+                    title="Split View Comparison"
+                  >
+                    <Columns size={16} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`wr-tool${showGrammar ? ' active' : ''}`}
+                    onClick={() => setShowGrammar(!showGrammar)}
+                    aria-label="Toggle Grammar Scan"
+                    title="Grammar Scan"
+                  >
+                    <CheckCheck size={16} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`wr-tool${isFocusMode ? ' active' : ''}`}
+                    onClick={() => setIsFocusMode(!isFocusMode)}
+                    aria-label="Toggle Focus Mode"
+                    title="Focus Mode"
+                  >
+                    <Maximize2 size={16} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`wr-tool${emailChainOpen ? ' active' : ''}`}
+                    onClick={() => setEmailChainOpen(!emailChainOpen)}
+                    aria-label="Toggle Email Chain"
+                    title="Email Chain Optimizer"
+                  >
+                    <Link2 size={16} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-
-          {builderOpen && (
-            <div className="wr-builder">
-              <p className="wr-builder-head">Brief</p>
-              <input
-                className="wr-builder-input"
-                placeholder="Audience"
-                value={builderObj.audience}
-                onChange={(e) => setBuilderObj({ ...builderObj, audience: e.target.value })}
-              />
-              <input
-                className="wr-builder-input"
-                placeholder="Purpose"
-                value={builderObj.purpose}
-                onChange={(e) => setBuilderObj({ ...builderObj, purpose: e.target.value })}
-              />
-              <input
-                className="wr-builder-input"
-                placeholder="Key points, comma separated"
-                value={builderObj.points}
-                onChange={(e) => setBuilderObj({ ...builderObj, points: e.target.value })}
-              />
-              <button
-                type="button"
-                className="wr-builder-submit"
-                onClick={() => {
-                  const hasContent = builderObj.audience.trim() ||
-                                    builderObj.purpose.trim() ||
-                                    builderObj.points.trim()
-                  if (!hasContent) return
-                  const prompt = `Audience: ${builderObj.audience}\nPurpose: ${builderObj.purpose}\nPoints to cover:\n- ${builderObj.points.split(',').join('\n- ')}`
-                  setInput(prompt)
-                  setBuilderOpen(false)
-                  setBuilderObj({ audience: '', purpose: '', points: '' })
-                }}
-              >
-                Fill draft
-              </button>
-            </div>
-          )}
-
-          {/* Advanced Tools Panel */}
-          {showAdvancedTools && (
-            <div className="wr-adv-panel">
-              {(mode === 'email' || mode === 'whatsapp') && (
-                <select
-                  className="wr-lang-select"
-                  value={outputLang}
-                  onChange={(e) => setOutputLang(e.target.value as OutputLang)}
-                  aria-label="Translate output language"
-                >
-                  {OUTPUT_LANG_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              )}
-
-              {voiceSupported && (
-                <button
-                  type="button"
-                  className="wr-lang-pill"
-                  onClick={cycleVoiceLang}
-                  aria-label="Change voice input language"
-                >
-                  {VOICE_LANGS.find((lang) => lang.id === voiceLang)?.label ?? 'AUTO'}
-                </button>
-              )}
-
-              <button
-                type="button"
-                className={`wr-tool${!isMuted ? ' active' : ''}`}
-                onClick={toggleMute}
-                aria-label="Toggle haptics"
-                title="Mechanical haptics"
-              >
-                {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-              </button>
-              <div className="wr-depth-wrap">
-                <button type="button" className="wr-tool" aria-label="Rewrite depth">
-                  <Settings2 size={16} />
-                </button>
-                <div className="wr-depth-pop">
-                  <div className="wr-depth-head">
-                    <span>Depth</span>
-                    <strong className="wr-depth-val">
-                      {intensity === 1 ? 'Preserve' :
-                       intensity === 2 ? 'Light' :
-                       intensity === 3 ? 'Standard' :
-                       intensity === 4 ? 'Active' :
-                       'Full'}
-                    </strong>
-                  </div>
-                  <input
-                    type="range"
-                    className="wr-depth-slider"
-                    min="1"
-                    max="5"
-                    step="1"
-                    value={intensity}
-                    onChange={(e) => setIntensity(Number(e.target.value))}
-                    style={{ '--slider-pct': `${(intensity - 1) * 25}%` } as React.CSSProperties}
-                    aria-valuenow={intensity}
-                    aria-valuemin={1}
-                    aria-valuemax={5}
-                  />
-                </div>
-              </div>
-
-              <button 
-                className={`wr-tool${isTriageMode ? ' active' : ''}`}
-                aria-label="Inbox Triage Board"
-                title="Bulk Inbox Triage"
-                onClick={() => setIsTriageMode(!isTriageMode)}
-              >
-                <Layout size={16} />
-              </button>
-
-              <button 
-                className="wr-tool"
-                aria-label="Brand Voice DNA"
-                title="Train AI Voice"
-                onClick={() => setVoiceModalOpen(true)}
-              >
-                <Fingerprint size={16} />
-              </button>
-
-              <button
-                className="wr-tool muted"
-                aria-label="Paste or attach image (coming soon)"
-                title="Image input — coming soon"
-              >
-                <ImagePlus size={16} />
-              </button>
-
-              <button
-                type="button"
-                className={`wr-tool${builderOpen ? ' active' : ''}`}
-                onClick={() => setBuilderOpen((prev) => !prev)}
-                aria-expanded={builderOpen}
-                aria-label="Open writing brief"
-              >
-                <LayoutTemplate size={16} />
-              </button>
-            </div>
-          )}
-
-          {showShortcutTip && (
-            <button
-              className="wr-tip-toast"
-              onClick={() => {
-                setShowShortcutTip(false)
-                try { localStorage.setItem('wr:shortcut-tip', '1') } catch {}
-              }}
-              type="button"
-            >
-              Tip: press <kbd>T</kbd> to cycle tones · <kbd>1-4</kbd> switches modes
-              <span className="wr-tip-got-it">got it ×</span>
-            </button>
-          )}
         </div>
 
-        <TemplatesDrawer
-          open={templatesDrawerOpen}
-          templates={templates}
-          onClose={() => setTemplatesDrawerOpen(false)}
-          onUse={(template) => {
-            setInput(template.content.slice(0, CHAR_MAX))
-            setMode(template.mode)
-            setTone(template.tone)
-            void markUsed(template.id)
-            taRef.current?.focus()
-          }}
-          onDelete={(templateId) => { void deleteTemplate(templateId) }}
-          onRename={(templateId, nextName) => { void renameTemplate(templateId, nextName) }}
-        />
+        {builderOpen && (
+          <div className="wr-builder">
+            <p className="wr-builder-head">Brief</p>
+            <input
+              className="wr-builder-input"
+              placeholder="Audience"
+              value={builderObj.audience}
+              onChange={(e) => setBuilderObj({ ...builderObj, audience: e.target.value })}
+            />
+            <input
+              className="wr-builder-input"
+              placeholder="Purpose"
+              value={builderObj.purpose}
+              onChange={(e) => setBuilderObj({ ...builderObj, purpose: e.target.value })}
+            />
+            <input
+              className="wr-builder-input"
+              placeholder="Key points, comma separated"
+              value={builderObj.points}
+              onChange={(e) => setBuilderObj({ ...builderObj, points: e.target.value })}
+            />
+            <button
+              type="button"
+              className="wr-builder-submit"
+              onClick={() => {
+                const hasContent = builderObj.audience.trim() ||
+                  builderObj.purpose.trim() ||
+                  builderObj.points.trim()
+                if (!hasContent) return
+                const prompt = `Audience: ${builderObj.audience}\nPurpose: ${builderObj.purpose}\nPoints to cover:\n- ${builderObj.points.split(',').join('\n- ')}`
+                setInput(prompt)
+                setBuilderOpen(false)
+                setBuilderObj({ audience: '', purpose: '', points: '' })
+              }}
+            >
+              Fill draft
+            </button>
+          </div>
+        )}
+
+        <p className="wr-disclaimer">
+          WriteRight may make mistakes. Always review AI-generated text before sending.
+        </p>
+
+        {showShortcutTip && (
+          <button
+            className="wr-tip-toast"
+            onClick={() => {
+              setShowShortcutTip(false)
+              try { localStorage.setItem('wr:shortcut-tip', '1') } catch { }
+            }}
+            type="button"
+          >
+            Tip: press <kbd>T</kbd> to cycle tones · <kbd>1-4</kbd> switches modes
+            <span className="wr-tip-got-it">got it ×</span>
+          </button>
+        )}
+      </div>
+
+
 
       <ShortcutsModal open={showShortcutsModal} onClose={() => setShowShortcutsModal(false)} />
       <SaveTemplateModal
@@ -4175,16 +4217,48 @@ export default function WriteRightPage() {
         onClose={() => setSaveModalOpen(false)}
         onSave={(name) => { void saveTemplateFromModal(name) }}
       />
-      <ShareModal 
-        open={shareModalOpen} 
-        payload={sharePayload} 
-        onClose={() => setShareModalOpen(false)} 
+      <ShareModal
+        open={shareModalOpen}
+        payload={sharePayload}
+        onClose={() => setShareModalOpen(false)}
       />
 
       <BrandVoiceModal
         open={voiceModalOpen}
         onClose={() => setVoiceModalOpen(false)}
       />
+
+      <AnalyticsView isOpen={analyticsOpen} onClose={() => setAnalyticsOpen(false)} />
+      
+      <EmailChainView isOpen={emailChainOpen} onClose={() => setEmailChainOpen(false)} />
+
+      {splitSelection && splitSelection.rect && (
+        <div
+          className="wr-refine-pop"
+          style={{
+            position: 'absolute',
+            zIndex: 100,
+            top: splitSelection.rect.top - 50 + window.scrollY,
+            left: splitSelection.rect.left + (splitSelection.rect.width / 2) - 130
+          }}
+        >
+          <input
+            className="wr-refine-input"
+            placeholder="How should I change this?..."
+            value={splitRefinePrompt}
+            onChange={(e) => setSplitRefinePrompt(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => e.key === 'Enter' && handleSplitRefine()}
+          />
+          <button
+            className="wr-refine-submit"
+            disabled={isSplitRefining || !splitRefinePrompt.trim()}
+            onClick={handleSplitRefine}
+          >
+            {isSplitRefining ? '...' : 'Refine'}
+          </button>
+        </div>
+      )}
 
       <div className="wr-toasts">
         {toasts.map((t) => (

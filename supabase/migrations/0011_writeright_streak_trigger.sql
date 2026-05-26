@@ -3,7 +3,8 @@
 -- Replaces the Python-side asyncio.create_task() which could be silently lost.
 
 CREATE OR REPLACE FUNCTION fn_update_writeright_streak()
-RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public AS $$
 DECLARE
   v_today DATE := CURRENT_DATE;
   v_row   RECORD;

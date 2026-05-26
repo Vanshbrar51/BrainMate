@@ -3,18 +3,63 @@ import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
 import { withSpan, addSpanAttributes } from "@/lib/tracing";
-import OpenAI from "openai";
 import { createHash } from "crypto";
 
-const getOpenAI = () => {
-  if (!process.env.OPENAI_API_KEY) {
-    if (process.env.NODE_ENV === "production" && process.env.NEXT_PHASE !== "phase-production-build") {
-       throw new Error("Missing credentials. Please pass an apiKey or set OPENAI_API_KEY.");
-    }
-    return new OpenAI({ apiKey: "dummy-key-for-build" });
+// ── Gemini-compatible chat-completions endpoint (same API shape as OpenAI) ──
+const GEMINI_BASE_URL =
+  "https://generativelanguage.googleapis.com/v1beta/openai";
+const GEMINI_MODEL = "gemini-2.0-flash";
+
+async function callGemini(
+  systemPrompt: string,
+): Promise<{ alternatives?: unknown; explanation?: unknown }> {
+  const apiKey = process.env.GOOGLE_AI_STUDIO_API_KEY;
+  if (!apiKey) {
+    throw createApiError(
+      "INTERNAL_ERROR",
+      "Missing GOOGLE_AI_STUDIO_API_KEY",
+      500,
+    );
   }
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-};
+
+  const response = await fetch(`${GEMINI_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: GEMINI_MODEL,
+      messages: [{ role: "user", content: systemPrompt }],
+      response_format: { type: "json_object" },
+      max_tokens: 400,
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = (await response.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new Error(
+      err?.error?.message ?? `Gemini API error ${response.status}`,
+    );
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = data.choices?.[0]?.message?.content?.trim() ?? "{}";
+
+  try {
+    return JSON.parse(content) as {
+      alternatives?: unknown;
+      explanation?: unknown;
+    };
+  } catch {
+    return { alternatives: [content], explanation: "Suggested replacement." };
+  }
+}
 
 function cacheKey(selection: string, instruction: string): string {
   return ns(
@@ -83,9 +128,24 @@ export async function POST(req: Request) {
         tone?: unknown;
       };
 
-      const sourceText = typeof text === "string" ? text : typeof fullText === "string" ? fullText : "";
-      const selected = typeof selection === "string" ? selection : typeof selectedText === "string" ? selectedText : "";
-      const userInstruction = typeof instruction === "string" ? instruction : typeof prompt === "string" ? prompt : "";
+      const sourceText =
+        typeof text === "string"
+          ? text
+          : typeof fullText === "string"
+            ? fullText
+            : "";
+      const selected =
+        typeof selection === "string"
+          ? selection
+          : typeof selectedText === "string"
+            ? selectedText
+            : "";
+      const userInstruction =
+        typeof instruction === "string"
+          ? instruction
+          : typeof prompt === "string"
+            ? prompt
+            : "";
 
       if (!sourceText || !selected || !userInstruction) {
         throw createApiError("VALIDATION_ERROR", "Missing required fields", 400);
@@ -107,17 +167,13 @@ export async function POST(req: Request) {
       const key = cacheKey(selected, userInstruction);
       if (!isCircuitOpen()) {
         const cached = await getRedisPool().get(key).catch(() => null);
-        if (cached) return Response.json(JSON.parse(cached) as Record<string, unknown>);
+        if (cached)
+          return Response.json(
+            JSON.parse(cached) as Record<string, unknown>,
+          );
       }
 
-      const openai = getOpenAI();
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are a precise writing assistant. Your task is to rewrite a SPECIFIC segment of a larger text based on a user's instruction.
+      const systemPrompt = `You are a precise writing assistant. Your task is to rewrite a SPECIFIC segment of a larger text based on a user's instruction.
             
 CONTEXT:
 Full text: "${sourceText}"
@@ -132,32 +188,28 @@ RULES:
 1. Return JSON with alternatives (3 strings) and explanation (one short sentence).
 2. Ensure the rewritten segment fits perfectly back into the original text's grammar and flow.
 3. Preserve the core meaning unless the instruction explicitly asks to change it.
-4. Keep the length similar unless the instruction asks otherwise.`
-          }
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 100,
-        temperature: 0.7,
-      });
+4. Keep the length similar unless the instruction asks otherwise.`;
 
-      const content = completion.choices[0].message.content?.trim() || "{}";
-      let parsed: { alternatives?: unknown; explanation?: unknown } = {};
-      try {
-        parsed = JSON.parse(content) as { alternatives?: unknown; explanation?: unknown };
-      } catch {
-        parsed = { alternatives: [content], explanation: "Suggested replacement." };
-      }
+      const parsed = await callGemini(systemPrompt);
+
       const alternatives = Array.isArray(parsed.alternatives)
-        ? parsed.alternatives.filter((item): item is string => typeof item === "string").slice(0, 3)
+        ? parsed.alternatives
+            .filter((item): item is string => typeof item === "string")
+            .slice(0, 3)
         : [selected];
       const result = {
         alternatives,
-        explanation: typeof parsed.explanation === "string" ? parsed.explanation : "Suggested replacement.",
+        explanation:
+          typeof parsed.explanation === "string"
+            ? parsed.explanation
+            : "Suggested replacement.",
         refinedText: alternatives[0] ?? selected,
       };
 
       if (!isCircuitOpen()) {
-        await getRedisPool().setex(key, 600, JSON.stringify(result)).catch(() => undefined);
+        await getRedisPool()
+          .setex(key, 600, JSON.stringify(result))
+          .catch(() => undefined);
       }
 
       return Response.json(result);

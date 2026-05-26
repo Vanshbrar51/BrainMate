@@ -365,8 +365,29 @@ impl RefreshTokenStore {
                     ApiError::service_unavailable(format!("refresh db lookup failed: {e}"))
                 })?
                 else {
-                    // Old token not in DB → replay or already cleaned up
-                    return Ok(RotationStatus::ReplayDetected);
+                // Old token not in DB — token was already rotated, purged, or is
+                // being replayed. Cascade-revoke all active tokens for this user
+                // to invalidate the compromised family (RFC 6749 §10.4).
+                // We use old_record from the Redis pre-read if available;
+                // if Redis was also a miss, we cannot identify the user, so
+                // skip the cascade (attacker has no valid session to abuse).
+                if old_record.user_id.is_empty() {
+                    tracing::warn!(
+                        old_hash = %old_hash,
+                        "replay detected: user_id unknown (Redis+DB miss), skipping cascade"
+                    );
+                } else if let Err(e) = self.revoke_device_family(&old_record.user_id, db).await {
+                    tracing::warn!(
+                        user_id = %old_record.user_id,
+                        "replay cascade-revoke failed (non-fatal): {e}"
+                    );
+                } else {
+                    tracing::warn!(
+                        user_id = %old_record.user_id,
+                        "replay detected: cascaded revocation of all tokens for user family"
+                    );
+                }
+                return Ok(RotationStatus::ReplayDetected);
                 };
 
                 RefreshTokenRecord {
@@ -410,7 +431,24 @@ impl RefreshTokenStore {
             })?;
 
         let Some(new_record_from_db) = new_db_record else {
-            // DB UPDATE affected 0 rows → token already revoked.
+            // DB UPDATE affected 0 rows → token already revoked. This is the
+            // authoritative replay detection gate. Cascade-revoke the entire
+            // device family per RFC 6749 §10.4.
+            if let Err(e) = self
+                .revoke_device_family(&old_record.user_id, old_hash, db)
+                .await
+            {
+                tracing::warn!(
+                    user_id = %old_record.user_id,
+                    "replay detected: cascade device-family revocation failed (non-fatal): {e}"
+                );
+            } else {
+                tracing::warn!(
+                    user_id = %old_record.user_id,
+                    old_hash = %old_hash,
+                    "replay detected: cascaded revocation of all tokens for user+device family"
+                );
+            }
             return Ok(RotationStatus::ReplayDetected);
         };
 
@@ -572,6 +610,30 @@ impl RefreshTokenStore {
         }
 
         Ok(())
+    }
+
+    /// Cascade-revoke ALL active refresh tokens for a user on replay detection.
+    ///
+    /// Per RFC 6749 §10.4, when a replay is detected, the authorization server
+    /// MUST revoke the entire token family to prevent the attacker from
+    /// continuing to use any tokens derived from the compromised chain.
+    ///
+    /// This is warn-only at the call site — a revocation failure must never
+    /// hide the replay detection response from the client.
+    async fn revoke_device_family(
+        &self,
+        user_id: &str,
+        db: &DbClient,
+    ) -> Result<(), ApiError> {
+        if user_id.is_empty() {
+            return Ok(()); // Cannot cascade without a user identity.
+        }
+        db.revoke_all_refresh_tokens_for_device(user_id)
+            .await
+            .map(|_| ())
+            .map_err(|e| {
+                ApiError::service_unavailable(format!("cascade revocation failed: {e}"))
+            })
     }
 }
 

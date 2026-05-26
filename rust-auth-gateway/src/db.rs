@@ -51,6 +51,32 @@ pub struct DbRefreshToken {
     pub rotated_to: Option<String>,
 }
 
+/// Maps to gmail_connections (migration 0023).
+/// Contains encrypted token blobs — never decrypted here.
+#[derive(Debug, Clone, FromRow)]
+pub struct DbGmailConnection {
+    pub id:               uuid::Uuid,
+    pub clerk_user_id:    String,
+    pub gmail_email:      String,
+    /// AES-256-GCM encrypted. Only decrypted inside gmail.rs.
+    pub access_token_enc: String,
+    /// AES-256-GCM encrypted. Only decrypted inside gmail.rs.
+    pub refresh_token_enc: String,
+    pub token_expiry:     chrono::DateTime<chrono::Utc>,
+    pub scope:            String,
+    pub is_active:        bool,
+    pub connected_at:     chrono::DateTime<chrono::Utc>,
+    pub last_synced_at:   Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Safe public view — zero token data. Returned by status endpoints.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GmailConnectionStatus {
+    pub gmail_email:    String,
+    pub connected_at:   chrono::DateTime<chrono::Utc>,
+    pub last_synced_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 /// Result of a checked blacklist lookup — returns both the existence flag
 /// and the expiry in a single round-trip for efficient TTL-based rehydration.
 #[derive(Debug, Clone)]
@@ -549,6 +575,194 @@ impl DbClient {
         .record(start.elapsed().as_secs_f64());
         metrics::counter!("auth_db_writes_total", "store" => "refresh").increment(1);
 
+        Ok(())
+    }
+
+    /// Revoke ALL active refresh tokens for a given user_id (token family cascade).
+    ///
+    /// Called when a replay attack is detected per RFC 6749 §10.4: the entire
+    /// token family must be invalidated to prevent an attacker from continuing
+    /// to use any tokens derived from the compromised family.
+    ///
+    /// Single statement — safe to call directly on `&self.pool`.
+    #[instrument(
+        name = "db.refresh.revoke_device_family",
+        skip(self),
+        fields(user_id = %user_id)
+    )]
+    pub async fn revoke_all_refresh_tokens_for_device(
+        &self,
+        user_id: &str,
+    ) -> Result<u64, sqlx::Error> {
+        let start = Instant::now();
+
+        let result = sqlx::query(
+            r#"
+            UPDATE auth_refresh_tokens
+            SET    revoked    = TRUE,
+                   updated_at = NOW()
+            WHERE  user_id  = $1
+              AND  revoked  = FALSE
+            "#,
+        )
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+
+        let rows_affected = result.rows_affected();
+
+        metrics::histogram!(
+            "auth_db_query_duration_seconds",
+            "operation" => "revoke_device_family"
+        )
+        .record(start.elapsed().as_secs_f64());
+        metrics::counter!(
+            "auth_db_writes_total",
+            "store" => "refresh",
+            "reason" => "replay_cascade"
+        )
+        .increment(rows_affected);
+
+        Ok(rows_affected)
+    }
+
+    /// Full row including encrypted blobs. Only called from gmail.rs.
+    #[instrument(skip(self), fields(db.operation = "get_active_gmail_connection"))]
+    pub async fn get_active_gmail_connection(
+        &self,
+        clerk_user_id: &str,
+    ) -> Result<Option<DbGmailConnection>, sqlx::Error> {
+        sqlx::query_as::<_, DbGmailConnection>(
+            r#"SELECT id, clerk_user_id, gmail_email,
+                      access_token  AS access_token_enc,
+                      refresh_token AS refresh_token_enc,
+                      token_expiry, scope, is_active,
+                      connected_at, last_synced_at
+               FROM gmail_connections
+               WHERE clerk_user_id = $1 AND is_active = true
+               ORDER BY connected_at DESC LIMIT 1"#,
+        )
+        .bind(clerk_user_id)
+        .fetch_optional(&self.pool)
+        .await
+    }
+
+    /// Safe metadata only — no token blobs. Used by status handler.
+    #[instrument(skip(self), fields(db.operation = "get_gmail_connection_status"))]
+    pub async fn get_gmail_connection_status(
+        &self,
+        clerk_user_id: &str,
+    ) -> Result<Option<GmailConnectionStatus>, sqlx::Error> {
+        let row = sqlx::query_as::<_, (String, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)>(
+            r#"SELECT gmail_email, connected_at, last_synced_at
+               FROM gmail_connections
+               WHERE clerk_user_id = $1 AND is_active = true
+               ORDER BY connected_at DESC LIMIT 1"#,
+        )
+        .bind(clerk_user_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|(email, connected_at, last_synced_at)| GmailConnectionStatus {
+            gmail_email: email,
+            connected_at,
+            last_synced_at,
+        }))
+    }
+
+    /// Upserts connection. Caller MUST pass pre-encrypted token blobs.
+    #[instrument(skip(self, access_token_enc, refresh_token_enc),
+                 fields(db.operation = "upsert_gmail_connection"))]
+    pub async fn upsert_gmail_connection(
+        &self,
+        clerk_user_id:    &str,
+        gmail_email:      &str,
+        access_token_enc: &str,
+        refresh_token_enc: &str,
+        token_expiry:     chrono::DateTime<chrono::Utc>,
+        scope:            &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO gmail_connections
+                 (clerk_user_id, gmail_email, access_token, refresh_token,
+                  token_expiry, scope, is_active, connected_at)
+               VALUES ($1,$2,$3,$4,$5,$6,true,now())
+               ON CONFLICT (clerk_user_id, gmail_email) DO UPDATE SET
+                 access_token  = EXCLUDED.access_token,
+                 refresh_token = EXCLUDED.refresh_token,
+                 token_expiry  = EXCLUDED.token_expiry,
+                 scope         = EXCLUDED.scope,
+                 is_active     = true,
+                 updated_at    = now()"#,
+        )
+        .bind(clerk_user_id).bind(gmail_email)
+        .bind(access_token_enc).bind(refresh_token_enc)
+        .bind(token_expiry).bind(scope)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Updates only the access token after a refresh. Refresh token unchanged.
+    #[instrument(skip(self, new_access_token_enc),
+                 fields(db.operation = "update_gmail_access_token"))]
+    pub async fn update_gmail_access_token(
+        &self,
+        clerk_user_id:       &str,
+        new_access_token_enc: &str,
+        new_expiry:          chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE gmail_connections SET
+                 access_token = $1, token_expiry = $2, updated_at = now()
+               WHERE clerk_user_id = $3 AND is_active = true"#,
+        )
+        .bind(new_access_token_enc).bind(new_expiry).bind(clerk_user_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Soft-deactivates all active connections for a user.
+    #[instrument(skip(self), fields(db.operation = "deactivate_gmail_connection"))]
+    pub async fn deactivate_gmail_connection(
+        &self,
+        clerk_user_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE gmail_connections SET is_active = false, updated_at = now()
+             WHERE clerk_user_id = $1 AND is_active = true",
+        )
+        .bind(clerk_user_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Upserts the extensible mail_integrations row (safe metadata only).
+    #[instrument(skip(self), fields(db.operation = "upsert_mail_integration"))]
+    pub async fn upsert_mail_integration(
+        &self,
+        clerk_user_id: &str,
+        provider:      &str,
+        email_address: &str,
+        display_name:  Option<&str>,
+        avatar_url:    Option<&str>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"INSERT INTO mail_integrations
+                 (clerk_user_id, provider, email_address, display_name, avatar_url, is_active)
+               VALUES ($1,$2,$3,$4,$5,true)
+               ON CONFLICT (clerk_user_id, provider, email_address) DO UPDATE SET
+                 display_name = COALESCE(EXCLUDED.display_name, mail_integrations.display_name),
+                 avatar_url   = COALESCE(EXCLUDED.avatar_url,   mail_integrations.avatar_url),
+                 is_active    = true,
+                 updated_at   = now()"#,
+        )
+        .bind(clerk_user_id).bind(provider).bind(email_address)
+        .bind(display_name).bind(avatar_url)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 

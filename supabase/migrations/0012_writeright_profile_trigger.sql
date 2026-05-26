@@ -4,7 +4,8 @@
 -- This trigger runs AFTER the usage row is committed, so it never blocks job completion.
 
 CREATE OR REPLACE FUNCTION fn_update_writeright_profile()
-RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public AS $$
 DECLARE
   v_count    INT;
   v_mistakes TEXT[];
@@ -13,21 +14,27 @@ BEGIN
   -- Total usage count for this user
   SELECT COUNT(*) INTO v_count FROM writeright_usage WHERE user_id = NEW.user_id;
 
-  -- Collect up to 50 recent mistakes from assistant messages
-  SELECT ARRAY_AGG(DISTINCT mistake) INTO v_mistakes
-  FROM (
-    SELECT jsonb_array_elements_text(
-      (content::jsonb -> 'teaching' -> 'mistakes')
-    ) AS mistake
-    FROM writeright_messages
-    WHERE user_id = NEW.user_id
-      AND role = 'assistant'
-      AND (content::jsonb -> 'teaching' -> 'mistakes') IS NOT NULL
-    ORDER BY created_at DESC
-    LIMIT 50
-  ) sub
-  WHERE mistake IS NOT NULL AND mistake <> ''
-  LIMIT 20;
+  -- Collect up to 50 recent mistakes from assistant messages.
+  -- content may be plain text (error/fallback) or JSON; gracefully degrade on cast failure.
+  BEGIN
+    SELECT ARRAY_AGG(DISTINCT mistake) INTO v_mistakes
+    FROM (
+      SELECT jsonb_array_elements_text(
+        (content::jsonb -> 'teaching' -> 'mistakes')
+      ) AS mistake
+      FROM writeright_messages
+      WHERE user_id = NEW.user_id
+        AND role = 'assistant'
+        AND (content::jsonb -> 'teaching' -> 'mistakes') IS NOT NULL
+      ORDER BY created_at DESC
+      LIMIT 50
+    ) sub
+    WHERE mistake IS NOT NULL AND mistake <> ''
+    LIMIT 20;
+  EXCEPTION WHEN OTHERS THEN
+    -- content was plain text or malformed JSON — skip mistake extraction
+    v_mistakes := '{}';
+  END;
 
   -- Upsert the profile row
   INSERT INTO writeright_writing_profiles

@@ -381,6 +381,32 @@ class ModelRouter:
         raise ModelError("Exhausted all streaming retries")
 
     # F-BE-13: Anthropic fallback provider
+
+    @staticmethod
+    def _normalize_messages_for_anthropic(
+        messages: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        """Merge consecutive same-role messages for Anthropic compatibility.
+
+        The Anthropic Messages API requires strictly alternating user/assistant
+        turns. If the caller supplies two consecutive 'user' messages (or two
+        consecutive 'assistant' messages), the API returns HTTP 400. This helper
+        merges adjacent same-role messages by concatenating their content with a
+        double newline so the alternating-turn contract is preserved without
+        losing any content.
+        """
+        normalized: list[dict[str, str]] = []
+        for msg in messages:
+            if normalized and normalized[-1]["role"] == msg["role"]:
+                # Merge with the previous message of the same role
+                normalized[-1] = {
+                    "role": msg["role"],
+                    "content": normalized[-1]["content"] + "\n\n" + msg["content"],
+                }
+            else:
+                normalized.append({"role": msg["role"], "content": msg["content"]})
+        return normalized
+
     async def _route_anthropic(
         self,
         task_type: str,
@@ -394,12 +420,16 @@ class ModelRouter:
 
         # Anthropic requires system message to be separated from messages
         system_content = ""
-        filtered_messages: list[dict[str, str]] = []
+        raw_messages: list[dict[str, str]] = []
         for msg in messages:
             if msg.get("role") == "system":
                 system_content = msg.get("content", "")
             else:
-                filtered_messages.append(msg)
+                raw_messages.append(msg)
+
+        # BUG-09 FIX: Merge consecutive same-role messages before sending to
+        # Anthropic — the API rejects non-alternating turn sequences with 400.
+        filtered_messages = self._normalize_messages_for_anthropic(raw_messages)
 
         headers = {
             "x-api-key": get_settings().anthropic_api_key,

@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { GET as getQuota, TIER_LIMITS } from "@/app/api/writeright/quota/route";
 import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
+import { getGmailConnection, fetchRecentEmails } from "@/lib/gmail-service";
 
 import {
   enqueueWriteRightJob,
@@ -442,13 +443,40 @@ export async function POST(req: Request) {
       // 10. Inject trace context for distributed tracing
       const traceHeaders = injectTraceContext(new Headers());
 
+      let enqueuedContent = text;
+      const hasGmailRef = /gmail|email|mail|inbox/i.test(text);
+      if (hasGmailRef) {
+        try {
+          const connection = await getGmailConnection(userId);
+          if (connection) {
+            const recent = await fetchRecentEmails(userId, { maxResults: 5 });
+            if (recent && recent.emails && recent.emails.length > 0) {
+              const formattedEmails = recent.emails
+                .map((email, idx) => {
+                  return `Email ${idx + 1}:
+Sender: ${email.sender_name} <${email.sender_email}>
+Subject: ${email.subject}
+Date: ${email.timestamp}
+Snippet: ${email.snippet}
+Content: ${email.body_preview}
+---`;
+                })
+                .join("\n");
+              enqueuedContent = `User's Recent Gmail Emails (for reference context):\n${formattedEmails}\n\n${text}`;
+            }
+          }
+        } catch (err) {
+          console.error("[api.writeright.message] Failed to fetch Gmail context:", err);
+        }
+      }
+
       // 11. Enqueue job to Redis ZSET
       const jobPayload: WritingJobPayload = {
         id: job.id,
         chatId,
         userId,
         messageId: message.id,
-        content: text,
+        content: enqueuedContent,
         tone,
         mode,
         output_language: outputLanguage,

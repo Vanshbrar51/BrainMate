@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
@@ -84,6 +85,38 @@ export function DashboardSidebar() {
   const fullName = user?.fullName ?? 'Alex Researcher'
   const initials = user?.firstName?.[0] ?? fullName[0] ?? 'A'
 
+  const [visibleModules, setVisibleModules] = useState<Record<string, boolean>>({
+    DevHelper: true,
+    StudyMate: true,
+    WriteRight: true,
+    InterviewPro: true,
+    ContentFlow: true,
+  })
+  const [sidebarStyle, setSidebarStyle] = useState<'spacious' | 'compact'>('spacious')
+
+  useEffect(() => {
+    const loadConfig = () => {
+      try {
+        const modules = localStorage.getItem('visible_modules')
+        if (modules) {
+          setVisibleModules(JSON.parse(modules))
+        }
+        const style = localStorage.getItem('sidebar_style') as 'spacious' | 'compact'
+        if (style) {
+          setSidebarStyle(style)
+        }
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    loadConfig()
+
+    window.addEventListener('sidebar-config-changed', loadConfig)
+    return () => {
+      window.removeEventListener('sidebar-config-changed', loadConfig)
+    }
+  }, [])
+
   return (
     <aside className="hidden h-screen w-[250px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-subtle)] transition-colors duration-300 lg:flex">
       <div className="border-b border-[var(--border)] px-5 py-4">
@@ -106,19 +139,25 @@ export function DashboardSidebar() {
         </div>
 
         <div className="space-y-0.5 px-1">
-          {MODULE_ITEMS.map((item) => {
+          {MODULE_ITEMS.filter((item) => visibleModules[item.label] !== false).map((item) => {
             const active = pathname.startsWith(item.href)
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex h-9 items-center gap-3 rounded-xl px-3 text-sm text-[var(--text-2)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--text-1)]',
+                  'flex items-center text-[var(--text-2)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--text-1)]',
+                  sidebarStyle === 'compact'
+                    ? 'h-7 gap-2.5 rounded-lg px-2.5 text-xs'
+                    : 'h-9 gap-3 rounded-xl px-3 text-sm',
                   active && 'bg-[var(--surface)] text-[var(--text-1)] shadow-[var(--shadow-xs)]'
                 )}
               >
                 <span
-                  className="size-1.5 rounded-full"
+                  className={cn(
+                    'rounded-full',
+                    sidebarStyle === 'compact' ? 'size-1' : 'size-1.5'
+                  )}
                   style={{ background: item.color }}
                 />
                 <span>{item.label}</span>

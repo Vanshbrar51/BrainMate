@@ -1,17 +1,11 @@
 // app/api/gmail/connect/route.ts
-// Initiates the Google OAuth flow for Gmail.
-// Generates a state token (CSRF protection) and redirects to Google.
+// Initiates the Google OAuth flow for Gmail via the Rust Gateway proxy.
 
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { createHash, randomBytes } from "crypto";
-import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
 import { generateAuthUrl } from "@/lib/gmail-service";
 import { withSpan, addSpanAttributes } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
-
-// State token TTL: 10 minutes
-const STATE_TTL_SECS = 600;
 
 export async function GET(req: Request) {
   return withErrorHandler(req, async () => {
@@ -21,29 +15,15 @@ export async function GET(req: Request) {
 
       addSpanAttributes({ "user.id": userId });
 
-      // Generate a random state token — binds the OAuth callback to this user
-      const rawState = randomBytes(32).toString("hex");
-      // Embed userId in state so callback can verify it
-      const statePayload = JSON.stringify({ userId, nonce: rawState });
-      const state = Buffer.from(statePayload).toString("base64url");
-      const stateHash = createHash("sha256").update(state).digest("hex");
-
-      // Store state in Redis for verification in the callback
-      if (!isCircuitOpen()) {
-        try {
-          await getRedisPool().setex(
-            ns("gmail", "oauth_state", stateHash),
-            STATE_TTL_SECS,
-            userId
-          );
-        } catch {
-          // If Redis is unavailable, encode userId in state itself (still secure)
+      try {
+        const authUrl = await generateAuthUrl(userId);
+        return NextResponse.json({ url: authUrl });
+      } catch (err) {
+        if (err instanceof Error && err.message === "Auth gateway offline") {
+          throw createApiError("GATEWAY_OFFLINE", "Authentication gateway is offline", 503);
         }
+        throw err;
       }
-
-      const authUrl = generateAuthUrl(state);
-
-      return NextResponse.json({ url: authUrl });
     });
   });
 }

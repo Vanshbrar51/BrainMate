@@ -145,3 +145,6 @@ By adhering to this structure, BrainMate AI maintains absolute consistency acros
 
 # Command executed:
 zip -r brainmate-ai.zip . -x "*/target/*" ".next/*" ".env*" "node_modules/*" "*/venv/*" "*/.pytest_cache/*" "*/__pycache__/*" ".git/*" ".DS_Store" "*/.DS_Store"
+
+agy --conversation=25fcd4a0-7556-4800-9dd9-45254f6fbbcf
+agy --conversation=6c25cc7c-2f68-4fbc-9c78-cd07b280a9be

@@ -53,6 +53,10 @@ tracer = trace.get_tracer(__name__)
 
 _model_router: ModelRouter | None = None
 
+# Module-level set to keep strong references to fire-and-forget background
+# tasks, preventing the garbage collector from destroying them mid-execution.
+_background_tasks: set[asyncio.Task] = set()
+
 
 def get_model_router() -> ModelRouter:
     """Get or create the ModelRouter singleton."""
@@ -287,7 +291,7 @@ def _parse_ai_response(
 
         logger.warning("JSON extraction failed, falling back to regex")
 
-        improved_match = re.search(r'"improved_text"\s*:\s*"((?:\\"|[^"])*?)"', cleaned)
+        improved_match = re.search(r'"improved_text"\s*:\s*"((?:\\"|[^"])*)', cleaned)
         if improved_match:
             try:
                 # Basic string unescaping fallback if standard loads aborts
@@ -830,9 +834,11 @@ async def process_job(
             words = result.improved_text.split()
             if len(words) > 0:
                 short_text = " ".join(words[:5]) + "..."
-                asyncio.create_task(
+                task = asyncio.create_task(
                     update_chat_title(job.chat_id, f"\U0001f4dd {short_text}")
                 )
+                _background_tasks.add(task)
+                task.add_done_callback(_background_tasks.discard)
 
         _trigger_title_gen()
 

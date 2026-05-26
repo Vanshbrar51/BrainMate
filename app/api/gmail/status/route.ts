@@ -16,21 +16,32 @@ export async function GET(req: Request) {
 
       addSpanAttributes({ "user.id": userId });
 
-      const connection = await getGmailConnection(userId);
+      try {
+        const connection = await getGmailConnection(userId);
 
-      if (!connection) {
-        return NextResponse.json({ connected: false, connection: null });
+        if (!connection) {
+          return NextResponse.json({ connected: false, connection: null });
+        }
+
+        // Return ONLY safe metadata — never tokens
+        return NextResponse.json({
+          connected: true,
+          connection: {
+            gmail_email: connection.gmail_email,
+            connected_at: connection.connected_at,
+            last_synced_at: connection.last_synced_at,
+          },
+        });
+      } catch (err) {
+        if (err instanceof Error && err.message === "Auth gateway offline") {
+          return NextResponse.json({
+            connected: false,
+            connection: null,
+            error: "Auth gateway offline",
+          });
+        }
+        throw err;
       }
-
-      // Return ONLY safe metadata — never tokens
-      return NextResponse.json({
-        connected: true,
-        connection: {
-          gmail_email: connection.gmail_email,
-          connected_at: connection.connected_at,
-          last_synced_at: connection.last_synced_at,
-        },
-      });
     });
   });
 }

@@ -24,7 +24,173 @@ use crate::{
     auth,
     config::Config,
     AppState,
+    ApiError,
 };
+
+#[derive(Debug, Deserialize)]
+pub struct GmailUrlRequest     { pub clerk_user_id: String }
+
+#[derive(Debug, Deserialize)]
+pub struct GmailCallbackRequest {
+    pub code:          String,
+    pub state:         String,
+    pub clerk_user_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GmailEmailsQuery {
+    #[serde(default = "default_gmail_max")] pub max_results: u8,
+    #[serde(default)]                       pub unread_only: bool,
+    #[serde(default = "default_gmail_label")] pub label:    String,
+    pub page_token: Option<String>,
+}
+fn default_gmail_max()   -> u8     { 20 }
+fn default_gmail_label() -> String { "INBOX".to_string() }
+
+#[derive(Debug, Deserialize)]
+pub struct GmailDisconnectRequest { pub clerk_user_id: String }
+
+async fn gmail_url(
+    State(state): State<AppState>,
+    Json(body): Json<GmailUrlRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    if !state.config.gmail_enabled() {
+        return Err(ApiError::service_unavailable("Gmail not configured"));
+    }
+    crate::gmail::generate_auth_url(&body.clerk_user_id, &state.config)
+        .map(|url| Json(serde_json::json!({ "url": url })))
+        .map_err(|e| {
+            tracing::error!(error = %e, "gmail_url failed");
+            ApiError::service_unavailable("Failed to generate auth URL")
+        })
+}
+
+async fn gmail_callback(
+    State(state): State<AppState>,
+    Json(body): Json<GmailCallbackRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    if !state.config.gmail_enabled() {
+        return Err(ApiError::service_unavailable("Gmail not configured"));
+    }
+    let hmac_key = state.config.gmail_state_hmac_key.as_deref()
+        .ok_or_else(|| ApiError::service_unavailable("GMAIL_STATE_HMAC_KEY not set"))?;
+
+    let state_uid = crate::gmail::verify_state_token(&body.state, hmac_key)
+        .map_err(|e| {
+            tracing::warn!(error = %e, "state token verification failed");
+            ApiError::bad_request("Invalid or expired state token")
+        })?;
+
+    if !crate::security_utils::constant_time_eq(&state_uid, &body.clerk_user_id) {
+        tracing::warn!("state user_id mismatch — possible CSRF");
+        return Err(ApiError::unauthorized("State user mismatch"));
+    }
+
+    let db = state.db.as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("DB unavailable"))?;
+
+    let http = build_http_client()?;
+    let result = crate::gmail::exchange_auth_code(&body.code, &state.config, &http)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "token exchange failed");
+            ApiError::service_unavailable("Token exchange failed")
+        })?;
+
+    db.upsert_gmail_connection(
+        &body.clerk_user_id, &result.gmail_email,
+        &result.access_token_enc, &result.refresh_token_enc,
+        result.expiry, "https://www.googleapis.com/auth/gmail.readonly",
+    ).await.map_err(|e| {
+        tracing::error!(error = %e, "upsert_gmail_connection failed");
+        ApiError::service_unavailable("Failed to store connection")
+    })?;
+
+    // Non-fatal — log only
+    if let Err(e) = db.upsert_mail_integration(
+        &body.clerk_user_id, "gmail", &result.gmail_email,
+        Some(&result.display_name), result.avatar_url.as_deref(),
+    ).await { tracing::warn!(error = %e, "upsert_mail_integration failed (non-fatal)"); }
+
+    Ok(Json(serde_json::json!({
+        "connected":   true,
+        "gmail_email": result.gmail_email,
+    })))
+}
+
+async fn gmail_status(
+    State(state): State<AppState>,
+    axum::extract::Path(uid): axum::extract::Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = state.db.as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("DB unavailable"))?;
+    match db.get_gmail_connection_status(&uid).await
+        .map_err(|e| { tracing::error!(error=%e,"gmail_status"); ApiError::service_unavailable("DB error") })? {
+        Some(c) => Ok(Json(serde_json::json!({
+            "connected": true,
+            "connection": { "gmail_email": c.gmail_email, "connected_at": c.connected_at, "last_synced_at": c.last_synced_at }
+        }))),
+        None => Ok(Json(serde_json::json!({ "connected": false, "connection": null }))),
+    }
+}
+
+async fn gmail_list_emails(
+    State(state): State<AppState>,
+    axum::extract::Path(uid): axum::extract::Path<String>,
+    Query(q): Query<GmailEmailsQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let db   = state.db.as_ref().ok_or_else(|| ApiError::service_unavailable("DB unavailable"))?;
+    let http = build_http_client()?;
+    crate::gmail::fetch_emails(
+        &uid, q.max_results.min(50), q.unread_only,
+        &q.label, q.page_token.as_deref(), db, &state.config, &http,
+    ).await
+    .map(|r| Json(serde_json::to_value(r).unwrap()))
+    .map_err(|e| {
+        let msg = e.to_string();
+        tracing::error!(error = %msg, user_id = %uid, "gmail_list_emails");
+        if msg.contains("No active Gmail connection") { ApiError::bad_request("Gmail not connected") }
+        else if msg.contains("reconnect")             { ApiError::unauthorized("Token expired") }
+        else                                          { ApiError::service_unavailable("Fetch failed") }
+    })
+}
+
+async fn gmail_get_email(
+    State(state): State<AppState>,
+    axum::extract::Path((uid, msg_id)): axum::extract::Path<(String, String)>,
+) -> Result<impl IntoResponse, ApiError> {
+    // Prevent path traversal
+    if msg_id.len() > 64 || msg_id.bytes().any(|b| b == b'/' || b == b'.') {
+        return Err(ApiError::bad_request("Invalid message ID"));
+    }
+    let db   = state.db.as_ref().ok_or_else(|| ApiError::service_unavailable("DB unavailable"))?;
+    let http = build_http_client()?;
+    crate::gmail::fetch_email_by_id(&uid, &msg_id, db, &state.config, &http)
+        .await
+        .map(|email| Json(serde_json::json!({ "email": email })))
+        .map_err(|e| {
+            tracing::error!(error = %e, "gmail_get_email");
+            ApiError::service_unavailable("Fetch failed")
+        })
+}
+
+async fn gmail_disconnect(
+    State(state): State<AppState>,
+    Json(body): Json<GmailDisconnectRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = state.db.as_ref().ok_or_else(|| ApiError::service_unavailable("DB unavailable"))?;
+    db.deactivate_gmail_connection(&body.clerk_user_id).await
+        .map_err(|e| { tracing::error!(error=%e,"gmail_disconnect"); ApiError::service_unavailable("Disconnect failed") })?;
+    Ok(Json(serde_json::json!({ "disconnected": true })))
+}
+
+fn build_http_client() -> Result<reqwest::Client, ApiError> {
+    reqwest::Client::builder()
+        .use_rustls_tls()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|_| ApiError::service_unavailable("HTTP client init failed"))
+}
 
 pub fn create_router(state: AppState) -> Router {
     let config = state.config.clone();
@@ -88,6 +254,12 @@ pub fn create_internal_router(state: AppState) -> Router {
         .route("/v1/auth/refresh/revoke", post(auth::revoke_refresh))
         .route("/v1/auth/otp/issue", post(auth::issue_otp))
         .route("/v1/auth/otp/verify", post(auth::verify_otp))
+        .route("/v1/gmail/url", post(gmail_url))
+        .route("/v1/gmail/callback", post(gmail_callback))
+        .route("/v1/gmail/status/{uid}", get(gmail_status))
+        .route("/v1/gmail/emails/{uid}", get(gmail_list_emails))
+        .route("/v1/gmail/emails/{uid}/{msg_id}", get(gmail_get_email))
+        .route("/v1/gmail/disconnect", post(gmail_disconnect))
         .route_layer(middleware::from_fn({
             let state = state.clone();
             move |request, next| {

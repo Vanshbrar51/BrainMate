@@ -3,6 +3,7 @@
 # Bypasses the job queue for ultra-fast, interactive text manipulation.
 # Uses StreamingResponse to provide immediate token-by-token feedback.
 
+import asyncio
 import logging
 from typing import AsyncGenerator
 
@@ -15,6 +16,10 @@ from app.services.ai_worker import get_model_router
 from app.config import get_settings
 
 logger = logging.getLogger("writeright.routers.morph")
+
+# Module-level set to hold strong references to streaming background tasks,
+# preventing the GC from destroying them while a stream is in progress.
+_background_tasks: set[asyncio.Task] = set()
 
 router = APIRouter(prefix="/morph", tags=["morph"])
 
@@ -65,7 +70,9 @@ async def morph_text(
             finally:
                 await queue.put(None)
 
-        asyncio.create_task(run_router())
+        task = asyncio.create_task(run_router())
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
         while True:
             chunk = await queue.get()

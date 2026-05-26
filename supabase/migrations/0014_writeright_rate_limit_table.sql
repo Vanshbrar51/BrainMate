@@ -18,7 +18,8 @@ CREATE POLICY wr_daily_usage_select ON writeright_daily_usage
 -- Auto-increment function called by message/route.ts
 CREATE OR REPLACE FUNCTION increment_wr_daily_usage(
   p_user_id text, p_chars int
-) RETURNS void AS $$
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public AS $$
 BEGIN
   INSERT INTO writeright_daily_usage (user_id, usage_date, request_count, char_count)
   VALUES (p_user_id, CURRENT_DATE, 1, p_chars)
@@ -26,4 +27,4 @@ BEGIN
     request_count = writeright_daily_usage.request_count + 1,
     char_count    = writeright_daily_usage.char_count + p_chars;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ ;

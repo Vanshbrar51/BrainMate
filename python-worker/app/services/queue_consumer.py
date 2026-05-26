@@ -64,6 +64,18 @@ redis.call('ZREM', key, items[1])
 return items[1]
 """
 
+# BUG-12 FIX: Atomic Lua script for lock renewal.
+# A plain GET + EXPIRE is a TOCTOU race: the lock could expire or be
+# acquired by another worker between the two calls. Evaluating a Lua
+# script on the Redis server makes the check-and-extend atomic.
+_EXTEND_LOCK_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('expire', KEYS[1], tonumber(ARGV[2]))
+else
+    return 0
+end
+"""
+
 
 # ---------------------------------------------------------------------------
 # Status Helpers
@@ -136,12 +148,14 @@ async def _extend_lock(
     lock_value: str,
     extension_secs: int = 60,
 ) -> bool:
-    """Extend lock TTL only if this worker still owns the lock."""
-    current = await redis_client.get(lock_key)
-    current_value = current.decode("utf-8") if isinstance(current, bytes) else current
-    if current_value != lock_value:
-        return False
-    result = await redis_client.expire(lock_key, extension_secs)
+    """Extend lock TTL only if this worker still owns the lock.
+
+    BUG-12 FIX: Uses an atomic Lua script to check ownership and extend
+    in one Redis round-trip, eliminating the GET + EXPIRE race condition.
+    """
+    result = await redis_client.eval(
+        _EXTEND_LOCK_SCRIPT, 1, lock_key, lock_value, str(extension_secs)
+    )
     return bool(result)
 
 
@@ -415,15 +429,6 @@ async def _handle_failure(
             },
         )
 
-        dead_letter_entry = {
-            **job.model_dump(),
-            "failed_at": time.time(),
-            "final_error": error[:500],
-        }
-        await redis_client.zadd(
-            DEAD_LETTER_KEY, {json.dumps(dead_letter_entry): time.time()}
-        )
-        await redis_client.expire(DEAD_LETTER_KEY, 7 * 24 * 3600)
 
         # Update Supabase
         try:

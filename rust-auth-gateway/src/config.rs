@@ -47,6 +47,14 @@ pub struct Config {
     pub db_url: Option<String>,
     /// Maximum connections in the sqlx PgPool. Default: 20.
     pub db_max_connections: u32,
+    // Gmail OAuth — all Google credentials live here, NEVER in Next.js
+    pub google_client_id:           Option<String>,
+    pub google_client_secret:       Option<String>,
+    pub google_redirect_uri:        Option<String>,
+    /// 32-byte key as 64-char hex. Generate: openssl rand -hex 32
+    pub gmail_token_encryption_key: Option<String>,
+    /// 16-byte HMAC key as 32-char hex. Generate: openssl rand -hex 16
+    pub gmail_state_hmac_key:       Option<String>,
 }
 
 impl Config {
@@ -188,6 +196,9 @@ impl Config {
             .or_else(|_| env::var("AUTH_REDIS_PRIMARY_URL"))
             .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
 
+        // Enforce Redis transport security at startup — not at first connection attempt.
+        validate_redis_url_security(&redis_primary_url)?;
+
         // Optional: leave unset to run in Redis-only mode.
         // Use Supabase's PgBouncer pooler URL (port 6543) in production.
         let db_url = optional("DATABASE_URL");
@@ -195,6 +206,31 @@ impl Config {
             .ok()
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(20_u32);
+
+        let google_client_id           = optional("GOOGLE_CLIENT_ID");
+        let google_client_secret       = optional("GOOGLE_CLIENT_SECRET");
+        let google_redirect_uri        = optional("GOOGLE_REDIRECT_URI");
+        let gmail_token_encryption_key = optional("GMAIL_TOKEN_ENCRYPTION_KEY");
+        let gmail_state_hmac_key       = optional("GMAIL_STATE_HMAC_KEY");
+
+        // Validate Gmail encryption key length at startup to prevent silent runtime panics.
+        // The AES-256-GCM key must be exactly 32 bytes, encoded as 64 hex characters.
+        if let Some(ref key_hex) = gmail_token_encryption_key {
+            let stripped = key_hex.trim();
+            if stripped.len() != 64 {
+                anyhow::bail!(
+                    "GMAIL_TOKEN_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes). \
+                     Got {} characters. Generate with: openssl rand -hex 32",
+                    stripped.len()
+                );
+            }
+            if hex::decode(stripped).is_err() {
+                anyhow::bail!(
+                    "GMAIL_TOKEN_ENCRYPTION_KEY contains invalid hex characters. \
+                     Generate with: openssl rand -hex 32"
+                );
+            }
+        }
 
         Ok(Self {
             bind_addr,
@@ -236,7 +272,32 @@ impl Config {
             otp_pepper,
             db_url,
             db_max_connections,
+            google_client_id,
+            google_client_secret,
+            google_redirect_uri,
+            gmail_token_encryption_key,
+            gmail_state_hmac_key,
         })
+    }
+
+    /// Returns true only when all five Gmail env vars are set.
+    pub fn gmail_enabled(&self) -> bool {
+        self.google_client_id.is_some()
+            && self.google_client_secret.is_some()
+            && self.google_redirect_uri.is_some()
+            && self.gmail_token_encryption_key.is_some()
+            && self.gmail_state_hmac_key.is_some()
+    }
+
+    /// Returns (client_id, client_secret, redirect_uri) or Err if any are missing.
+    pub fn require_gmail_credentials(&self) -> anyhow::Result<(&str, &str, &str)> {
+        let id  = self.google_client_id.as_deref()
+            .ok_or_else(|| anyhow::anyhow!("GOOGLE_CLIENT_ID required"))?;
+        let sec = self.google_client_secret.as_deref()
+            .ok_or_else(|| anyhow::anyhow!("GOOGLE_CLIENT_SECRET required"))?;
+        let uri = self.google_redirect_uri.as_deref()
+            .ok_or_else(|| anyhow::anyhow!("GOOGLE_REDIRECT_URI required"))?;
+        Ok((id, sec, uri))
     }
 }
 
@@ -282,6 +343,11 @@ impl Default for Config {
             otp_pepper: "test_pepper".to_string(),
             db_url: None,
             db_max_connections: 20,
+            google_client_id: None,
+            google_client_secret: None,
+            google_redirect_uri: None,
+            gmail_token_encryption_key: None,
+            gmail_state_hmac_key: None,
         }
     }
 }

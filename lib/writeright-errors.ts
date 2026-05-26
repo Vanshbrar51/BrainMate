@@ -39,7 +39,8 @@ export type ErrorCode =
   | "GMAIL_NOT_CONNECTED"
   | "GMAIL_TOKEN_EXPIRED"
   | "GMAIL_FETCH_FAILED"
-  | "GMAIL_QUOTA_EXCEEDED";
+  | "GMAIL_QUOTA_EXCEEDED"
+  | "GATEWAY_OFFLINE";
 
 // ── NEW: [BE-1] User-facing error copy table ──
 const USER_MESSAGES: Partial<Record<ErrorCode, string>> = {
@@ -71,6 +72,7 @@ const USER_MESSAGES: Partial<Record<ErrorCode, string>> = {
   GMAIL_TOKEN_EXPIRED: "Your Gmail connection expired. Please reconnect.",
   GMAIL_FETCH_FAILED: "Could not fetch emails. Please try again.",
   GMAIL_QUOTA_EXCEEDED: "Gmail API limit reached. Please wait a moment.",
+  GATEWAY_OFFLINE: "Authentication gateway is offline. Please make sure it is running.",
 };
 
 export class WriteRightError extends Error {

@@ -11,23 +11,59 @@ use brainmate_auth_gateway::{
     telemetry,
 };
 
+/// Pre-initialise: load secrets into the process environment **before** the
+/// Tokio runtime starts any worker threads. Calling `std::env::set_var` after
+/// a multi-threaded runtime is running is undefined behaviour in Rust because
+/// it mutates the global env block without synchronisation.
+///
+/// This function is intentionally synchronous and must complete before
+/// `#[tokio::main]` (or `tokio::runtime::Builder`) starts.
+fn pre_init_secrets() {
+    // Only attempt secret-manager warm-up when a non-env provider is configured.
+    let provider = std::env::var("SECRET_PROVIDER").unwrap_or_default();
+    if provider.is_empty() || provider == "env" {
+        return;
+    }
+
+    // Build a minimal single-threaded runtime just for the async secret fetch.
+    // We tear it down before the main multi-threaded runtime starts.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("failed to build pre-init runtime");
+
+    rt.block_on(async {
+        let secret_manager =
+            std::sync::Arc::new(brainmate_auth_gateway::secrets::SecretManager::new());
+        for secret_name in &["OTP_PEPPER", "REDIS_URL", "INTERNAL_API_TOKEN"] {
+            let value = secret_manager.get_secret(secret_name).await;
+            if !value.is_empty() {
+                // SAFETY: single-threaded runtime — no other threads are reading
+                // the environment at this point.
+                unsafe { std::env::set_var(secret_name, &value) };
+            }
+        }
+    });
+    // The pre-init runtime is fully shut down here; no threads remain alive.
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // ── Setup ──────────────────────────────────────────────────────────────
     dotenv::dotenv().ok();
+
+    // Load secrets into the process environment BEFORE the multi-threaded
+    // runtime spawns worker threads. set_var in a multi-threaded context is UB.
+    pre_init_secrets();
+
+    // Secrets must be in the environment before the multi-threaded runtime
+    // starts. `pre_init_secrets()` ran synchronously before this point.
     telemetry::init_tracing()?;
 
     install_crypto_provider()?;
 
-    // Initialize SecretManager and pre-warm config-critical secrets.
-    let secret_manager = Arc::new(brainmate_auth_gateway::secrets::SecretManager::new());
-    for secret_name in &["OTP_PEPPER", "REDIS_URL", "INTERNAL_API_TOKEN"] {
-        let value = secret_manager.get_secret(secret_name).await;
-        if !value.is_empty() {
-            // SAFETY: single-threaded at this point (before tokio::spawn).
-            std::env::set_var(secret_name, &value);
-        }
-    }
+    // Spawn background rotation checker after the main runtime is running.
+    let secret_manager = std::sync::Arc::new(brainmate_auth_gateway::secrets::SecretManager::new());
     secret_manager.clone().spawn_rotation_checker();
 
     let config = Arc::new(Config::from_env()?);

@@ -1,10 +1,10 @@
 'use client'
 
 // components/dashboard/writeright/GmailComponents.tsx
-// All Gmail UI components for the WriteRight page.
-// Uses --wr-* CSS tokens for visual consistency.
+// All Gmail UI components for the WriteRight page (enhanced version).
+// Fully supports Smart Compose, Thread Accordions, Scheduled Sends, Contact Card overlays, and Bulk Actions.
 
-import { useCallback, useState } from 'react'
+import React, { useCallback, useState, useEffect, useMemo } from 'react'
 import {
   Mail,
   MailOpen,
@@ -27,8 +27,17 @@ import {
   Volume2,
   AlignLeft,
   Reply,
+  Calendar,
+  Plus,
+  Trash2,
+  ChevronLeft,
+  Search,
+  UserCheck,
+  CheckCircle2
 } from 'lucide-react'
 import type { GmailEmailItem, GmailPanelState, GmailConnectionStatus } from '@/hooks/useGmailIntegration'
+import type { ScheduledSend, ContactIntel } from '@/types/writeright'
+import { classifyEmail, emailToAvatarColor, getInitials } from '@/lib/gmail-classifier'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,33 +75,53 @@ export function GmailConnectButton({
 }
 
 // ---------------------------------------------------------------------------
-// GmailConnectedBadge (toolbar indicator)
+// GmailConnectedBadge (toolbar indicator with unread count & pulse)
 // ---------------------------------------------------------------------------
 
 export function GmailConnectedBadge({
   email,
   onTogglePanel,
   panelOpen,
+  unreadCount,
 }: {
   email: string
   onTogglePanel: () => void
   panelOpen: boolean
+  unreadCount: number
 }) {
+  const [pulse, setPulse] = useState(false)
+  const prevCount = React.useRef(unreadCount)
+
+  // Trigger pulse effect when unreadCount increases
+  useEffect(() => {
+    if (unreadCount > prevCount.current) {
+      setPulse(true)
+      const timer = setTimeout(() => setPulse(false), 2000)
+      return () => clearTimeout(timer)
+    }
+    prevCount.current = unreadCount
+  }, [unreadCount])
+
   return (
     <button
       type="button"
-      className={`wr-gmail-badge${panelOpen ? ' active' : ''}`}
+      className={`wr-gmail-badge relative${panelOpen ? ' active' : ''}`}
       onClick={onTogglePanel}
-      aria-label={`Gmail connected: ${email}. ${panelOpen ? 'Close' : 'Open'} email panel`}
-      title={email}
+      aria-label={`Gmail connected: ${email}. ${unreadCount} unread. ${panelOpen ? 'Close' : 'Open'} email panel`}
+      title={`Connected: ${email} · ${unreadCount} unread`}
     >
       <MailOpen size={14} />
+      {unreadCount > 0 && (
+        <span className={`absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--wr-error)] text-[9px] font-bold text-white ${pulse ? 'animate-ping' : ''}`}>
+          {unreadCount > 9 ? '9+' : unreadCount}
+        </span>
+      )}
     </button>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Gmail Action Grid (shown in preview)
+// Gmail Action Grid
 // ---------------------------------------------------------------------------
 
 const GMAIL_ACTIONS: Array<{ action: GmailAction; label: string; icon: React.ReactNode }> = [
@@ -106,7 +135,7 @@ const GMAIL_ACTIONS: Array<{ action: GmailAction; label: string; icon: React.Rea
 ]
 
 // ---------------------------------------------------------------------------
-// GmailPanel (email list sidebar)
+// GmailPanel (with search, compose, checkbox selections, scheduled sends tab)
 // ---------------------------------------------------------------------------
 
 export function GmailPanel({
@@ -119,6 +148,18 @@ export function GmailPanel({
   onToggleUnread,
   onLoadMore,
   onDisconnect,
+  searchQuery,
+  setSearchQuery,
+  selectedEmails,
+  onToggleSelect,
+  unreadCount,
+  onOpenCompose,
+  scheduledSends,
+  onCancelScheduled,
+  onViewContact,
+  activeFilter,
+  setActiveFilter,
+  onFetchScheduled
 }: {
   panel: GmailPanelState
   connectionStatus: GmailConnectionStatus
@@ -129,27 +170,112 @@ export function GmailPanel({
   onToggleUnread: () => void
   onLoadMore: () => void
   onDisconnect: () => void
+  searchQuery: string
+  setSearchQuery: (query: string) => void
+  selectedEmails: Set<string>
+  onToggleSelect: (id: string) => void
+  unreadCount: number
+  onOpenCompose: () => void
+  scheduledSends: ScheduledSend[]
+  onCancelScheduled: (id: string) => void
+  onViewContact: (email: string) => void
+  activeFilter: 'INBOX' | 'SENT' | 'DRAFT' | 'SCHEDULED'
+  setActiveFilter: (filter: 'INBOX' | 'SENT' | 'DRAFT' | 'SCHEDULED') => void
+  onFetchScheduled: () => void
 }) {
   const [showDisconnect, setShowDisconnect] = useState(false)
 
-  const filterTabs: Array<{ key: 'INBOX' | 'SENT' | 'DRAFT'; label: string; icon: React.ReactNode }> = [
-    { key: 'INBOX', label: 'Inbox', icon: <Inbox size={13} /> },
-    { key: 'SENT', label: 'Sent', icon: <Send size={13} /> },
-    { key: 'DRAFT', label: 'Drafts', icon: <FileText size={13} /> },
-  ]
+  // Fetch scheduled when active tab switches to SCHEDULED
+  useEffect(() => {
+    if (activeFilter === 'SCHEDULED') {
+      onFetchScheduled()
+    }
+  }, [activeFilter, onFetchScheduled])
+
+  // Filter lists client-side
+  const filteredEmails = useMemo(() => {
+    if (!searchQuery.trim()) return panel.emails
+    const q = searchQuery.toLowerCase()
+    return panel.emails.filter(e =>
+      e.subject.toLowerCase().includes(q) ||
+      e.sender_name.toLowerCase().includes(q) ||
+      e.sender_email.toLowerCase().includes(q)
+    )
+  }, [panel.emails, searchQuery])
+
+  // Render SVGs for empty states
+  const renderEmptyState = () => {
+    if (activeFilter === 'INBOX') {
+      return (
+        <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center text-[var(--wr-text-3)]">
+          <svg className="w-12 h-12 stroke-current opacity-70" viewBox="0 0 24 24" fill="none" strokeWidth="1.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-[var(--wr-text-2)]">You're all caught up!</p>
+            <p className="text-xs">No emails left in your inbox</p>
+          </div>
+        </div>
+      )
+    }
+    if (activeFilter === 'SENT') {
+      return (
+        <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center text-[var(--wr-text-3)]">
+          <svg className="w-12 h-12 stroke-current opacity-70" viewBox="0 0 24 24" fill="none" strokeWidth="1.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-[var(--wr-text-2)]">No sent emails</p>
+            <p className="text-xs">Send correspondence to get started</p>
+          </div>
+        </div>
+      )
+    }
+    if (activeFilter === 'SCHEDULED') {
+      return (
+        <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center text-[var(--wr-text-3)]">
+          <svg className="w-12 h-12 stroke-current opacity-70" viewBox="0 0 24 24" fill="none" strokeWidth="1.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-[var(--wr-text-2)]">No scheduled emails</p>
+            <p className="text-xs">Defer emails to send them later</p>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center text-[var(--wr-text-3)]">
+        <svg className="w-12 h-12 stroke-current opacity-70" viewBox="0 0 24 24" fill="none" strokeWidth="1.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+        </svg>
+        <div>
+          <p className="text-sm font-semibold text-[var(--wr-text-2)]">No drafts</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`wr-gmail-panel${panel.isOpen ? ' open' : ''}`}>
       {/* Header */}
       <div className="wr-gmail-panel-header">
-        <div className="wr-gmail-panel-title-row">
-          <Mail size={16} />
-          <span className="wr-gmail-panel-title">Gmail</span>
-          {connectionStatus.connection && (
-            <span className="wr-gmail-panel-email">{connectionStatus.connection.gmail_email}</span>
-          )}
+        <div className="wr-gmail-panel-title-row flex items-center justify-between w-full pr-2">
+          <div className="flex items-center gap-2">
+            <Mail size={16} />
+            <span className="wr-gmail-panel-title">Gmail</span>
+            {connectionStatus.connection && (
+              <span className="wr-gmail-panel-email text-xs">{connectionStatus.connection.gmail_email}</span>
+            )}
+          </div>
+          <button 
+            onClick={onOpenCompose}
+            className="flex items-center gap-1 px-3 py-1 bg-[var(--wr-accent-soft)] hover:bg-[var(--wr-accent-hover)] hover:text-white text-[var(--wr-accent)] font-semibold text-xs rounded-full transition-all duration-150"
+          >
+            <Plus size={12} /> Compose
+          </button>
         </div>
-        <div className="wr-gmail-panel-actions">
+        <div className="wr-gmail-panel-actions mt-2 flex gap-1">
           <button
             type="button"
             className="wr-gmail-panel-btn"
@@ -170,87 +296,167 @@ export function GmailPanel({
         </div>
       </div>
 
-      {/* Filter tabs */}
-      <div className="wr-gmail-filters">
-        {filterTabs.map(tab => (
-          <button
-            key={tab.key}
-            type="button"
-            className={`wr-gmail-filter-tab${panel.filter === tab.key ? ' active' : ''}`}
-            onClick={() => onFilterChange(tab.key)}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
+      {/* Search Input within Panel */}
+      <div className="p-3 border-b border-[var(--wr-border-soft)]">
+        <div className="relative flex items-center">
+          <input
+            type="text"
+            placeholder="Search sender or subject..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full text-xs px-8 py-1.5 border border-[var(--wr-border)] bg-[var(--wr-surface-3)] rounded-md outline-none text-[var(--wr-text)]"
+          />
+          <Search size={12} className="absolute left-2.5 text-[var(--wr-text-3)]" />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="absolute right-2.5 text-[var(--wr-text-3)] text-[10px]">✕</button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="wr-gmail-filters flex overflow-x-auto gap-1 p-2 bg-[var(--wr-surface-2)]">
         <button
           type="button"
-          className={`wr-gmail-filter-tab wr-gmail-unread-toggle${panel.unreadOnly ? ' active' : ''}`}
-          onClick={onToggleUnread}
-          aria-label="Toggle unread only"
+          className={`wr-gmail-filter-tab text-xs px-2.5 py-1 rounded-md flex items-center gap-1.5 ${activeFilter === 'INBOX' ? 'active bg-[var(--wr-surface)] font-semibold text-[var(--wr-text)]' : 'text-[var(--wr-text-3)]'}`}
+          onClick={() => { setActiveFilter('INBOX'); onFilterChange('INBOX') }}
         >
-          <Filter size={12} />
+          <Inbox size={12} /> Inbox {unreadCount > 0 && <span className="text-[10px] bg-[var(--wr-error)] text-white px-1.5 py-0.5 rounded-full font-bold">{unreadCount}</span>}
+        </button>
+        <button
+          type="button"
+          className={`wr-gmail-filter-tab text-xs px-2.5 py-1 rounded-md flex items-center gap-1.5 ${activeFilter === 'SENT' ? 'active bg-[var(--wr-surface)] font-semibold text-[var(--wr-text)]' : 'text-[var(--wr-text-3)]'}`}
+          onClick={() => { setActiveFilter('SENT'); onFilterChange('SENT') }}
+        >
+          <Send size={12} /> Sent
+        </button>
+        <button
+          type="button"
+          className={`wr-gmail-filter-tab text-xs px-2.5 py-1 rounded-md flex items-center gap-1.5 ${activeFilter === 'DRAFT' ? 'active bg-[var(--wr-surface)] font-semibold text-[var(--wr-text)]' : 'text-[var(--wr-text-3)]'}`}
+          onClick={() => { setActiveFilter('DRAFT'); onFilterChange('DRAFT') }}
+        >
+          <FileText size={12} /> Drafts
+        </button>
+        <button
+          type="button"
+          className={`wr-gmail-filter-tab text-xs px-2.5 py-1 rounded-md flex items-center gap-1.5 ${activeFilter === 'SCHEDULED' ? 'active bg-[var(--wr-surface)] font-semibold text-[var(--wr-text)]' : 'text-[var(--wr-text-3)]'}`}
+          onClick={() => setActiveFilter('SCHEDULED')}
+        >
+          <Clock size={12} /> Scheduled
         </button>
       </div>
 
-      {/* Email list */}
-      <div className="wr-gmail-list">
-        {panel.error && (
-          <div className="wr-gmail-error">
-            <span>{panel.error}</span>
-            <button type="button" onClick={onRefresh} className="wr-gmail-error-retry">Retry</button>
-          </div>
-        )}
-
-        {panel.isLoading && panel.emails.length === 0 && (
-          <div className="wr-gmail-skeletons">
-            {[0, 1, 2, 3, 4].map(i => (
-              <div key={i} className="wr-gmail-skeleton-row">
-                <div className="wr-gmail-skeleton-avatar" />
-                <div className="wr-gmail-skeleton-lines">
-                  <div className="wr-gmail-skeleton-line" style={{ width: `${60 + (i * 7) % 25}%` }} />
-                  <div className="wr-gmail-skeleton-line" style={{ width: `${40 + (i * 11) % 35}%` }} />
+      {/* Email List Content */}
+      <div className="wr-gmail-list flex-1 overflow-y-auto">
+        {panel.isLoading && (
+          <div className="wr-gmail-skeletons p-4">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="wr-gmail-skeleton-row flex gap-3 mb-4">
+                <div className="wr-gmail-skeleton-avatar w-8 h-8 rounded-full bg-[var(--wr-surface-2)]" />
+                <div className="flex-1 flex flex-col gap-2">
+                  <div className="h-3 w-2/3 bg-[var(--wr-surface-2)] rounded" />
+                  <div className="h-3 w-1/2 bg-[var(--wr-surface-2)] rounded" />
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {!panel.isLoading && panel.emails.length === 0 && !panel.error && (
-          <div className="wr-gmail-empty">
-            <Inbox size={24} />
-            <p>No emails found</p>
+        {!panel.isLoading && activeFilter === 'SCHEDULED' && (
+          <div className="p-2 flex flex-col gap-2">
+            {scheduledSends.length === 0 ? renderEmptyState() : (
+              scheduledSends.map(send => (
+                <div key={send.id} className="p-3 bg-[var(--wr-surface)] border border-[var(--wr-border)] rounded-md flex flex-col gap-2 relative">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="text-xs font-bold text-[var(--wr-text)]">{send.subject}</h4>
+                      <span className="text-[10px] text-[var(--wr-text-3)] block mt-0.5">To: {send.recipient_email}</span>
+                    </div>
+                    <button 
+                      onClick={() => onCancelScheduled(send.id)}
+                      className="p-1 hover:bg-red-50 text-[var(--wr-error)] rounded text-xs"
+                      title="Cancel Schedule"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-[var(--wr-text-2)] line-clamp-2">{send.body}</p>
+                  <div className="flex justify-between items-center text-[9px] border-t border-[var(--wr-border-soft)] pt-2 text-[var(--wr-text-3)]">
+                    <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold uppercase">{send.status}</span>
+                    <span>Send at: {new Date(send.scheduled_at).toLocaleDateString()} {new Date(send.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
 
-        {panel.emails.map(email => (
-          <button
-            key={email.id}
-            type="button"
-            className={`wr-gmail-email-row${email.is_unread ? ' unread' : ''}${panel.selectedEmail?.id === email.id ? ' selected' : ''}`}
-            onClick={() => onSelectEmail(email.id)}
-          >
-            <div className="wr-gmail-email-sender">
-              <User size={12} />
-              <span className="wr-gmail-email-sender-name">{email.sender_name}</span>
-              <span className="wr-gmail-email-time">{formatRelativeTime(email.timestamp)}</span>
-            </div>
-            <div className="wr-gmail-email-subject">{email.subject}</div>
-            <div className="wr-gmail-email-snippet">{email.snippet}</div>
-            <ChevronRight size={14} className="wr-gmail-email-chevron" />
-          </button>
-        ))}
+        {!panel.isLoading && activeFilter !== 'SCHEDULED' && filteredEmails.length === 0 && renderEmptyState()}
 
-        {panel.nextPageToken && (
-          <button
-            type="button"
-            className="wr-gmail-load-more"
-            onClick={onLoadMore}
-            disabled={panel.isLoading}
-          >
-            {panel.isLoading ? 'Loading…' : 'Load more'}
-          </button>
-        )}
+        {!panel.isLoading && activeFilter !== 'SCHEDULED' && filteredEmails.map((email: GmailEmailItem) => {
+          const classification = classifyEmail(email.subject, email.snippet, email.is_unread, email.sender_email)
+          const isSelected = selectedEmails.has(email.id)
+          const initials = getInitials(email.sender_name)
+          const avatarColor = emailToAvatarColor(email.sender_email)
+
+          return (
+            <div 
+              key={email.id} 
+              className={`wr-gmail-email-row flex items-start gap-3 p-3 border-b border-[var(--wr-border-soft)] group relative ${email.is_unread ? 'unread bg-[var(--wr-accent-soft)]/20' : ''} ${panel.selectedEmail?.id === email.id ? 'selected bg-[var(--wr-surface-2)]' : ''}`}
+            >
+              {/* Checkbox */}
+              <div className="flex items-center self-center">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => onToggleSelect(email.id)}
+                  className="wr-gmail-email-checkbox"
+                />
+              </div>
+
+              {/* Hashed Color Avatar */}
+              <div 
+                className="wr-gmail-sender-avatar flex-shrink-0 self-center"
+                style={{ backgroundColor: avatarColor }}
+                onClick={() => onViewContact(email.sender_email)}
+                title="View relationship data"
+              >
+                {initials}
+              </div>
+
+              {/* Email Content Details */}
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelectEmail(email.id)}>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-bold text-[var(--wr-text)] truncate max-w-[130px]">{email.sender_name}</span>
+                  <span className="text-[10px] text-[var(--wr-text-3)] font-mono">{formatRelativeTime(email.timestamp)}</span>
+                </div>
+                
+                {/* Priority Score Dots & Label Badge */}
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="wr-gmail-priority-dots">
+                    {[1, 2, 3, 4, 5].map(dot => (
+                      <span 
+                        key={dot} 
+                        className={`wr-gmail-priority-dot ${dot <= classification.priority ? 'filled' : ''}`} 
+                      />
+                    ))}
+                  </div>
+                  {classification.label !== 'NONE' && (
+                    <span 
+                      className="wr-gmail-label-badge" 
+                      style={{ color: classification.labelColor, backgroundColor: `${classification.labelColor}12` }}
+                    >
+                      {classification.label.replace('_', ' ')}
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-xs font-semibold text-[var(--wr-text)] truncate">{email.subject}</div>
+                <div className="text-[11px] text-[var(--wr-text-3)] truncate mt-0.5">{email.snippet}</div>
+              </div>
+              <ChevronRight size={14} className="wr-gmail-email-chevron self-center opacity-0 group-hover:opacity-100 text-[var(--wr-text-3)]" />
+            </div>
+          )
+        })}
       </div>
 
       {/* Footer — disconnect */}
@@ -289,72 +495,226 @@ export function GmailPanel({
 }
 
 // ---------------------------------------------------------------------------
-// GmailEmailPreview (full email preview overlay)
+// GmailEmailPreview (with Smart Compose reply stream, translate, Similar emails, Urgency rating)
 // ---------------------------------------------------------------------------
 
 export function GmailEmailPreview({
   email,
   onClose,
   onImport,
+  onViewContact,
+  smartComposeText,
+  smartComposeLoading,
+  onRunSmartCompose,
+  onClearSmartCompose,
+  onUseDraft,
+  emailsList,
 }: {
   email: GmailEmailItem
   onClose: () => void
   onImport: GmailImportHandler
+  onViewContact: (email: string) => void
+  smartComposeText: string
+  smartComposeLoading: boolean
+  onRunSmartCompose: (body: string, tone: string, prompt: string) => void
+  onClearSmartCompose: () => void
+  onUseDraft: (text: string) => void
+  emailsList: GmailEmailItem[]
 }) {
+  const [smartComposeTone, setSmartComposeTone] = useState('Professional')
+  const [smartComposePrompt, setSmartComposePrompt] = useState('')
+  const [showSmartCompose, setShowSmartCompose] = useState(false)
+
   const handleAction = useCallback((action: GmailAction) => {
     onImport(email, action)
     onClose()
   }, [email, onImport, onClose])
 
+  // Client-side similar emails (from same sender)
+  const similarEmails = useMemo(() => {
+    return emailsList
+      .filter(e => e.sender_email === email.sender_email && e.id !== email.id)
+      .slice(0, 3)
+  }, [emailsList, email.sender_email, email.id])
+
+  // AI Meeting Detector logic
+  const isMeetingEmail = /meeting|schedule|invite|zoom|call|google meet|meet up|sync|appointment/i.test(email.body_plain || email.snippet)
+  
+  // Calculate reading time: avg 200 words per minute
+  const readingTime = Math.max(1, Math.round((email.body_plain || email.snippet || "").split(/\s+/).length / 200))
+
+  const classification = classifyEmail(email.subject, email.snippet, email.is_unread, email.sender_email)
+
   return (
     <div className="wr-gmail-preview-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Email preview">
-      <div className="wr-gmail-preview" onClick={(e) => e.stopPropagation()}>
-        {/* Preview Header */}
-        <div className="wr-gmail-preview-header">
-          <div className="wr-gmail-preview-meta">
-            <div className="wr-gmail-preview-sender-row">
-              <div className="wr-gmail-preview-avatar">
-                {email.sender_name.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <div className="wr-gmail-preview-sender-name">{email.sender_name}</div>
-                <div className="wr-gmail-preview-sender-email">{email.sender_email}</div>
-              </div>
+      <div className="wr-gmail-preview flex flex-col max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        
+        {/* Top Meta info */}
+        <div className="wr-gmail-preview-header flex-shrink-0 border-b border-[var(--wr-border-soft)] pb-3 mb-3 flex items-center justify-between">
+          <div className="wr-gmail-preview-meta flex items-center gap-3">
+            <div 
+              className="wr-gmail-preview-avatar w-10 h-10 rounded-full flex items-center justify-center text-white font-bold cursor-pointer"
+              style={{ backgroundColor: emailToAvatarColor(email.sender_email) }}
+              onClick={() => onViewContact(email.sender_email)}
+              title="View relationship information"
+            >
+              {getInitials(email.sender_name)}
             </div>
-            <div className="wr-gmail-preview-timestamp">
-              <Clock size={12} />
-              {formatFullDate(email.timestamp)}
+            <div>
+              <div className="wr-gmail-preview-sender-name font-bold text-sm text-[var(--wr-text)]">{email.sender_name}</div>
+              <div className="wr-gmail-preview-sender-email text-xs text-[var(--wr-text-3)]">{email.sender_email}</div>
             </div>
           </div>
-          <button type="button" className="wr-gmail-preview-close" onClick={onClose} aria-label="Close preview">
-            <X size={16} />
-          </button>
+          
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-mono text-[var(--wr-text-3)]">🕒 {readingTime} min read</span>
+            <button 
+              onClick={() => onViewContact(email.sender_email)}
+              className="text-xs font-semibold px-2.5 py-1 bg-[var(--wr-surface-2)] text-[var(--wr-text-2)] hover:bg-[var(--wr-border-soft)] rounded-md border border-[var(--wr-border)]"
+            >
+              Contact Card
+            </button>
+            <button type="button" className="wr-gmail-preview-close" onClick={onClose} aria-label="Close preview">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Priority & Urgency Score badge */}
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-xs bg-[var(--wr-surface-2)] px-2 py-0.5 rounded font-bold text-[var(--wr-text-2)]">
+            Urgency Rating: {classification.priority}/5
+          </span>
+          {classification.label !== 'NONE' && (
+            <span 
+              className="wr-gmail-label-badge font-bold text-[10px] px-2 py-0.5 rounded"
+              style={{ color: classification.labelColor, backgroundColor: `${classification.labelColor}12` }}
+            >
+              {classification.label}
+            </span>
+          )}
         </div>
 
         {/* Subject */}
-        <h2 className="wr-gmail-preview-subject">{email.subject}</h2>
+        <h2 className="wr-gmail-preview-subject text-lg font-bold text-[var(--wr-text)] mb-3">{email.subject}</h2>
 
-        {/* Body */}
-        <div className="wr-gmail-preview-body">
+        {/* Body content */}
+        <div className="wr-gmail-preview-body text-sm text-[var(--wr-text-2)] leading-relaxed whitespace-pre-wrap flex-1 min-h-[100px] border border-[var(--wr-border-soft)] rounded-lg p-4 bg-[var(--wr-surface-3)] mb-4">
           {email.body_plain || email.snippet}
         </div>
 
-        {/* Word count indicator */}
-        <div className="wr-gmail-preview-stats">
-          <span>{email.word_count} words</span>
+        {/* Meeting alert card */}
+        {isMeetingEmail && (
+          <div className="mb-4 bg-blue-50 dark:bg-blue-950/20 border-l-2 border-blue-500 p-3 rounded flex items-start gap-3">
+            <Calendar className="text-blue-500 flex-shrink-0 mt-0.5" size={16} />
+            <div>
+              <span className="text-xs font-bold text-blue-600 block">Meeting Request Detected</span>
+              <p className="text-xs text-[var(--wr-text-2)] mt-0.5">This email suggests coordination for a phone call or meeting. Click "Draft Reply" to propose meeting time slots.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Interactive Smart Compose Area */}
+        <div className="mb-4">
+          <button 
+            onClick={() => { setShowSmartCompose(!showSmartCompose); onClearSmartCompose() }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--wr-accent-soft)] text-[var(--wr-accent)] font-semibold text-xs rounded-full border border-[var(--wr-accent)]"
+          >
+            ⚡ {showSmartCompose ? 'Hide Smart Compose' : 'Smart Compose Reply'}
+          </button>
+          
+          {showSmartCompose && (
+            <div className="wr-gmail-compose-container mt-3">
+              <div className="flex gap-2 mb-2">
+                {['Professional', 'Friendly', 'Concise', 'Academic', 'Assertive'].map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setSmartComposeTone(t)}
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      smartComposeTone === t 
+                        ? 'bg-[var(--wr-accent)] text-white border-[var(--wr-accent)]' 
+                        : 'bg-[var(--wr-surface)] text-[var(--wr-text-3)] border-[var(--wr-border)]'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                placeholder="Describe what you want to say in reply (e.g. Agree to project proposal but hold payment terms)..."
+                value={smartComposePrompt}
+                onChange={(e) => setSmartComposePrompt(e.target.value)}
+                className="wr-gmail-compose-prompt"
+              />
+              
+              {smartComposeText && (
+                <div className="wr-gmail-compose-stream border border-[var(--wr-border)] mt-2">
+                  {smartComposeText}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 border-t border-[var(--wr-border-soft)] pt-3 mt-2">
+                <button
+                  onClick={() => { setShowSmartCompose(false); onClearSmartCompose() }}
+                  className="px-3 py-1.5 bg-[var(--wr-surface-2)] text-[var(--wr-text-2)] text-xs font-semibold rounded-full"
+                >
+                  Cancel
+                </button>
+                {smartComposeText ? (
+                  <button
+                    onClick={() => {
+                      onUseDraft(smartComposeText)
+                      setShowSmartCompose(false)
+                      onClearSmartCompose()
+                    }}
+                    className="px-4 py-1.5 bg-[var(--wr-success)] text-white text-xs font-semibold rounded-full"
+                  >
+                    Use Draft in WriteRight
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onRunSmartCompose(email.body_plain || email.snippet, smartComposeTone, smartComposePrompt)}
+                    disabled={smartComposeLoading}
+                    className="px-4 py-1.5 bg-[var(--wr-accent)] text-white text-xs font-semibold rounded-full"
+                  >
+                    {smartComposeLoading ? 'Generating...' : 'Draft Reply'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
+        {/* Similar Emails Section */}
+        {similarEmails.length > 0 && (
+          <div className="mb-4 border-t border-[var(--wr-border-soft)] pt-3">
+            <span className="text-[10px] font-bold text-[var(--wr-text-3)] uppercase tracking-wider block mb-2">Similar Emails from Sender</span>
+            <div className="flex flex-col gap-2">
+              {similarEmails.map((se: GmailEmailItem) => (
+                <div 
+                  key={se.id} 
+                  onClick={() => onClose()}
+                  className="p-2 border border-[var(--wr-border)] rounded hover:bg-[var(--wr-surface-2)] cursor-pointer text-xs"
+                >
+                  <div className="font-semibold text-[var(--wr-text)]">{se.subject}</div>
+                  <div className="text-[10px] text-[var(--wr-text-3)] mt-0.5">{se.snippet}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Action Grid */}
-        <div className="wr-gmail-preview-actions-label">
+        <div className="wr-gmail-preview-actions-label mt-auto border-t border-[var(--wr-border-soft)] pt-3 text-[11px] text-[var(--wr-text-3)] uppercase font-bold tracking-wider mb-2 flex items-center gap-1.5">
           <Sparkles size={12} />
           Import into WriteRight
         </div>
-        <div className="wr-gmail-actions-grid">
+        <div className="wr-gmail-actions-grid flex flex-wrap gap-2 pb-2">
           {GMAIL_ACTIONS.map(({ action, label, icon }) => (
             <button
               key={action}
               type="button"
-              className="wr-gmail-action-btn"
+              className="wr-gmail-action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 border border-[var(--wr-border)] rounded-md hover:bg-[var(--wr-surface-2)] text-[var(--wr-text-2)]"
               onClick={() => handleAction(action)}
               aria-label={`${label} this email`}
             >
@@ -364,6 +724,126 @@ export function GmailEmailPreview({
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// GmailContactCard (Slides in from right containing statistics and summary)
+// ---------------------------------------------------------------------------
+
+export function GmailContactCard({
+  intel,
+  loading,
+  onClose,
+}: {
+  intel: ContactIntel | null
+  loading: boolean
+  onClose: () => void
+}) {
+  return (
+    <div className="wr-gmail-contact-card">
+      <div className="flex justify-between items-center border-b border-[var(--wr-border-soft)] pb-3">
+        <h3 className="text-sm font-bold text-[var(--wr-text)] flex items-center gap-1.5">
+          <UserCheck size={16} /> Contact Intelligence
+        </h3>
+        <button onClick={onClose} className="text-xs text-[var(--wr-text-3)] hover:text-[var(--wr-text)]">✕</button>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-10 text-xs text-[var(--wr-text-3)]">Analyzing correspondence logs...</div>
+      ) : !intel ? (
+        <div className="text-center py-10 text-xs text-[var(--wr-text-2)]">No profile details generated.</div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {/* Avatar details */}
+          <div className="flex items-center gap-3">
+            <div 
+              className="w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold"
+              style={{ backgroundColor: emailToAvatarColor(intel.email) }}
+            >
+              {getInitials(intel.name)}
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-[var(--wr-text)]">{intel.name}</h4>
+              <span className="text-xs text-[var(--wr-text-3)]">{intel.email}</span>
+            </div>
+          </div>
+
+          {/* Tone badges */}
+          <div className="flex flex-wrap gap-1.5">
+            {intel.toneBadges.map((badge, idx) => (
+              <span key={idx} className="text-[10px] bg-[var(--wr-accent-soft)] text-[var(--wr-accent)] font-semibold px-2 py-0.5 rounded">
+                🏷️ {badge}
+              </span>
+            ))}
+          </div>
+
+          {/* Stats details */}
+          <div className="flex flex-col gap-2 border-y border-[var(--wr-border-soft)] py-3 text-xs text-[var(--wr-text-2)]">
+            <div className="flex justify-between">
+              <span>Emails Exchanged:</span>
+              <span className="font-bold text-[var(--wr-text)]">{intel.emailsExchanged}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Avg Response Time:</span>
+              <span className="font-bold text-[var(--wr-text)]">{intel.avgResponseHours} hours</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Last Contacted:</span>
+              <span className="font-bold text-[var(--wr-text)]">{intel.lastContactedDays} days ago</span>
+            </div>
+          </div>
+
+          {/* Relationship summary */}
+          <div className="bg-[var(--wr-surface-2)] p-3 rounded">
+            <span className="text-[10px] font-bold text-[var(--wr-text-3)] uppercase tracking-wider block mb-1">Relationship Brief</span>
+            <p className="text-xs text-[var(--wr-text-2)] leading-relaxed">{intel.aiSummary}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// GmailBulkActionBar (Floating bar shown at bottom for checkboxes selected)
+// ---------------------------------------------------------------------------
+
+export function GmailBulkActionBar({
+  selectedCount,
+  onSummarize,
+  onClearSelection,
+  loading
+}: {
+  selectedCount: number
+  onSummarize: () => void
+  onClearSelection: () => void
+  loading: boolean
+}) {
+  if (selectedCount === 0) return null
+
+  return (
+    <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-[var(--wr-surface)] border border-[var(--wr-border-med)] shadow-[var(--wr-shadow-lg)] px-5 py-3 rounded-full flex items-center gap-4 z-50 animate-bounce">
+      <span className="text-xs font-semibold text-[var(--wr-text)]">
+        🗳️ {selectedCount} emails selected
+      </span>
+      <div className="h-4 w-px bg-[var(--wr-border-soft)]" />
+      <div className="flex gap-2">
+        <button
+          onClick={onSummarize}
+          disabled={loading}
+          className="px-3.5 py-1.5 bg-[var(--wr-accent)] hover:bg-[var(--wr-accent-hover)] text-white text-xs font-bold rounded-full transition-all duration-150"
+        >
+          {loading ? 'Summarizing...' : 'Summarize Selected'}
+        </button>
+        <button
+          onClick={onClearSelection}
+          className="px-3 py-1.5 bg-[var(--wr-surface-2)] hover:bg-[var(--wr-border-soft)] text-[var(--wr-text-2)] text-xs font-bold rounded-full"
+        >
+          Clear
+        </button>
       </div>
     </div>
   )

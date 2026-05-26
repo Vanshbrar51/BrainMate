@@ -2,10 +2,11 @@
 
 // hooks/useGmailIntegration.ts
 // Self-contained client hook for Gmail integration.
-// Manages connection status, email listing, panel state, and import actions.
-// Completely isolated from WriteRight's core state.
+// Manages connection status, email listing, panel state, import actions,
+// and advanced Gmail features (Smart Compose, Thread Intelligence, Scheduled Sends, etc.).
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import type { ScheduledSend, ContactIntel } from '@/types/writeright'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,6 +19,7 @@ export interface GmailConnectionStatus {
     connected_at: string
     last_synced_at: string | null
   } | null
+  error?: string
 }
 
 export interface GmailEmailItem {
@@ -103,6 +105,24 @@ export function useGmailIntegration() {
     unreadOnly: false,
   })
 
+  // Advanced States
+  const [searchQuery, setSearchQuery] = useState('')
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set())
+  const [scheduledSends, setScheduledSends] = useState<ScheduledSend[]>([])
+  const [contactIntel, setContactIntel] = useState<ContactIntel | null>(null)
+  const [contactIntelLoading, setContactIntelLoading] = useState(false)
+  
+  // Thread View State
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  const [threadMessages, setThreadMessages] = useState<GmailEmailItem[]>([])
+  const [threadBrief, setThreadBrief] = useState<string>('')
+  const [threadLoading, setThreadLoading] = useState(false)
+
+  // Smart Compose State
+  const [smartComposeText, setSmartComposeText] = useState('')
+  const [smartComposeLoading, setSmartComposeLoading] = useState(false)
+
   // ── Check connection status on mount ──
   useEffect(() => {
     if (statusChecked.current) return
@@ -121,17 +141,42 @@ export function useGmailIntegration() {
     })()
   }, [])
 
+  // ── Polling for unread counts ──
+  useEffect(() => {
+    if (!connectionStatus.connected) return
+
+    const pollUnreadCount = async () => {
+      try {
+        const result = await fetch('/api/gmail/emails?maxResults=1&unreadOnly=true')
+        if (result.ok) {
+          const data = await result.json()
+          setUnreadCount(data.total_estimate || 0)
+        }
+      } catch {
+        // Fail silently
+      }
+    }
+
+    pollUnreadCount()
+    const timer = setInterval(pollUnreadCount, 60000)
+    return () => clearInterval(timer)
+  }, [connectionStatus.connected])
+
   // ── Connect Gmail ──
   const connect = useCallback(async () => {
     setConnectionLoading(true)
     try {
       const { url } = await gmailGet<{ url: string }>('/api/gmail/connect')
-      // Navigate to Google OAuth screen
       window.location.href = url
     } catch {
       setConnectionLoading(false)
     }
   }, [])
+
+  // ── Reconnect Gmail ──
+  const reconnect = useCallback(async () => {
+    await connect()
+  }, [connect])
 
   // ── Disconnect Gmail ──
   const disconnect = useCallback(async () => {
@@ -141,7 +186,7 @@ export function useGmailIntegration() {
       setConnectionStatus({ connected: false, connection: null })
       setPanel(p => ({ ...p, isOpen: false, emails: [], selectedEmail: null, previewOpen: false }))
     } catch {
-      // Ignore — status will be re-checked next time
+      // Ignore
     } finally {
       setConnectionLoading(false)
     }
@@ -152,20 +197,22 @@ export function useGmailIntegration() {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     if (params.get('gmail_connected') === 'true') {
-      // Re-check status after redirect
       void (async () => {
         try {
           const status = await gmailGet<GmailConnectionStatus>('/api/gmail/status')
           setConnectionStatus(status)
         } catch { /* noop */ }
       })()
-      // Clean up URL params
       const url = new URL(window.location.href)
       url.searchParams.delete('gmail_connected')
       window.history.replaceState({}, '', url.toString())
     }
     if (params.get('gmail_error')) {
-      setPanel(p => ({ ...p, error: `Gmail connection failed: ${params.get('gmail_error')}` }))
+      const errType = params.get('gmail_error')
+      const friendlyMsg = errType === 'gateway_offline'
+        ? 'Authentication gateway is offline. Please make sure it is running.'
+        : `Gmail connection failed: ${errType}`
+      setPanel(p => ({ ...p, error: friendlyMsg }))
       const url = new URL(window.location.href)
       url.searchParams.delete('gmail_error')
       window.history.replaceState({}, '', url.toString())
@@ -198,6 +245,9 @@ export function useGmailIntegration() {
       }))
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to fetch emails'
+      if (msg.includes('401') || msg.includes('expired')) {
+        setConnectionStatus(s => ({ ...s, connected: false }))
+      }
       setPanel(p => ({ ...p, isLoading: false, error: msg }))
     }
   }, [panel.filter, panel.unreadOnly])
@@ -206,9 +256,7 @@ export function useGmailIntegration() {
   const togglePanel = useCallback(() => {
     setPanel(p => {
       const willOpen = !p.isOpen
-      // Auto-fetch when opening if no emails loaded yet
       if (willOpen && p.emails.length === 0 && connectionStatus.connected) {
-        // Schedule fetch after state update
         setTimeout(() => { void fetchEmails() }, 0)
       }
       return { ...p, isOpen: willOpen, previewOpen: false, selectedEmail: null }
@@ -222,12 +270,11 @@ export function useGmailIntegration() {
       setPanel(p => ({ ...p, selectedEmail: cached, previewOpen: true }))
     }
 
-    // Fetch full email for audit logging + full body
     try {
       const { email } = await gmailGet<{ email: GmailEmailItem }>(`/api/gmail/emails/${emailId}`)
       setPanel(p => ({ ...p, selectedEmail: email, previewOpen: true }))
     } catch {
-      // Use cached version if full fetch fails
+      // Use cached if fetch fails
     }
   }, [panel.emails])
 
@@ -255,7 +302,7 @@ export function useGmailIntegration() {
     }
   }, [panel.nextPageToken, fetchEmails])
 
-  // ── Build import text for the WriteRight composer ──
+  // ── Build import text ──
   const buildImportText = useCallback((email: GmailEmailItem, action: GmailAction): string => {
     const prefixes: Record<GmailAction, string> = {
       improve: 'Improve this email:\n\n',
@@ -271,10 +318,214 @@ export function useGmailIntegration() {
       `Subject: ${email.subject}`,
       `From: ${email.sender_name} <${email.sender_email}>`,
       '',
-      email.body_plain,
+      email.body_plain || email.snippet,
     ].join('\n')
 
     return `${prefixes[action]}${emailContent}`
+  }, [])
+
+  // ── Client-side filtering ──
+  const filteredEmails = useMemo(() => {
+    if (!searchQuery.trim()) return panel.emails
+    const query = searchQuery.toLowerCase()
+    return panel.emails.filter(e =>
+      e.subject.toLowerCase().includes(query) ||
+      e.sender_name.toLowerCase().includes(query) ||
+      e.sender_email.toLowerCase().includes(query)
+    )
+  }, [panel.emails, searchQuery])
+
+  // ── Checkbox management ──
+  const toggleSelect = useCallback((emailId: string) => {
+    setSelectedEmails(prev => {
+      const next = new Set(prev)
+      if (next.has(emailId)) next.delete(emailId)
+      else next.add(emailId)
+      return next
+    })
+  }, [])
+
+  const selectAll = useCallback(() => {
+    setSelectedEmails(new Set(panel.emails.map(e => e.id)))
+  }, [panel.emails])
+
+  const clearSelection = useCallback(() => {
+    setSelectedEmails(new Set())
+  }, [])
+
+  // ── Bulk actions ──
+  const runBulkAction = useCallback(async (action: 'summarize' | 'read' | 'unread'): Promise<string | null> => {
+    if (selectedEmails.size === 0) return null
+    try {
+      const result = await gmailPost<{ success: boolean; summary?: string }>('/api/gmail/bulk-action', {
+        action,
+        emailIds: Array.from(selectedEmails)
+      })
+
+      if (action === 'read' || action === 'unread') {
+        // Update local email items is_unread flag
+        setPanel(p => ({
+          ...p,
+          emails: p.emails.map(e =>
+            selectedEmails.has(e.id) ? { ...e, is_unread: action === 'unread' } : e
+          )
+        }))
+        clearSelection()
+      }
+
+      return result.summary || null
+    } catch (err) {
+      console.error('Failed to run batch bulk action:', err)
+      return null
+    }
+  }, [selectedEmails, clearSelection])
+
+  // ── Mark as read (single) ──
+  const markAsRead = useCallback(async (emailId: string) => {
+    try {
+      await fetch(`/api/gmail/emails/${emailId}/read`, { method: 'POST' })
+      setPanel(p => ({
+        ...p,
+        emails: p.emails.map(e => e.id === emailId ? { ...e, is_unread: false } : e)
+      }))
+    } catch {
+      // Ignore
+    }
+  }, [])
+
+  // ── Smart compose streaming AI reply ──
+  const smartCompose = useCallback(async (emailBody: string, tone = 'Professional', prompt = '') => {
+    setSmartComposeLoading(true)
+    setSmartComposeText('')
+
+    try {
+      const response = await fetch('/api/gmail/smart-compose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emailBody, tone, prompt })
+      })
+
+      if (!response.ok) throw new Error('Smart compose request failed')
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      if (!reader) return
+
+      let buffer = ""
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ""
+
+        for (const line of lines) {
+          const cleanLine = line.trim()
+          if (cleanLine.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(cleanLine.slice(6))
+              if (data.type === "token" && data.text) {
+                setSmartComposeText(prev => prev + data.text)
+              }
+            } catch {
+              // Ignore
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Smart compose error:', err)
+    } finally {
+      setSmartComposeLoading(false)
+    }
+  }, [])
+
+  // ── Thread intelligence ──
+  const fetchThread = useCallback(async (threadId: string) => {
+    setThreadLoading(true)
+    setActiveThreadId(threadId)
+    setThreadMessages([])
+    setThreadBrief('')
+
+    try {
+      const response = await fetch(`/api/gmail/thread/${threadId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setThreadMessages(data.messages || [])
+        setThreadBrief(data.brief || '')
+      }
+    } catch (err) {
+      console.error('Failed to retrieve thread details:', err)
+    } finally {
+      setThreadLoading(false)
+    }
+  }, [])
+
+  // ── Scheduled Sends API ──
+  const fetchScheduledSends = useCallback(async () => {
+    try {
+      const response = await fetch('/api/gmail/scheduled')
+      if (response.ok) {
+        const data = await response.json()
+        setScheduledSends(data.scheduledSends || [])
+      }
+    } catch {
+      // Ignore
+    }
+  }, [])
+
+  const scheduleSend = useCallback(async (recipient: string, subject: string, body: string, date: string) => {
+    if (!connectionStatus.connection?.gmail_email) return false
+    try {
+      const res = await fetch('/api/gmail/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gmailEmail: connectionStatus.connection.gmail_email,
+          recipientEmail: recipient,
+          subject,
+          body,
+          scheduledAt: date
+        })
+      })
+      if (res.ok) {
+        await fetchScheduledSends()
+        return true
+      }
+    } catch (err) {
+      console.error('Schedule send failed:', err)
+    }
+    return false
+  }, [connectionStatus, fetchScheduledSends])
+
+  const cancelScheduled = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/gmail/schedule/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        await fetchScheduledSends()
+        return true
+      }
+    } catch (err) {
+      console.error('Cancel scheduled failed:', err)
+    }
+    return false
+  }, [fetchScheduledSends])
+
+  // ── Contact intelligence ──
+  const fetchContactIntel = useCallback(async (email: string) => {
+    setContactIntelLoading(true)
+    setContactIntel(null)
+    try {
+      const res = await fetch(`/api/gmail/contact/${encodeURIComponent(email)}`)
+      if (res.ok) {
+        const data = await res.json()
+        setContactIntel(data)
+      }
+    } catch {
+      // Ignore
+    } finally {
+      setContactIntelLoading(false)
+    }
   }, [])
 
   return {
@@ -282,6 +533,7 @@ export function useGmailIntegration() {
     connectionStatus,
     connectionLoading,
     connect,
+    reconnect,
     disconnect,
 
     // Panel
@@ -296,5 +548,49 @@ export function useGmailIntegration() {
 
     // Import
     buildImportText,
+
+    // Client-side search
+    searchQuery,
+    setSearchQuery,
+    filteredEmails,
+
+    // Selection
+    selectedEmails,
+    toggleSelect,
+    selectAll,
+    clearSelection,
+
+    // Unread count
+    unreadCount,
+    markAsRead,
+
+    // Bulk actions
+    runBulkAction,
+
+    // Smart compose
+    smartCompose,
+    smartComposeText,
+    smartComposeLoading,
+    setSmartComposeText,
+
+    // Threads
+    activeThreadId,
+    threadMessages,
+    threadBrief,
+    threadLoading,
+    fetchThread,
+    setActiveThreadId,
+
+    // Scheduled sends
+    scheduledSends,
+    fetchScheduledSends,
+    scheduleSend,
+    cancelScheduled,
+
+    // Contact intelligence
+    contactIntel,
+    contactIntelLoading,
+    fetchContactIntel,
+    setContactIntel
   }
 }
