@@ -62,7 +62,7 @@ async def morph_text(
                     messages=messages,
                     traceparent=request.traceparent,
                     on_token=token_callback,
-                    model_override="gemini-1.5-flash",
+                    model_override="gemini-2.5-flash",
                 )
             except Exception as e:
                 logger.error(f"Morph router task failed: {e}")

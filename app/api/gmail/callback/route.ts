@@ -3,6 +3,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { handleCallback } from "@/lib/gmail-service";
 import { withSpan, addSpanAttributes, addSpanEvent } from "@/lib/tracing";
 import { withErrorHandler } from "@/lib/writeright-errors";
@@ -25,17 +26,21 @@ export async function GET(req: Request) {
       const state = searchParams.get("state");
       const oauthError = searchParams.get("error");
 
+      const cookieStore = await cookies();
+      const returnTo = cookieStore.get("gmail_oauth_return_to")?.value || "/dashboard/writing";
+      cookieStore.delete("gmail_oauth_return_to");
+
       // User denied access
       if (oauthError) {
         addSpanEvent("gmail.oauth.denied", { error: oauthError });
         return NextResponse.redirect(
-          `${CALLBACK_ORIGIN}/dashboard/writing?gmail_error=access_denied`
+          `${CALLBACK_ORIGIN}${returnTo}?gmail_error=access_denied`
         );
       }
 
       if (!code || !state) {
         return NextResponse.redirect(
-          `${CALLBACK_ORIGIN}/dashboard/writing?gmail_error=invalid_callback`
+          `${CALLBACK_ORIGIN}${returnTo}?gmail_error=invalid_callback`
         );
       }
 
@@ -49,14 +54,14 @@ export async function GET(req: Request) {
         const msg = err instanceof Error ? err.message : String(err);
         const errType = msg === "Auth gateway offline" ? "gateway_offline" : "token_exchange_failed";
         return NextResponse.redirect(
-          `${CALLBACK_ORIGIN}/dashboard/writing?gmail_error=${errType}`
+          `${CALLBACK_ORIGIN}${returnTo}?gmail_error=${errType}`
         );
       }
 
       addSpanEvent("gmail.connected", {});
 
       return NextResponse.redirect(
-        `${CALLBACK_ORIGIN}/dashboard/writing?gmail_connected=true`
+        `${CALLBACK_ORIGIN}${returnTo}?gmail_connected=true`
       );
     });
   });

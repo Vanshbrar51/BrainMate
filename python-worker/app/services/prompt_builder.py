@@ -453,6 +453,7 @@ def build_messages(
     intensity: int = 3,
     max_history: int = 10,
     max_input_tokens: int = 4096,
+    gmail_context: str | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, bool]]:
     """Build the complete messages array for the Google AI Studio API call.
 
@@ -479,6 +480,9 @@ def build_messages(
     intensity_instruction = INTENSITY_CONTEXT.get(intensity, "")
     if intensity_instruction:
         system_prompt = system_prompt + "\n\n" + intensity_instruction.format(tone=tone)
+
+    if gmail_context:
+        system_prompt = system_prompt + "\n\n" + gmail_context
 
     if profile:
         profile_str = "\n".join(f"- {m}" for m in profile[:5])

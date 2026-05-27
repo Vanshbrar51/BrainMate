@@ -28,6 +28,10 @@ class Settings(BaseSettings):
 
     # Security
     internal_api_token: str = Field(..., description="env: INTERNAL_API_TOKEN")
+    auth_gateway_internal_url: str = Field(
+        default="http://127.0.0.1:9091",
+        description="env: AUTH_GATEWAY_INTERNAL_URL",
+    )
 
     # Redis
     redis_url: str = "redis://127.0.0.1:6379"

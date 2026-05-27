@@ -109,13 +109,19 @@ export default function AccountPage() {
           </p>
 
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-5 py-4 space-y-5">
-            {connectionStatus.error === "Auth gateway offline" && (
+            {connectionStatus.error && (
               <div className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-amber-800 dark:text-amber-300">
                 <AlertTriangle className="size-5 flex-none mt-0.5 text-amber-500" />
                 <div className="text-xs space-y-1">
-                  <p className="font-semibold">Authentication Gateway Offline</p>
+                  <p className="font-semibold">
+                    {connectionStatus.error === "Auth gateway offline"
+                      ? "Authentication Gateway Offline"
+                      : "Gmail Connector Error"}
+                  </p>
                   <p className="leading-relaxed opacity-90">
-                    The auth gateway is currently unreachable. Please start it by running <code className="bg-amber-500/10 px-1 py-0.5 rounded font-mono text-[11px]">npm run dev:gateway</code> in your terminal to enable Gmail features.
+                    {connectionStatus.error === "Auth gateway offline"
+                      ? "The auth gateway is currently unreachable. Please start it by running npm run dev:gateway in your terminal to enable Gmail features."
+                      : connectionStatus.error}
                   </p>
                 </div>
               </div>
@@ -137,10 +143,14 @@ export default function AccountPage() {
                       <RefreshCw size={12} className="animate-spin" />
                       <span>Syncing status...</span>
                     </div>
-                  ) : connectionStatus.error === "Auth gateway offline" ? (
+                  ) : connectionStatus.error ? (
                     <div className="mt-2.5 flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
                       <AlertTriangle size={13} />
-                      <span>Gateway offline</span>
+                      <span>
+                        {connectionStatus.error === "Auth gateway offline"
+                          ? "Gateway offline"
+                          : connectionStatus.error}
+                      </span>
                     </div>
                   ) : connectionStatus.connected && connectionStatus.connection ? (
                     <div className="mt-2.5 flex items-center gap-2 rounded-lg bg-[var(--bg-subtle)] px-2.5 py-1 text-xs text-[var(--text-2)] w-fit border border-[var(--border)]">

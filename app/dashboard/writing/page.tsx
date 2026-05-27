@@ -262,10 +262,10 @@ const MODE_PROMPTS: Record<WritingMode, { title: string; sub: string; full: stri
     { title: 'Summarise this thread', sub: '3-line summary of long chat', full: 'Summarise this WhatsApp thread in 3 lines.' },
   ],
   paragraph: [
-    { title: 'Rewrite this paragraph', sub: 'More concise and impactful', full: 'Rewrite this paragraph to be more concise and impactful.' },
+    { title: 'Create custom paragraph', sub: 'Write a paragraph from an idea', full: 'Create a well-structured paragraph based on this idea.' },
+    { title: 'Summarise this text', sub: 'Extract the main points', full: 'Summarise this paragraph and extract the main points.' },
     { title: 'Fix grammar and flow', sub: 'Correct errors and improve readability', full: 'Fix grammar and flow, correct errors and improve readability.' },
-    { title: 'Make this Academic', sub: 'Formal language for university', full: 'Make this academic with formal language suitable for university submission.' },
-    { title: 'Simplify this text', sub: 'Plain English anyone can understand', full: 'Simplify this text into plain English anyone can understand.' },
+    { title: 'Rewrite this paragraph', sub: 'More concise and impactful', full: 'Rewrite this paragraph to be more concise and impactful.' },
   ],
 }
 
@@ -936,14 +936,16 @@ function ScoreGauge({
   const progressOffset = dash - (dash * clamped) / 10
 
   return (
-    <div className="wr-gauge" aria-label={`${label}: ${clamped} out of 10`} role="img">
-      <div className="wr-gauge-svg-wrap">
+    <div className="wr-score-gauge" aria-label={`${label}: ${clamped} out of 10`} role="img">
+      <div className="wr-gauge-wrap">
         <svg className="wr-gauge-svg" viewBox="0 0 84 84" aria-hidden="true">
           <circle
             className="wr-gauge-track"
             cx="42"
             cy="42"
             r={radius}
+            fill="none"
+            strokeWidth={6}
             pathLength={circumference}
             strokeDasharray={`${dash} ${gap}`}
             strokeDashoffset="0"
@@ -954,6 +956,8 @@ function ScoreGauge({
             cx="42"
             cy="42"
             r={radius}
+            fill="none"
+            strokeWidth={6}
             pathLength={circumference}
             strokeDasharray={`${dash} ${gap}`}
             transform="rotate(-110 42 42)"
@@ -965,14 +969,14 @@ function ScoreGauge({
             }
           />
         </svg>
-        <span className="wr-gauge-num"><AnimatedNumber value={clamped} /></span>
+        <span className="wr-gauge-number"><AnimatedNumber value={clamped} /></span>
         {delta !== 0 && (
           <span className={`wr-gauge-delta ${delta > 0 ? 'pos' : 'neg'}`}>
             {delta > 0 ? `+${delta}` : delta}
           </span>
         )}
       </div>
-      <span className="wr-gauge-lbl">{label}</span>
+      <span className="wr-gauge-label">{label}</span>
     </div>
   )
 }
@@ -987,8 +991,8 @@ function ScoreCard({ scores, prevScores }: { scores?: AIQualityScores; prevScore
   ]
 
   return (
-    <div className="wr-scores">
-      <div className="wr-gauges-row">
+    <div className="wr-score-card">
+      <div className="wr-score-gauges">
         {rows.map((row) => (
           <ScoreGauge
             key={row.key}
@@ -1167,15 +1171,15 @@ function WriteDiffBlock({
   const afterReadability = computeReadability(renderAfterText)
 
   return (
-    <div className={`wr-result-card${streaming ? ' is-streaming' : ''}${isMorphing ? ' morphing' : ''}`}>
+    <div className={`wr-diff-container${streaming ? ' is-streaming' : ''}${isMorphing ? ' morphing' : ''}`}>
       {!streaming && (
-        <div className="wr-before">
-          <span className="wr-pane-label original">Original Draft</span>
+        <div className="wr-diff-before">
+          <span className="wr-diff-label">Original Draft</span>
           <div className={`wr-before-text${isLong && !beforeExpanded ? ' clipped' : ''}`}>
             {before}
           </div>
           {isLong && (
-            <button className="wr-expand-btn" onClick={() => setBeforeExpanded((v) => !v)}>
+            <button className="wr-diff-expand-btn" onClick={() => setBeforeExpanded((v) => !v)}>
               {beforeExpanded
                 ? <><ChevronUp size={11} /> Show less</>
                 : <><ChevronDown size={11} /> Show all ({before.length} chars)</>
@@ -1185,10 +1189,10 @@ function WriteDiffBlock({
         </div>
       )}
 
-      <div className={`wr-after${copied ? ' wr-just-copied' : ''}`}>
-        <div className="wr-after-header">
-          <div className="wr-after-header-left">
-            <span className="wr-pane-label improved">{streaming ? 'Writing live' : 'Improved Version'}</span>
+      <div className={`wr-diff-after${copied ? ' wr-just-copied' : ''}`}>
+        <div className="wr-diff-header">
+          <div className="wr-diff-header-left">
+            <span className="wr-diff-label">{streaming ? 'Writing live' : 'Improved Version'}</span>
             {!streaming && (
               <button
                 className={`wr-diff-toggle${showDiff ? ' active' : ''}`}
@@ -1201,18 +1205,18 @@ function WriteDiffBlock({
               </button>
             )}
           </div>
-          <div className="wr-action-r">
+          <div className="wr-diff-actions">
             {onSaveTemplate && (
-              <button className="wr-action-btn" onClick={onSaveTemplate}>
+              <button className="wr-diff-expand-btn" onClick={onSaveTemplate}>
                 <BookmarkPlus size={11} /> Save
               </button>
             )}
             {onShare && (
-              <button className="wr-action-btn" onClick={onShare}>
+              <button className="wr-diff-expand-btn" onClick={onShare}>
                 <Share2 size={11} /> Share
               </button>
             )}
-            <button className={`wr-action-btn${copied ? ' copied' : ''}`} onClick={handleCopy}>
+            <button className={`wr-copy-btn${copied ? ' copied' : ''}`} onClick={handleCopy}>
               {copied ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
             </button>
           </div>
@@ -1256,24 +1260,30 @@ function WriteDiffBlock({
           </div>
         )}
 
-        <div className="wr-text-meta">
-          <span>
-            {afterStats.words} words
-            {deltaStr && <span className={`wr-word-delta${wordDelta <= 0 ? ' good' : ' up'}`}> {deltaStr}</span>}
-          </span>
-          <span>~{afterStats.readSecs}s read</span>
-        </div>
-        {!streaming && (
-          <div className="wr-readability">
-            <span>Readability:</span>
-            <span className={`wr-readability-score ${beforeReadability.cls}`}>{beforeReadability.label} ({beforeReadability.score})</span>
-            <span className="wr-readability-arrow" aria-hidden="true">
-              <ArrowRight size={12} />
+        {streaming ? (
+          <div className="wr-text-meta">
+            <span>{afterStats.words} words</span>
+            <span>~{afterStats.readSecs}s read</span>
+          </div>
+        ) : (
+          <div className="wr-meta-bar">
+            <span className="wr-meta-chip">
+              📊 {afterStats.words} words
+              {deltaStr && <span className={`wr-word-delta${wordDelta <= 0 ? ' good' : ' up'}`}> {deltaStr}</span>}
             </span>
-            <span className={`wr-readability-score ${afterReadability.cls}${afterReadability.score > beforeReadability.score ? ' wr-readability-improved' : ''}`}>
-              {afterReadability.score < beforeReadability.score && <span title="Readability decreased" aria-label="Readability decreased">⚠️ </span>}
-              {afterReadability.label} ({afterReadability.score})
-            </span>
+            <span className="wr-meta-chip">⏱️ ~{afterStats.readSecs}s read</span>
+            <div className="h-4 w-px bg-[var(--wr-border-soft)]" />
+            <div className="wr-readability">
+              <span>Readability:</span>
+              <span className={`wr-readability-score ${beforeReadability.cls}`}>{beforeReadability.label} ({beforeReadability.score})</span>
+              <span className="wr-readability-arrow" aria-hidden="true">
+                <ArrowRight size={12} />
+              </span>
+              <span className={`wr-readability-score ${afterReadability.cls}${afterReadability.score > beforeReadability.score ? ' wr-readability-improved' : ''}`}>
+                {afterReadability.score < beforeReadability.score && <span title="Readability decreased" aria-label="Readability decreased">⚠️ </span>}
+                {afterReadability.label} ({afterReadability.score})
+              </span>
+            </div>
           </div>
         )}
         {englishVersion && outputLang && outputLang !== 'en' && !streaming && (
@@ -1341,25 +1351,27 @@ function WriteDiffBlock({
 
       {!streaming && suggestionChips.length > 0 && (
         <div className="wr-suggestions">
-          {suggestionChips.map((chip, i) => (
-            <button
-              key={`${chip}-${i}`}
-              type="button"
-              className="wr-sug-pill"
-              onClick={() => onSuggest?.(chip)}
-              disabled={!onSuggest}
-            >
-              → {chip}
-            </button>
-          ))}
+          <div className="wr-suggestion-chips">
+            {suggestionChips.map((chip, i) => (
+              <button
+                key={`${chip}-${i}`}
+                type="button"
+                className="wr-suggestion-chip"
+                onClick={() => onSuggest?.(chip)}
+                disabled={!onSuggest}
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
       {!streaming && canCollectFeedback && chatId && (
-        <div className="wr-feedback">
-          <span className="wr-feedback-lbl">How was this result?</span>
+        <div className="wr-feedback-bar">
+          <span className="wr-fb-label">How was this result?</span>
           <button
-            className={`wr-fb ${feedbackState === 'up' ? 'up' : ''}`}
+            className={`wr-fb-btn ${feedbackState === 'up' ? 'active' : ''}`}
             onClick={() => handleFeedback('up')}
             aria-label="This result was helpful"
             aria-pressed={feedbackState === 'up'}
@@ -1368,7 +1380,7 @@ function WriteDiffBlock({
             <ThumbsUp size={12} strokeWidth={feedbackState === 'up' ? 3 : 2} />
           </button>
           <button
-            className={`wr-fb ${feedbackState === 'down' ? 'down' : ''}`}
+            className={`wr-fb-btn ${feedbackState === 'down' ? 'active' : ''}`}
             onClick={() => handleFeedback('down')}
             aria-label="This result needs improvement"
             aria-pressed={feedbackState === 'down'}
@@ -2762,24 +2774,18 @@ export default function WriteRightPage() {
   }, [])
 
   const handleModeChange = useCallback((newMode: WritingMode) => {
-    if (newMode === mode && !chatId) return
+    if (newMode === mode) return
     const wasStarted = hasStarted || chatId !== null
     setMode(newMode)
-    setChatId(null)
-    setMessages([])
-    setHasStarted(false)
-    setStreamingText('')
-    setStreamingBefore('')
     setRantDismissed(false)   // reset so rant banner can reappear in new mode
     if (wasStarted) {
       const modeLabel = MODES.find((m) => m.id === newMode)?.label ?? newMode
-      setMessages([{
+      setMessages((prev) => [...prev, {
         id: makeClientId('notice'),
         role: 'ai',
         kind: 'notice',
         content: `Switched to ${modeLabel} mode`,
       }])
-      setHasStarted(true)
     }
   }, [chatId, hasStarted, mode])
 
@@ -3471,7 +3477,7 @@ export default function WriteRightPage() {
             <span className="wr-plan-badge-dot" />
             <span>Pro Plan</span>
             <span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>
-            <Link href="/dashboard/account" className="wr-plan-upgrade">
+            <Link href="/dashboard/settings" className="wr-plan-upgrade">
               Manage Plan
             </Link>
           </div>

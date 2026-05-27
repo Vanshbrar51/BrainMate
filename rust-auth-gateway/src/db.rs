@@ -162,6 +162,7 @@ impl DbClient {
             "SELECT count_active_sessions_for_user($1) AS cnt",
         )
         .bind(&record.user_id)
+        .persistent(false)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -193,6 +194,7 @@ impl DbClient {
         .bind(record.issued_at)
         .bind(&record.device_info)
         .bind(record.expires_at)
+        .persistent(false)
         .execute(&mut *tx)
         .await?;
 
@@ -225,6 +227,7 @@ impl DbClient {
             "#,
         )
         .bind(session_id)
+        .persistent(false)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -256,6 +259,7 @@ impl DbClient {
             "#,
         )
         .bind(session_id)
+        .persistent(false)
         .execute(&self.pool)
         .await?;
 
@@ -287,6 +291,7 @@ impl DbClient {
         )
         .bind(jti)
         .bind(expires_at)
+        .persistent(false)
         .execute(&self.pool)
         .await?;
 
@@ -335,6 +340,7 @@ impl DbClient {
         )
         .bind(jti)
         .bind(now_secs)
+        .persistent(false)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -384,6 +390,7 @@ impl DbClient {
         .bind(&record.user_id)
         .bind(&record.device_id)
         .bind(record.expires_at)
+        .persistent(false)
         .execute(&self.pool)
         .await?;
 
@@ -460,6 +467,7 @@ impl DbClient {
         .bind(old_token_hash)
         .bind(new_token_hash)
         .bind(now_unix_secs() as i64)
+        .persistent(false)
         .fetch_optional(&mut *tx)
         .await?;
 
@@ -493,6 +501,7 @@ impl DbClient {
         .bind(new_user_id)
         .bind(new_device_id)
         .bind(new_expires_at)
+        .persistent(false)
         .execute(&mut *tx)
         .await?;
 
@@ -534,6 +543,7 @@ impl DbClient {
             "#,
         )
         .bind(token_hash)
+        .persistent(false)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -565,6 +575,7 @@ impl DbClient {
             "#,
         )
         .bind(token_hash)
+        .persistent(false)
         .execute(&self.pool)
         .await?;
 
@@ -606,6 +617,7 @@ impl DbClient {
             "#,
         )
         .bind(user_id)
+        .persistent(false)
         .execute(&self.pool)
         .await?;
 
@@ -643,6 +655,7 @@ impl DbClient {
                ORDER BY connected_at DESC LIMIT 1"#,
         )
         .bind(clerk_user_id)
+        .persistent(false)
         .fetch_optional(&self.pool)
         .await
     }
@@ -660,6 +673,7 @@ impl DbClient {
                ORDER BY connected_at DESC LIMIT 1"#,
         )
         .bind(clerk_user_id)
+        .persistent(false)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -698,6 +712,7 @@ impl DbClient {
         .bind(clerk_user_id).bind(gmail_email)
         .bind(access_token_enc).bind(refresh_token_enc)
         .bind(token_expiry).bind(scope)
+        .persistent(false)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -718,6 +733,7 @@ impl DbClient {
                WHERE clerk_user_id = $3 AND is_active = true"#,
         )
         .bind(new_access_token_enc).bind(new_expiry).bind(clerk_user_id)
+        .persistent(false)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -734,6 +750,7 @@ impl DbClient {
              WHERE clerk_user_id = $1 AND is_active = true",
         )
         .bind(clerk_user_id)
+        .persistent(false)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -761,6 +778,7 @@ impl DbClient {
         )
         .bind(clerk_user_id).bind(provider).bind(email_address)
         .bind(display_name).bind(avatar_url)
+        .persistent(false)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -773,7 +791,8 @@ impl DbClient {
     /// Run the server-side cleanup function to prune expired records.
     pub async fn run_cleanup(&self) -> Result<(), sqlx::Error> {
         sqlx::query("SELECT cleanup_expired_auth()")
-            .execute(&self.pool)
+            .persistent(false)
+        .execute(&self.pool)
             .await?;
         Ok(())
     }

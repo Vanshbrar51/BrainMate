@@ -10,7 +10,7 @@ const TITLE_BY_PATH: Record<string, string> = {
   '/dashboard/writing': 'WriteRight',
   '/dashboard/interview': 'InterviewPro',
   '/dashboard/repurposer': 'ContentFlow',
-  '/dashboard/account': 'Account',
+  '/dashboard/settings': 'Settings',
 }
 
 const MODULE_META: Record<string, { color: string; dot: boolean }> = {
@@ -71,7 +71,7 @@ export function DashboardTopbar({ pathname }: { pathname: string }) {
         </button>
 
         <Link
-          href="/dashboard/account"
+          href="/dashboard/settings"
           className="ml-1 inline-flex h-9 items-center rounded-xl border border-[var(--accent-border)] bg-[var(--accent-subtle)] px-3.5 text-sm font-semibold text-[var(--accent)] no-underline transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-subtle)]"
         >
           Upgrade ↑

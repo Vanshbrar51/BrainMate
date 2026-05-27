@@ -417,6 +417,23 @@ def _quality_gate(text: str) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
+def _has_gmail_retrieval_intent(text: str) -> bool:
+    """Detect if the user wants to fetch or retrieve their Gmail messages."""
+    text_lower = text.lower()
+    if "gmail" in text_lower:
+        if any(w in text_lower for w in ["connect", "disconnect", "setup", "settings"]):
+            return False
+        return True
+
+    retrieval_verbs = ["summarise", "summarize", "read", "check", "get", "fetch", "show", "what is", "what's", "latest", "recent"]
+    email_nouns = ["my email", "my mail", "my inbox", "latest mail", "recent emails", "latest email", "messages"]
+
+    has_verb = any(verb in text_lower for verb in retrieval_verbs)
+    has_noun = any(noun in text_lower for noun in email_nouns)
+
+    return has_verb and has_noun
+
+
 async def _generate_draft(
     job: WritingJob,
     settings_instance: Settings,
@@ -451,6 +468,48 @@ async def _generate_draft(
         except Exception:
             logger.warning("Brand Voice retrieval failed (non-fatal)")
 
+        # Gmail Integration - Fetch recent emails if user shows Gmail retrieval intent
+        gmail_context = None
+        if _has_gmail_retrieval_intent(job.content):
+            from app.services.gmail_client import GmailClient
+            gmail_client = GmailClient()
+            try:
+                status_res = await gmail_client.get_connection_status(job.user_id)
+                if status_res.get("connected"):
+                    emails_res = await gmail_client.fetch_recent_emails(job.user_id, max_results=5)
+                    emails = emails_res.get("emails", [])
+                    if emails:
+                        emails_str = ""
+                        for idx, email in enumerate(emails, 1):
+                            emails_str += f"\nEmail #{idx}:\nMessage ID: {email.get('id')}\nFrom: {email.get('sender_name')} <{email.get('sender_email')}>\nSubject: {email.get('subject')}\nSnippet: {email.get('snippet')}\nBody: {email.get('body_plain') or email.get('body_preview')}\nDate/Time: {email.get('timestamp')}\n---"
+                        gmail_context = (
+                            f"The user's Gmail account is connected. Here are their 5 most recent emails:\n"
+                            f"{emails_str}\n\n"
+                            f"Use this information to fulfill their request (e.g., summarize, reply, etc.)."
+                        )
+                    else:
+                        gmail_context = (
+                            "The user's Gmail account is connected, but no emails were found in their inbox."
+                        )
+                else:
+                    gmail_context = (
+                        "NOTE: The user is asking about their Gmail/emails, but they have not connected "
+                        "their Gmail account. Inform them politely in the improved_text that they must "
+                        "connect their Gmail account in the Settings panel first."
+                    )
+            except ConnectionError:
+                gmail_context = (
+                    "NOTE: The user is asking about their Gmail/emails, but the internal authentication "
+                    "gateway is currently offline. Inform them politely in the improved_text that the "
+                    "mail service is temporarily unavailable due to gateway being offline."
+                )
+            except Exception as e:
+                logger.error(f"Error checking Gmail for job {job.id}: {e}")
+                gmail_context = (
+                    "NOTE: An unexpected error occurred while trying to fetch the user's Gmail emails. "
+                    "Inform them politely in the improved_text that we couldn't retrieve their messages."
+                )
+
         # 3. Build prompt
         messages, prompt_metadata = build_messages(
             user_text=job.content,
@@ -463,6 +522,7 @@ async def _generate_draft(
             intensity=job.intensity,
             max_history=10,
             max_input_tokens=settings_instance.max_input_tokens,
+            gmail_context=gmail_context,
         )
 
         if prompt_metadata.get("injection_detected"):

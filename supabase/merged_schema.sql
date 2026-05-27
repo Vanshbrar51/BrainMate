@@ -579,7 +579,7 @@ BEGIN
     (user_id, top_mistakes, improvement_count, last_analyzed_at)
   VALUES (
     NEW.user_id,
-    COALESCE(v_mistakes, '{}'),
+    COALESCE(to_jsonb(v_mistakes), '[]'::jsonb),
     v_count,
     now()
   )

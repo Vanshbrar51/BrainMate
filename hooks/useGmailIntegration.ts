@@ -166,10 +166,13 @@ export function useGmailIntegration() {
   const connect = useCallback(async () => {
     setConnectionLoading(true)
     try {
-      const { url } = await gmailGet<{ url: string }>('/api/gmail/connect')
+      const returnTo = window.location.pathname
+      const { url } = await gmailGet<{ url: string }>(`/api/gmail/connect?returnTo=${encodeURIComponent(returnTo)}`)
       window.location.href = url
-    } catch {
+    } catch (err) {
       setConnectionLoading(false)
+      const msg = err instanceof Error ? err.message : 'Connection failed'
+      setConnectionStatus(prev => ({ ...prev, error: msg }))
     }
   }, [])
 
@@ -185,8 +188,9 @@ export function useGmailIntegration() {
       await gmailPost('/api/gmail/disconnect')
       setConnectionStatus({ connected: false, connection: null })
       setPanel(p => ({ ...p, isOpen: false, emails: [], selectedEmail: null, previewOpen: false }))
-    } catch {
-      // Ignore
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Disconnect failed'
+      setConnectionStatus(prev => ({ ...prev, error: msg }))
     } finally {
       setConnectionLoading(false)
     }

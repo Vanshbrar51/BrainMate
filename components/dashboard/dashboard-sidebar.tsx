@@ -176,7 +176,7 @@ export function DashboardSidebar() {
         </div>
 
         <Link
-          href="/dashboard/account"
+          href="/dashboard/settings"
           className="mb-2 flex h-10 items-center gap-2.5 rounded-xl px-3 text-sm text-[var(--text-2)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--text-1)]"
         >
           <Settings2 size={15} />
@@ -184,7 +184,7 @@ export function DashboardSidebar() {
         </Link>
 
         <Link
-          href="/dashboard/account"
+          href="/dashboard/settings"
           className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 no-underline transition-colors hover:border-[var(--border-med)]"
         >
           <div className="flex size-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-subtle)] text-xs font-medium text-[var(--text-2)]">
