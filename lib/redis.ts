@@ -15,24 +15,25 @@
 //   await redis.set(ns("session", sessionId), value, "EX", 3600);
 
 import { type Redis as RedisClient } from "ioredis";
+import { createApiError } from "@/lib/writeright-errors";
+import { logger } from "@/lib/writeright-logger";
 
 // ---------------------------------------------------------------------------
 // Configuration — read once at module load, never from untrusted input
 // ---------------------------------------------------------------------------
 
 function getRedisUrl(): string {
-  const url =
-    process.env.REDIS_URL ??
-    process.env.REDIS_PRIMARY_URL ??
-    process.env.AUTH_REDIS_PRIMARY_URL;
+  const url = process.env.REDIS_URL;
 
   if (!url) {
     // In test environments, fall back to localhost so tests don't crash.
     if (process.env.NODE_ENV === "test") {
       return "redis://127.0.0.1:6379";
     }
-    throw new Error(
+    throw createApiError(
+      "MISSING_SECRET",
       "[redis] No Redis URL configured. Set REDIS_URL in your environment.",
+      500
     );
   }
 
@@ -118,9 +119,7 @@ export function ns(...parts: string[]): string {
  */
 function retryStrategy(times: number): number | null {
   if (times > MAX_RETRIES) {
-    console.error(
-      `[redis] Exceeded ${MAX_RETRIES} reconnection attempts. Giving up.`,
-    );
+    logger.error("redis_max_retries_exceeded", { message: `[redis] Exceeded ${MAX_RETRIES} reconnection attempts. Giving up.` });
     return null; // Stop retrying — ioredis will emit 'close'
   }
 
@@ -128,9 +127,7 @@ function retryStrategy(times: number): number | null {
   const jitter = Math.random() * base;
   const delay = Math.round(jitter);
 
-  console.warn(
-    `[redis] Connection lost. Retry attempt ${times}/${MAX_RETRIES} in ${delay}ms`,
-  );
+  logger.warn("redis_reconnecting", { message: `[redis] Connection lost. Retry attempt ${times}/${MAX_RETRIES} in ${delay}ms` });
 
   return delay;
 }
@@ -184,7 +181,7 @@ export async function initRedisPool(): Promise<RedisClient> {
 
 async function createRedisClient(): Promise<RedisClient> {
   if (process.env.NEXT_RUNTIME !== "nodejs") {
-    throw new Error("[redis] ioredis is not supported in the Edge Runtime");
+    throw createApiError("INTERNAL_ERROR", "[redis] ioredis is not supported in the Edge Runtime", 500);
   }
 
   const Redis = (await import("ioredis")).default;
@@ -231,13 +228,11 @@ async function createRedisClient(): Promise<RedisClient> {
   client.on("connect", () => {
     _circuit.consecutiveErrors = 0;
     _circuit.totalConnects += 1;
-    console.info(
-      `[redis] Connected to ${maskUrl(url)} (connect #${_circuit.totalConnects})`,
-    );
+    logger.info("redis_connected", { url: maskUrl(url), connectCount: _circuit.totalConnects });
   });
 
   client.on("ready", () => {
-    console.info("[redis] Connection ready — commands can be issued");
+    logger.info("redis_ready", { message: "[redis] Connection ready — commands can be issued" });
   });
 
   client.on("error", (err: Error) => {
@@ -246,27 +241,29 @@ async function createRedisClient(): Promise<RedisClient> {
 
     if (_circuit.consecutiveErrors >= CIRCUIT_ERROR_THRESHOLD) {
       _circuit.openUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
-      console.error(
-        `[redis] Circuit OPEN for ${CIRCUIT_COOLDOWN_MS / 1000}s after ${_circuit.consecutiveErrors} consecutive errors`,
-      );
+      logger.error("redis_circuit_open", { 
+        cooldownSeconds: CIRCUIT_COOLDOWN_MS / 1000, 
+        consecutiveErrors: _circuit.consecutiveErrors 
+      });
     }
 
     // Avoid logging the full URL (it contains credentials)
-    console.error(
-      `[redis] Error (consecutive: ${_circuit.consecutiveErrors}): ${err.message}`,
-    );
+    logger.error("redis_connection_error", { 
+      consecutive: _circuit.consecutiveErrors, 
+      error: err.message 
+    });
   });
 
   client.on("close", () => {
-    console.warn("[redis] Connection closed");
+    logger.warn("redis_closed", { message: "[redis] Connection closed" });
   });
 
   client.on("reconnecting", (delay: number) => {
-    console.warn(`[redis] Reconnecting in ${delay}ms…`);
+    logger.warn("redis_reconnecting", { delayMs: delay });
   });
 
   client.on("end", () => {
-    console.warn("[redis] Connection ended — no more reconnect attempts");
+    logger.warn("redis_ended", { message: "[redis] Connection ended — no more reconnect attempts" });
     // Clear singleton so the next call recreates the client
     // (only relevant if shutdownRedisPool was NOT called explicitly)
     _poolInstance = null;
@@ -295,20 +292,20 @@ declare global {
  */
 export function getRedisPool(): RedisClient {
   if (process.env.NEXT_RUNTIME !== "nodejs") {
-    throw new Error("[redis] Cannot access Redis pool in the Edge Runtime");
+    throw createApiError("INTERNAL_ERROR", "[redis] Cannot access Redis pool in the Edge Runtime", 500);
   }
 
   // In Next.js dev mode, use globalThis to survive module cache refreshes.
   if (process.env.NODE_ENV !== "production") {
     if (!globalThis.__ioredis_pool__ || globalThis.__ioredis_pool__.status === "end") {
-      throw new Error("[redis] Dev pool not initialized. Ensure createRedisClient was awaited during startup.");
+      throw createApiError("INTERNAL_ERROR", "[redis] Dev pool not initialized. Ensure createRedisClient was awaited during startup.", 500);
     }
     return globalThis.__ioredis_pool__;
   }
 
   // In production, module cache is stable — use module-level variable.
   if (!_poolInstance || _poolInstance.status === "end") {
-    throw new Error("[redis] Production pool not initialized. Ensure createRedisClient was awaited during startup.");
+    throw createApiError("INTERNAL_ERROR", "[redis] Production pool not initialized. Ensure createRedisClient was awaited during startup.", 500);
   }
 
   return _poolInstance;
@@ -333,13 +330,13 @@ export async function shutdownRedisPool(): Promise<void> {
   if (!client || client.status === "end") return;
 
   try {
-    console.info("[redis] Shutting down Redis connection pool…");
+    logger.info("redis_shutdown_start", { message: "[redis] Shutting down Redis connection pool…" });
     await client.quit();
-    console.info("[redis] Redis connection closed gracefully");
+    logger.info("redis_shutdown_complete", { message: "[redis] Redis connection closed gracefully" });
   } catch (err) {
     // If QUIT fails (e.g., already closed), just disconnect.
     client.disconnect();
-    console.warn("[redis] Forced disconnect during shutdown:", err);
+    logger.warn("redis_forced_disconnect", { error: err instanceof Error ? err.message : String(err) });
   } finally {
     _poolInstance = null;
     globalThis.__ioredis_pool__ = undefined;

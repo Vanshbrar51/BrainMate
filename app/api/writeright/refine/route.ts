@@ -41,8 +41,10 @@ async function callGemini(
     const err = (await response.json().catch(() => ({}))) as {
       error?: { message?: string };
     };
-    throw new Error(
+    throw createApiError(
+      "UPSTREAM_ERROR",
       err?.error?.message ?? `Gemini API error ${response.status}`,
+      response.status
     );
   }
 

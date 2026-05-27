@@ -12,19 +12,23 @@ import { z } from "zod"
 // Schemas
 // ---------------------------------------------------------------------------
 
-const PreferenceSchema = z.object({
-  preferredTone: z.enum(['Professional', 'Friendly', 'Concise', 'Academic', 'Assertive']),
-  preferredMode: z.enum(['email', 'paragraph', 'linkedin', 'whatsapp']),
-  preferredIntensity: z.number().min(1).max(3),
-  preferredOutputLang: z.enum(['en', 'hindi', 'tamil', 'marathi', 'bengali', 'telugu']),
-  favouriteChips: z.array(z.string()).max(5),
-  uiPreferences: z.object({
-    sidebarOpen: z.boolean(),
-    analyticsOpen: z.boolean(),
-    coachBarEnabled: z.boolean(),
-    splitViewDefault: z.boolean()
-  })
-})
+const UIPreferencesSchema = z.object({
+  sidebarOpen:        z.boolean().optional(),
+  analyticsOpen:      z.boolean().optional(),
+  coachBarEnabled:    z.boolean().optional(),
+  splitViewDefault:   z.boolean().optional(),
+  focusModeEnabled:   z.boolean().optional(),
+  grammarScanEnabled: z.boolean().optional(),
+}).strict();
+
+const PutPreferencesSchema = z.object({
+  preferredTone:       z.enum(['Professional','Friendly','Concise','Academic','Assertive']).optional(),
+  preferredMode:       z.enum(['email','paragraph','linkedin','whatsapp']).optional(),
+  preferredIntensity:  z.number().int().min(1).max(5).optional(),
+  preferredOutputLang: z.string().max(20).optional(),
+  favouriteChips:      z.array(z.string().max(200)).max(10).optional(),
+  uiPreferences:       UIPreferencesSchema.optional(),
+});
 
 const DEFAULT_PREFERENCES = {
   preferredTone: "Professional",
@@ -89,7 +93,7 @@ export async function PUT(req: Request) {
         throw createApiError("INVALID_BODY", "Invalid JSON format", 400)
       }
 
-      const parsed = PreferenceSchema.safeParse(body)
+      const parsed = PutPreferencesSchema.safeParse(body)
       if (!parsed.success) {
         throw createApiError("VALIDATION_ERROR", "Validation failed for preferences", 400, { issues: parsed.error.issues })
       }

@@ -6,6 +6,8 @@
 // NEVER import this in client components — server-side only.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createApiError } from "@/lib/writeright-errors";
+import { logger } from "@/lib/writeright-logger";
 
 // ---------------------------------------------------------------------------
 // Singleton — one client per process lifetime
@@ -17,8 +19,10 @@ function getSupabaseUrl(): string {
   const url =
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
   if (!url) {
-    throw new Error(
+    throw createApiError(
+      "MISSING_SECRET",
       "[supabase] NEXT_PUBLIC_SUPABASE_URL is not configured. Set it in your environment.",
+      500
     );
   }
   return url;
@@ -27,8 +31,10 @@ function getSupabaseUrl(): string {
 function getServiceRoleKey(): string {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) {
-    throw new Error(
+    throw createApiError(
+      "MISSING_SECRET",
       "[supabase] SUPABASE_SERVICE_ROLE_KEY is not configured. Set it in your environment.",
+      500
     );
   }
   return key;
@@ -64,12 +70,10 @@ export function getSupabaseWithTiming(): {
   const logSlow = (operationName: string, startMs: number) => {
     const duration = Date.now() - startMs;
     if (duration > 500) {
-      console.warn(JSON.stringify({
-        event: "slow_db_query",
+      logger.warn("slow_db_query", {
         operation: operationName,
         duration_ms: duration,
-        ts: new Date().toISOString(),
-      }));
+      });
     }
   };
   return { supabase, logSlow };

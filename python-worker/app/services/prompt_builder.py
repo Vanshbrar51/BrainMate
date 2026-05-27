@@ -347,7 +347,26 @@ FEW_SHOT_POOL: dict[str, list[dict[str, str]]] = {
 
 
 # ---------------------------------------------------------------------------
-# History Formatting
+# Mode-Specific System Prompts (for non-standard job modes)
+# ---------------------------------------------------------------------------
+
+SYSTEM_PROMPTS: dict[str, str] = {
+    "rephrase": """You are an expert writing coach specialising in concise, impactful rephrasing.
+Given a sentence or short paragraph, return EXACTLY 3 alternative versions.
+Respond ONLY with a JSON object: {"rephrases": ["...", "...", "..."]}
+No preamble, no explanation, no markdown fences.""",
+    "smart_suggestions": """You are a writing coach generating 3 contextual next-step suggestions.
+Given the last AI-improved text and the writing mode, suggest 3 short follow-up prompts
+the user could naturally send next. Each suggestion must be 3-8 words.
+Respond ONLY with JSON: {"suggestions": ["...", "...", ""]}""",
+    "session_dna": """You are a writing analyst. Given a sample of a user's improved texts,
+their most common mistakes, and their dominant tone/mode preferences, write:
+1. A 3-sentence "style_summary" of their writing personality (warm, specific, honest)
+2. Up to 5 "signature_phrases" — linguistic patterns distinctive to this writer
+Respond ONLY with JSON: {"style_summary": "...", "signature_phrases": ["...", ...]}""",
+}
+
+
 # ---------------------------------------------------------------------------
 
 

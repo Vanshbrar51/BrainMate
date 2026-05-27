@@ -173,6 +173,62 @@ async def _heartbeat_lock(
 
 
 # ---------------------------------------------------------------------------
+# Mode Dispatch
+# ---------------------------------------------------------------------------
+
+# Modes that are fully handled by process_job() via build_messages().
+# Extend this tuple when adding new modes that follow the standard pipeline.
+_STANDARD_MODES: frozenset[str] = frozenset(
+    {
+        "write_improvement",
+        "translation",
+        "json_repair",
+        "summarize",
+        "email",
+        "linkedin",
+        "whatsapp",
+        "paragraph",
+        "professionalize",
+        "shorten",
+        "rewrite",
+        "reply_draft",
+        # Non-standard modes that reuse process_job with mode-specific prompts:
+        "rephrase",
+        "smart_suggestions",
+        "session_dna",
+    }
+)
+
+
+async def _dispatch_job(
+    job: WritingJob,
+    settings_instance: Any,
+    on_stream_chunk: Any,
+    on_status: Any,
+) -> Any:
+    """Route job to the correct processor based on job.mode.
+
+    All registered modes are forwarded to process_job(); unknown modes are
+    rejected immediately with a structured error log so they are not silently
+    dropped or retried indefinitely.
+    """
+    if job.mode in _STANDARD_MODES:
+        return await process_job(
+            job,
+            settings_instance,
+            on_stream_chunk=on_stream_chunk,
+            on_status=on_status,
+        )
+
+    logger.warning(
+        "unknown_job_mode",
+        extra={"mode": job.mode, "job_id": job.id},
+    )
+    # Raise so _handle_failure records it in the dead-letter queue.
+    raise ValueError(f"Unknown job mode: {job.mode!r}")
+
+
+# ---------------------------------------------------------------------------
 # Consumer Loop
 # ---------------------------------------------------------------------------
 
@@ -332,7 +388,7 @@ async def _process_job_safe(
                 )
 
             result = await asyncio.wait_for(
-                process_job(
+                _dispatch_job(
                     job,
                     get_settings(),
                     on_stream_chunk=on_stream_chunk,

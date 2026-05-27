@@ -44,7 +44,9 @@ fn parse_enc_key(hex_key: &str) -> Result<Key<Aes256Gcm>> {
     if bytes.len() != 32 {
         bail!("GMAIL_TOKEN_ENCRYPTION_KEY must decode to 32 bytes (64 hex chars)");
     }
-    Ok(*Key::<Aes256Gcm>::from_slice(&bytes))
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&bytes);
+    Ok(Key::<Aes256Gcm>::from(arr))
 }
 
 /// Encrypts `plaintext` with AES-256-GCM.
@@ -55,10 +57,10 @@ pub fn encrypt_token(plaintext: &str, hex_key: &str) -> Result<String> {
 
     let mut nonce_bytes = [0u8; GCM_NONCE_LEN];
     OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::from(nonce_bytes);
 
     let ct = cipher
-        .encrypt(nonce, plaintext.as_bytes())
+        .encrypt(&nonce, plaintext.as_bytes())
         .map_err(|_| anyhow!("AES-GCM encryption failed"))?;
 
     let mut out = Vec::with_capacity(GCM_NONCE_LEN + ct.len());
@@ -77,9 +79,11 @@ fn decrypt_token(hex_enc: &str, hex_key: &str) -> Result<String> {
     }
     let key    = parse_enc_key(hex_key)?;
     let cipher = Aes256Gcm::new(&key);
-    let nonce  = Nonce::from_slice(&raw[..GCM_NONCE_LEN]);
+    let mut arr = [0u8; GCM_NONCE_LEN];
+    arr.copy_from_slice(&raw[..GCM_NONCE_LEN]);
+    let nonce  = Nonce::from(arr);
     let pt     = cipher
-        .decrypt(nonce, &raw[GCM_NONCE_LEN..])
+        .decrypt(&nonce, &raw[GCM_NONCE_LEN..])
         .map_err(|_| anyhow!("AES-GCM decryption failed (corrupt data or wrong key)"))?;
     String::from_utf8(pt).context("Decrypted token is not valid UTF-8")
 }
@@ -536,3 +540,87 @@ pub async fn fetch_email_by_id(
 
     Ok(parse_message(msg))
 }
+
+// ─── Thread Constants ──────────────────────────────────────────────────────────
+
+const GMAIL_THREAD_BASE_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/threads/";
+/// Maximum messages returned from a thread (caps server response to protect memory).
+const THREAD_MSG_CAP: usize = 10;
+
+// ─── Thread API types (internal deserialization only) ─────────────────────────
+
+#[derive(serde::Deserialize)]
+struct ApiThread {
+    id:       String,
+    messages: Option<Vec<ApiMsg>>,
+}
+
+// ─── Thread Fetch ──────────────────────────────────────────────────────────────
+
+/// Fetches up to `THREAD_MSG_CAP` (10) messages from a Gmail thread.
+///
+/// # Security invariants
+/// - `thread_id` is validated: 1–64 chars, no `'/'` or `'.'` characters.
+/// - Plaintext access token held only as a local `String`; dropped before return.
+/// - No raw token is logged or returned to the caller.
+/// - All email bodies are already sanitised by `parse_message` / `sanitize_html_to_text`.
+pub async fn fetch_thread_messages(
+    clerk_user_id: &str,
+    thread_id:     &str,
+    db:     &DbClient,
+    config: &Config,
+    http:   &reqwest::Client,
+) -> Result<(String, Vec<GmailEmail>, usize, bool)> {
+    // ── Input validation ──────────────────────────────────────────────────────
+    if thread_id.is_empty() || thread_id.len() > 64 {
+        anyhow::bail!("thread_id must be 1–64 characters");
+    }
+    if thread_id.bytes().any(|b| b == b'/' || b == b'.') {
+        anyhow::bail!("thread_id contains invalid characters ('/' or '.')");
+    }
+
+    // ── Obtain a valid (possibly refreshed) access token ──────────────────────
+    // `get_valid_access_token` is private to this module — the token never
+    // leaves the gmail.rs module scope.
+    let token = get_valid_access_token(clerk_user_id, db, config, http).await?;
+
+    // ── Call Gmail Threads API ────────────────────────────────────────────────
+    let url = format!("{}{}", GMAIL_THREAD_BASE_URL, thread_id);
+
+    let resp = http
+        .get(&url)
+        .bearer_auth(&token)
+        .query(&[("format", "full")])
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .context("Gmail thread fetch request failed")?;
+
+    // Explicitly drop the plaintext token now — nothing after this needs it.
+    drop(token);
+
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        anyhow::bail!("thread_not_found");
+    }
+    if !resp.status().is_success() {
+        let s = resp.status();
+        let _ = resp.bytes().await; // consume body without logging
+        anyhow::bail!("Gmail thread endpoint returned HTTP {s}");
+    }
+
+    let thread: ApiThread = resp.json().await.context("Failed to parse thread response")?;
+
+    // ── Parse and cap messages ────────────────────────────────────────────────
+    let raw_messages = thread.messages.unwrap_or_default();
+    let total_count  = raw_messages.len();
+    let truncated    = total_count > THREAD_MSG_CAP;
+
+    let messages: Vec<GmailEmail> = raw_messages
+        .into_iter()
+        .take(THREAD_MSG_CAP)
+        .map(parse_message)
+        .collect();
+
+    Ok((thread.id, messages, total_count, truncated))
+}
+

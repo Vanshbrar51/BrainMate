@@ -174,6 +174,33 @@ async fn gmail_get_email(
         })
 }
 
+async fn gmail_get_thread(
+    State(state): State<AppState>,
+    axum::extract::Path((uid, thread_id)): axum::extract::Path<(String, String)>,
+) -> Result<impl IntoResponse, ApiError> {
+    // Prevent path traversal (also validated inside fetch_thread_messages, double-checked here)
+    if thread_id.len() > 64 || thread_id.bytes().any(|b| b == b'/' || b == b'.') {
+        return Err(ApiError::bad_request("Invalid thread ID"));
+    }
+    let db   = state.db.as_ref().ok_or_else(|| ApiError::service_unavailable("DB unavailable"))?;
+    let http = build_http_client()?;
+    crate::gmail::fetch_thread_messages(&uid, &thread_id, db, &state.config, &http)
+        .await
+        .map(|(subject, messages, total, truncated)| {
+            Json(serde_json::json!({
+                "thread_id": thread_id,
+                "subject":   subject,
+                "messages":  messages,
+                "total":     total,
+                "truncated": truncated,
+            }))
+        })
+        .map_err(|e| {
+            tracing::error!(error = %e, "gmail_get_thread");
+            ApiError::service_unavailable("Fetch failed")
+        })
+}
+
 async fn gmail_disconnect(
     State(state): State<AppState>,
     Json(body): Json<GmailDisconnectRequest>,
@@ -259,6 +286,7 @@ pub fn create_internal_router(state: AppState) -> Router {
         .route("/v1/gmail/status/{uid}", get(gmail_status))
         .route("/v1/gmail/emails/{uid}", get(gmail_list_emails))
         .route("/v1/gmail/emails/{uid}/{msg_id}", get(gmail_get_email))
+        .route("/v1/gmail/threads/{uid}/{thread_id}", get(gmail_get_thread))
         .route("/v1/gmail/disconnect", post(gmail_disconnect))
         .route_layer(middleware::from_fn({
             let state = state.clone();

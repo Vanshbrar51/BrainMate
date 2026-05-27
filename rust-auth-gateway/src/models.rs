@@ -33,3 +33,15 @@ pub struct SessionResponse {
     pub expires_at: u64,
     pub issuer: String,
 }
+
+/// Response returned by the `/v1/gmail/threads/{uid}/{thread_id}` endpoint.
+///
+/// Security: contains only parsed, sanitised email data — no raw tokens.
+/// `messages` is capped at 10; `truncated` is set true when the thread had more.
+#[derive(Debug, Serialize)]
+pub struct ThreadResponse {
+    pub thread_id:   String,
+    pub messages:    Vec<crate::gmail::GmailEmail>,
+    pub total_count: usize,
+    pub truncated:   bool,
+}

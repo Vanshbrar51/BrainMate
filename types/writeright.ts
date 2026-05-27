@@ -217,18 +217,81 @@ export interface AnalyticsData {
 // Feature 11 — Smart Context Memory (Writing Preferences)
 // ============================================================
 
+// UI State Extensions
+export interface UIPreferences {
+  sidebarOpen: boolean
+  analyticsOpen: boolean
+  coachBarEnabled: boolean
+  splitViewDefault: boolean
+  focusModeEnabled: boolean
+  grammarScanEnabled: boolean
+}
+
 export interface WritingPreferences {
   preferredTone: ToneOption
   preferredMode: WritingMode
   preferredIntensity: number
   preferredOutputLang: OutputLang
   favouriteChips: string[]
-  uiPreferences: {
-    sidebarOpen: boolean
-    analyticsOpen: boolean
-    coachBarEnabled: boolean
-    splitViewDefault: boolean
-  }
+  uiPreferences: UIPreferences
+}
+
+// ============================================================
+// Gmail Enhancements
+// ============================================================
+
+export interface GmailContactHistory {
+  totalEmails: number
+  avgResponseHours: number | null
+  lastContactedDaysAgo: number | null
+  dominantTone: string
+  relationshipSummary: string
+  recentSnippets: string[]
+}
+
+export interface GmailThreadMessage {
+  id: string
+  sender_name: string
+  sender_email: string
+  body_plain: string
+  timestamp: string
+  is_from_user: boolean
+}
+
+export interface GmailThreadIntelligence {
+  thread_id: string
+  messages: GmailThreadMessage[]
+  ai_summary: string
+  action_items: string[]
+  detected_deadline: string | null
+  tone_assessment: string
+  suggested_reply_context: string
+}
+
+export interface GmailScheduledSend {
+  id: string
+  gmail_email: string
+  recipient_email: string
+  subject: string
+  body: string
+  scheduled_at: string
+  status: 'pending' | 'sent' | 'failed' | 'cancelled'
+  created_at: string
+}
+
+// ============================================================
+// Analytics Enhancements
+// ============================================================
+
+export type ImprovementTrajectory = 'improving' | 'stable' | 'declining'
+
+export interface WritingDNA {
+  style_summary: string
+  signature_phrases: string[]
+  improvement_trajectory: ImprovementTrajectory
+  percentile: number
+  dominant_mode: string
+  dominant_tone: string
 }
 
 // ============================================================

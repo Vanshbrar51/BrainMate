@@ -217,25 +217,31 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
   })
 
   return (
-    <div className="flex flex-col h-full bg-[var(--wr-bg)] border border-[var(--wr-border)] rounded-[var(--wr-radius)] p-5 relative overflow-hidden">
+    <div className="flex flex-col h-full" style={{ background: 'var(--wr-bg)', border: '1px solid var(--wr-border)', borderRadius: 'var(--wr-radius)', padding: '20px', position: 'relative', overflow: 'hidden' }}>
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--wr-border-soft)] pb-4 mb-4">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--wr-border-soft)', paddingBottom: '16px', marginBottom: '16px' }}>
         <div>
-          <h2 className="text-lg font-bold text-[var(--wr-text)] flex items-center gap-2">
+          <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--wr-text)', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
             📂 Template Library
           </h2>
-          <p className="text-xs text-[var(--wr-text-3)]">Save and reuse your best phrasing drafts</p>
+          <p style={{ fontSize: '12px', color: 'var(--wr-text-3)', margin: 0 }}>Save and reuse your best phrasing drafts</p>
         </div>
         <div className="flex gap-2">
           <button 
             onClick={() => setAiModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--wr-accent-soft)] hover:bg-[var(--wr-accent-hover)] hover:text-white text-[var(--wr-accent)] font-medium text-xs rounded-full transition-all duration-150"
+            className="flex items-center gap-1.5 px-3 py-1.5 font-medium text-xs rounded-full transition-all duration-150"
+            style={{ background: 'var(--wr-accent-soft)', color: 'var(--wr-accent)' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-accent-hover)'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-accent-soft)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--wr-accent)' }}
           >
             ✨ AI Generate Template
           </button>
           <button 
             onClick={onClose}
-            className="p-1.5 hover:bg-[var(--wr-surface-2)] text-[var(--wr-text-3)] rounded-full"
+            className="p-1.5 rounded-full"
+            style={{ color: 'var(--wr-text-3)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-surface-2)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
           >
             ✕
           </button>
@@ -244,8 +250,8 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
 
       {/* Smart Suggestions Chips */}
       {suggestions.length > 0 && (
-        <div className="mb-4 bg-[var(--wr-surface)] border border-[var(--wr-border-soft)] rounded-lg p-3">
-          <span className="text-[10px] font-bold text-[var(--wr-text-3)] uppercase tracking-wider block mb-2">Smart Suggestions</span>
+        <div style={{ marginBottom: '16px', background: 'var(--wr-surface)', border: '1px solid var(--wr-border-soft)', borderRadius: '8px', padding: '12px' }}>
+          <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--wr-text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '8px' }}>Smart Suggestions</span>
           <div className="flex flex-wrap gap-2">
             {suggestions.map((sug, idx) => (
               <button
@@ -255,7 +261,10 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
                   setAiModalOpen(true)
                   setAiPrompt(`Write a template for: ${sug.message.replace("Would you like a template for that?", "")}`)
                 }}
-                className="text-xs px-3 py-1.5 bg-[var(--wr-surface-2)] hover:bg-[var(--wr-border-soft)] border border-[var(--wr-border)] rounded-md text-[var(--wr-text-2)] text-left transition-all duration-150"
+                className="text-xs px-3 py-1.5 border rounded-md text-left transition-all duration-150"
+                style={{ background: 'var(--wr-surface-2)', border: '1px solid var(--wr-border)', color: 'var(--wr-text-2)' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-border-soft)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-surface-2)' }}
               >
                 💡 {sug.message}
               </button>
@@ -273,13 +282,14 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
             placeholder="Search templates by title or keywords..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full text-sm px-10 py-2 border border-[var(--wr-border)] bg-[var(--wr-surface)] rounded-md outline-none text-[var(--wr-text)]"
+            className="w-full text-sm px-10 py-2 rounded-md outline-none"
+            style={{ border: '1px solid var(--wr-border)', background: 'var(--wr-surface)', color: 'var(--wr-text)' }}
           />
-          <span className="absolute left-3 top-2.5 text-[var(--wr-text-3)]">🔍</span>
+          <span style={{ position: 'absolute', left: '12px', top: '10px', color: 'var(--wr-text-3)' }}>🔍</span>
           {searchQuery && (
             <button 
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-2.5 text-xs text-[var(--wr-text-3)]"
+              style={{ position: 'absolute', right: '12px', top: '10px', fontSize: '12px', color: 'var(--wr-text-3)', background: 'none', border: 'none', cursor: 'pointer' }}
             >
               ✕
             </button>
@@ -292,11 +302,12 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className={`px-3.5 py-1.5 text-xs font-semibold rounded-full border transition-all duration-150 ${
-                activeCategory === cat 
-                  ? 'bg-[var(--wr-accent)] border-[var(--wr-accent)] text-white' 
-                  : 'bg-[var(--wr-surface)] border-[var(--wr-border)] text-[var(--wr-text-2)] hover:bg-[var(--wr-surface-2)]'
-              }`}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-full border transition-all duration-150`}
+              style={activeCategory === cat
+                ? { background: 'var(--wr-accent)', borderColor: 'var(--wr-accent)', color: '#fff' }
+                : { background: 'var(--wr-surface)', borderColor: 'var(--wr-border)', color: 'var(--wr-text-2)' }}
+              onMouseEnter={e => { if (activeCategory !== cat) (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-surface-2)' }}
+              onMouseLeave={e => { if (activeCategory !== cat) (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-surface)' }}
             >
               {cat}
             </button>
@@ -307,9 +318,9 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
       {/* Template Grid List */}
       <div className="flex-1 overflow-y-auto pr-1">
         {loading ? (
-          <div className="text-center py-8 text-xs text-[var(--wr-text-3)]">Loading templates...</div>
+          <div style={{ textAlign: 'center', padding: '32px 0', fontSize: '12px', color: 'var(--wr-text-3)' }}>Loading templates...</div>
         ) : filteredTemplates.length === 0 ? (
-          <div className="text-center py-8 text-xs text-[var(--wr-text-3)] border border-dashed border-[var(--wr-border)] rounded-md">
+          <div style={{ textAlign: 'center', padding: '32px 0', fontSize: '12px', color: 'var(--wr-text-3)', border: '1px dashed var(--wr-border)', borderRadius: '6px' }}>
             No templates found in this section.
           </div>
         ) : (
@@ -322,15 +333,18 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
                 onDragEnter={() => handleDragEnter(index)}
                 onDragEnd={handleDragEnd}
                 onDragOver={(e) => e.preventDefault()}
-                className="wr-tpl-card group flex flex-col gap-2 p-3 bg-[var(--wr-surface)] border border-[var(--wr-border)] rounded-md cursor-grab active:cursor-grabbing hover:shadow-sm transition-all duration-150"
+                className="wr-tpl-card group flex flex-col gap-2 p-3 rounded-md cursor-grab active:cursor-grabbing transition-all duration-150"
+                style={{ background: 'var(--wr-surface)', border: '1px solid var(--wr-border)' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.08)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}
               >
                 {/* Card Title & Handles */}
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-[var(--wr-text-3)] cursor-grab opacity-50 group-hover:opacity-100">☰</span>
+                    <span style={{ color: 'var(--wr-text-3)', cursor: 'grab', opacity: 0.5 }} className="group-hover:opacity-100">☰</span>
                     <div>
-                      <h4 className="text-sm font-semibold text-[var(--wr-text)]">{tpl.name}</h4>
-                      <span className="inline-block text-[10px] bg-[var(--wr-surface-2)] text-[var(--wr-text-2)] px-2 py-0.5 rounded mt-1 font-semibold">
+                      <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--wr-text)', margin: 0 }}>{tpl.name}</h4>
+                      <span style={{ display: 'inline-block', fontSize: '10px', background: 'var(--wr-surface-2)', color: 'var(--wr-text-2)', padding: '2px 8px', borderRadius: '4px', marginTop: '4px', fontWeight: 600 }}>
                         {tpl.category || (tpl.is_ai_generated ? 'AI Generated' : 'Email')}
                       </span>
                     </div>
@@ -338,7 +352,10 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
                   <div className="flex items-center gap-1">
                     <button
                       onClick={(e) => handleDeleteTemplate(tpl.id, e)}
-                      className="p-1 hover:bg-[var(--wr-error)] hover:text-white text-[var(--wr-text-3)] rounded transition-colors duration-150"
+                      className="p-1 rounded transition-colors duration-150"
+                      style={{ color: 'var(--wr-text-3)', background: 'none', border: 'none', cursor: 'pointer' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-error)'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--wr-text-3)' }}
                       title="Delete Template"
                     >
                       🗑️
@@ -347,30 +364,36 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
                 </div>
 
                 {/* Preview text */}
-                <p className="text-xs text-[var(--wr-text-2)] line-clamp-2 leading-relaxed">
+                <p style={{ fontSize: '12px', color: 'var(--wr-text-2)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.5, margin: 0 }}>
                   {tpl.preview_text || tpl.content}
                 </p>
 
                 {/* Expanded preview drawer */}
                 {previewId === tpl.id && (
-                  <div className="mt-2 p-3 bg-[var(--wr-surface-2)] rounded border border-[var(--wr-border-soft)] text-xs text-[var(--wr-text)] font-mono whitespace-pre-wrap select-all">
+                  <div style={{ marginTop: '8px', padding: '12px', background: 'var(--wr-surface-2)', borderRadius: '4px', border: '1px solid var(--wr-border-soft)', fontSize: '12px', color: 'var(--wr-text)', fontFamily: 'monospace', whiteSpace: 'pre-wrap', userSelect: 'all' }}>
                     {tpl.content}
                   </div>
                 )}
 
                 {/* Actions & stats footer */}
-                <div className="flex items-center justify-between border-t border-[var(--wr-border-soft)] pt-2.5 mt-1 text-[11px] text-[var(--wr-text-3)]">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--wr-border-soft)', paddingTop: '10px', marginTop: '4px', fontSize: '11px', color: 'var(--wr-text-3)' }}>
                   <span>Used {tpl.use_count} times</span>
                   <div className="flex gap-2">
                     <button
                       onClick={() => setPreviewId(previewId === tpl.id ? null : tpl.id)}
-                      className="px-2 py-1 bg-[var(--wr-surface-2)] text-[var(--wr-text-2)] hover:bg-[var(--wr-border-soft)] rounded font-semibold"
+                      className="px-2 py-1 rounded font-semibold"
+                      style={{ background: 'var(--wr-surface-2)', color: 'var(--wr-text-2)' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-border-soft)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-surface-2)' }}
                     >
                       {previewId === tpl.id ? 'Hide' : 'Preview'}
                     </button>
                     <button
                       onClick={() => onUseTemplate(tpl.content, tpl.mode, tpl.tone)}
-                      className="px-3 py-1 bg-[var(--wr-accent)] text-white hover:bg-[var(--wr-accent-hover)] rounded font-semibold"
+                      className="px-3 py-1 text-white rounded font-semibold"
+                      style={{ background: 'var(--wr-accent)' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-accent-hover)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-accent)' }}
                     >
                       Use
                     </button>
@@ -385,9 +408,12 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
       {/* AI Generate Modal */}
       {aiModalOpen && (
         <div className="wr-gmail-schedule-modal flex flex-col gap-4 max-w-lg w-full z-50">
-          <div className="flex justify-between items-center border-b border-[var(--wr-border-soft)] pb-3">
-            <h3 className="font-bold text-sm text-[var(--wr-text)]">🤖 Describe the Template You Need</h3>
-            <button onClick={() => setAiModalOpen(false)} className="text-[var(--wr-text-3)] hover:text-[var(--wr-text)]">✕</button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--wr-border-soft)', paddingBottom: '12px' }}>
+            <h3 style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--wr-text)', margin: 0 }}>🤖 Describe the Template You Need</h3>
+            <button onClick={() => setAiModalOpen(false)} style={{ color: 'var(--wr-text-3)', background: 'none', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--wr-text)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--wr-text-3)' }}
+            >✕</button>
           </div>
           <div className="flex flex-col gap-3">
             <textarea
@@ -398,22 +424,28 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
             />
             
             {aiResultText && (
-              <div className="wr-gmail-compose-stream border border-[var(--wr-border)]">
+              <div className="wr-gmail-compose-stream" style={{ border: '1px solid var(--wr-border)' }}>
                 {aiResultText}
               </div>
             )}
 
-            <div className="flex justify-end gap-2 border-t border-[var(--wr-border-soft)] pt-3">
+            <div className="flex justify-end gap-2 pt-3" style={{ borderTop: '1px solid var(--wr-border-soft)' }}>
               <button
                 onClick={() => setAiModalOpen(false)}
-                className="px-3 py-1.5 bg-[var(--wr-surface-2)] hover:bg-[var(--wr-border-soft)] text-xs font-semibold rounded-full text-[var(--wr-text-2)]"
+                className="px-3 py-1.5 text-xs font-semibold rounded-full"
+                style={{ background: 'var(--wr-surface-2)', color: 'var(--wr-text-2)' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-border-soft)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-surface-2)' }}
               >
                 Cancel
               </button>
               {aiResultText ? (
                 <button
                   onClick={handleSaveAiTemplate}
-                  className="px-4 py-1.5 bg-[var(--wr-success)] hover:bg-green-600 text-white text-xs font-semibold rounded-full"
+                  className="px-4 py-1.5 text-white text-xs font-semibold rounded-full"
+                  style={{ background: 'var(--wr-success)' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#16803a' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-success)' }}
                 >
                   Save Template
                 </button>
@@ -421,7 +453,10 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
                 <button
                   onClick={handleGenerateTemplate}
                   disabled={aiLoading || !aiPrompt.trim()}
-                  className="px-4 py-1.5 bg-[var(--wr-accent)] hover:bg-[var(--wr-accent-hover)] text-white text-xs font-semibold rounded-full disabled:opacity-50"
+                  className="px-4 py-1.5 text-white text-xs font-semibold rounded-full disabled:opacity-50"
+                  style={{ background: 'var(--wr-accent)' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-accent-hover)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--wr-accent)' }}
                 >
                   {aiLoading ? 'Generating...' : 'Generate'}
                 </button>

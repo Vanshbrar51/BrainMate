@@ -30,6 +30,7 @@ import { context } from "@opentelemetry/api";
 import { type Redis } from "ioredis";
 import { getRedisPool, isCircuitOpen } from "@/lib/redis";
 import { logEvent } from "@/lib/writeright-logger";
+import { createApiError } from "@/lib/writeright-errors";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -334,7 +335,7 @@ async function executeOperation(op: ReconciliationOp, redis: Redis): Promise<voi
     process.env.AUTH_GATEWAY_INTERNAL_URL ?? "http://127.0.0.1:9091";
   const internalTokens = await getInternalApiTokenCandidates();
   if (internalTokens.length === 0) {
-    throw new Error("Internal API token is not configured");
+    throw createApiError("INTERNAL_ERROR", "Internal API token is not configured", 500);
   }
 
   const traceHeaders = injectTraceContext(new Headers());
@@ -375,7 +376,7 @@ async function executeOperation(op: ReconciliationOp, redis: Redis): Promise<voi
         internalTokens,
       );
       if (!res.ok) {
-        throw new Error(`Session sync failed: ${res.status}`);
+        throw createApiError("INTERNAL_ERROR", `Session sync failed: ${res.status}`, res.status);
       }
       break;
     }
@@ -405,7 +406,7 @@ async function executeOperation(op: ReconciliationOp, redis: Redis): Promise<voi
         internalTokens,
       );
       if (!res.ok && res.status !== 404) {
-        throw new Error(`Session revoke failed: ${res.status}`);
+        throw createApiError("INTERNAL_ERROR", `Session revoke failed: ${res.status}`, res.status);
       }
       break;
     }
@@ -441,7 +442,7 @@ async function fetchWithTokenFallback(
     return lastUnauthorized;
   }
 
-  throw new Error("No internal API token candidates available");
+  throw createApiError("INTERNAL_ERROR", "No internal API token candidates available", 500);
 }
 
 // ---------------------------------------------------------------------------

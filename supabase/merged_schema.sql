@@ -1355,3 +1355,226 @@ CREATE POLICY "writeright_collab_comments_public_insert"
 -- Grants
 -- ─────────────────────────────────────────────────────────────────────────────
 GRANT SELECT, INSERT ON writeright_collab_comments TO anon, authenticated;
+
+
+-- ==========================================
+-- FILE: 0028_fix_profile_trigger_type.sql
+-- ==========================================
+
+-- supabase/migrations/0028_fix_profile_trigger_type.sql
+-- Fix the PostgreSQL type mismatch where v_mistakes (TEXT[]) is inserted into top_mistakes (JSONB)
+
+CREATE OR REPLACE FUNCTION fn_update_writeright_profile()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public AS $$
+DECLARE
+  v_count    INT;
+  v_mistakes TEXT[];
+  v_row      RECORD;
+BEGIN
+  -- Total usage count for this user
+  SELECT COUNT(*) INTO v_count FROM writeright_usage WHERE user_id = NEW.user_id;
+
+  -- Collect up to 50 recent mistakes from assistant messages.
+  -- content may be plain text (error/fallback) or JSON; gracefully degrade on cast failure.
+  BEGIN
+    SELECT ARRAY_AGG(DISTINCT mistake) INTO v_mistakes
+    FROM (
+      SELECT jsonb_array_elements_text(
+        (content::jsonb -> 'teaching' -> 'mistakes')
+      ) AS mistake
+      FROM writeright_messages
+      WHERE user_id = NEW.user_id
+        AND role = 'assistant'
+        AND (content::jsonb -> 'teaching' -> 'mistakes') IS NOT NULL
+      ORDER BY created_at DESC
+      LIMIT 50
+    ) sub
+    WHERE mistake IS NOT NULL AND mistake <> ''
+    LIMIT 20;
+  EXCEPTION WHEN OTHERS THEN
+    -- content was plain text or malformed JSON — skip mistake extraction
+    v_mistakes := '{}';
+  END;
+
+  -- Upsert the profile row with v_mistakes cast to jsonb
+  INSERT INTO writeright_writing_profiles
+    (user_id, top_mistakes, improvement_count, last_analyzed_at)
+  VALUES (
+    NEW.user_id,
+    COALESCE(to_jsonb(v_mistakes), '[]'::jsonb),
+    v_count,
+    now()
+  )
+  ON CONFLICT (user_id) DO UPDATE SET
+    top_mistakes       = EXCLUDED.top_mistakes,
+    improvement_count  = EXCLUDED.improvement_count,
+    last_analyzed_at   = EXCLUDED.last_analyzed_at;
+
+  RETURN NEW;
+END;
+$$;
+
+
+-- ==========================================
+-- FILE: 0029_writeright_ui_preferences_v2.sql
+-- ==========================================
+
+-- supabase/migrations/0029_writeright_ui_preferences_v2.sql
+-- Adds focusModeEnabled and grammarScanEnabled to the uiPreferences JSONB default.
+-- Non-destructive: existing rows keep their values, only the column default is updated.
+
+ALTER TABLE writeright_user_settings
+ALTER COLUMN preferences
+SET DEFAULT jsonb_build_object(
+  'preferredTone',        'Professional',
+  'preferredMode',        'email',
+  'preferredIntensity',   3,
+  'preferredOutputLang',  'en',
+  'favouriteChips',       '[]'::jsonb,
+  'uiPreferences',        jsonb_build_object(
+    'sidebarOpen',        true,
+    'analyticsOpen',      false,
+    'coachBarEnabled',    true,
+    'splitViewDefault',   false,
+    'focusModeEnabled',   false,
+    'grammarScanEnabled', false
+  )
+);
+
+-- Backfill: ensure existing rows have the new keys with defaults
+UPDATE writeright_user_settings
+SET preferences = preferences
+  || jsonb_build_object(
+    'uiPreferences',
+    COALESCE(preferences->'uiPreferences', '{}'::jsonb)
+    || jsonb_build_object(
+      'focusModeEnabled',   COALESCE((preferences->'uiPreferences'->>'focusModeEnabled')::boolean, false),
+      'grammarScanEnabled', COALESCE((preferences->'uiPreferences'->>'grammarScanEnabled')::boolean, false)
+    )
+  )
+WHERE preferences IS NOT NULL;
+
+
+-- ==========================================
+-- FILE: 0030_writeright_smart_suggestions.sql
+-- ==========================================
+
+-- supabase/migrations/0030_writeright_smart_suggestions.sql
+-- New table for AI-powered contextual writing suggestions shown to the user mid-session.
+
+CREATE TABLE IF NOT EXISTS writeright_smart_suggestions (
+  id               uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
+  clerk_user_id    text        NOT NULL,
+  chat_id          uuid        REFERENCES writeright_chats(id) ON DELETE CASCADE,
+  suggestion_text  text        NOT NULL CHECK (char_length(suggestion_text) <= 400),
+  suggestion_type  text        NOT NULL DEFAULT 'follow_up'
+                   CHECK (suggestion_type IN ('follow_up','rephrase','expand','clarify','tone_shift')),
+  accepted         boolean     NOT NULL DEFAULT false,
+  dismissed        boolean     NOT NULL DEFAULT false,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wr_smart_suggestions_user
+  ON writeright_smart_suggestions (clerk_user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_wr_smart_suggestions_chat
+  ON writeright_smart_suggestions (chat_id) WHERE dismissed = false;
+
+CREATE TRIGGER trg_wr_smart_suggestions_updated_at
+  BEFORE UPDATE ON writeright_smart_suggestions
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+ALTER TABLE writeright_smart_suggestions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "wr_smart_suggestions_own_select"
+  ON writeright_smart_suggestions FOR SELECT
+  USING (clerk_user_id = current_setting('app.current_user_id', true));
+
+CREATE POLICY "wr_smart_suggestions_own_insert"
+  ON writeright_smart_suggestions FOR INSERT
+  WITH CHECK (clerk_user_id = current_setting('app.current_user_id', true));
+
+CREATE POLICY "wr_smart_suggestions_own_update"
+  ON writeright_smart_suggestions FOR UPDATE
+  USING (clerk_user_id = current_setting('app.current_user_id', true));
+
+GRANT SELECT, INSERT, UPDATE ON writeright_smart_suggestions TO authenticated;
+
+
+-- ==========================================
+-- FILE: 0031_writeright_writing_sessions.sql
+-- ==========================================
+
+-- supabase/migrations/0031_writeright_writing_sessions.sql
+-- New table to track granular writing sessions for the heatmap and analytics engine.
+
+CREATE TABLE IF NOT EXISTS writeright_writing_sessions (
+  id               uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
+  clerk_user_id    text        NOT NULL,
+  session_date     date        NOT NULL DEFAULT CURRENT_DATE,
+  improvements     integer     NOT NULL DEFAULT 1,
+  total_tokens     integer     NOT NULL DEFAULT 0,
+  avg_clarity      numeric(4,1),
+  avg_tone_score   numeric(4,1),
+  avg_impact_score numeric(4,1),
+  modes_used       text[]      NOT NULL DEFAULT '{}',
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (clerk_user_id, session_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wr_sessions_user_date
+  ON writeright_writing_sessions (clerk_user_id, session_date DESC);
+
+CREATE TRIGGER trg_wr_sessions_updated_at
+  BEFORE UPDATE ON writeright_writing_sessions
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+ALTER TABLE writeright_writing_sessions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "wr_sessions_own" ON writeright_writing_sessions
+  FOR ALL USING (clerk_user_id = current_setting('app.current_user_id', true));
+
+GRANT SELECT, INSERT, UPDATE ON writeright_writing_sessions TO authenticated;
+
+-- DB function: upsert session daily counter (atomic, call from API layer)
+CREATE OR REPLACE FUNCTION upsert_writing_session(
+  p_user_id       text,
+  p_clarity       numeric,
+  p_tone          numeric,
+  p_impact        numeric,
+  p_tokens        integer,
+  p_mode          text
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO writeright_writing_sessions(
+    clerk_user_id, session_date, improvements, total_tokens,
+    avg_clarity, avg_tone_score, avg_impact_score, modes_used
+  )
+  VALUES(
+    p_user_id, CURRENT_DATE, 1, p_tokens,
+    p_clarity, p_tone, p_impact, ARRAY[p_mode]
+  )
+  ON CONFLICT (clerk_user_id, session_date)
+  DO UPDATE SET
+    improvements     = writeright_writing_sessions.improvements + 1,
+    total_tokens     = writeright_writing_sessions.total_tokens + p_tokens,
+    avg_clarity      = (writeright_writing_sessions.avg_clarity * writeright_writing_sessions.improvements
+                        + p_clarity) / (writeright_writing_sessions.improvements + 1),
+    avg_tone_score   = (writeright_writing_sessions.avg_tone_score * writeright_writing_sessions.improvements
+                        + p_tone) / (writeright_writing_sessions.improvements + 1),
+    avg_impact_score = (writeright_writing_sessions.avg_impact_score * writeright_writing_sessions.improvements
+                        + p_impact) / (writeright_writing_sessions.improvements + 1),
+    modes_used       = ARRAY(SELECT DISTINCT unnest(writeright_writing_sessions.modes_used || ARRAY[p_mode])),
+    updated_at       = now();
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION upsert_writing_session TO service_role;
+

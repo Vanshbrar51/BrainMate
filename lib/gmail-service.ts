@@ -1,6 +1,8 @@
 // lib/gmail-service.ts
 // Thin proxy to Rust Auth Gateway. Zero credentials. Zero token handling.
 import { getPreferredInternalApiToken } from "@/lib/internal-api-token";
+import { createApiError } from "@/lib/writeright-errors";
+import { logger } from "@/lib/writeright-logger";
 
 const GW = process.env.AUTH_GATEWAY_INTERNAL_URL ?? "http://127.0.0.1:9091";
 
@@ -48,12 +50,12 @@ async function gw_post<T>(path: string, body: unknown): Promise<T> {
       body: JSON.stringify(body),
     });
   } catch (err) {
-    console.error("[gmail-service] gw_post fetch failed:", err);
-    throw new Error("Auth gateway offline");
+    logger.error("gw_post_fetch_failed", { error: err instanceof Error ? err.message : String(err) });
+    throw createApiError("GATEWAY_OFFLINE", "Auth gateway offline", 503);
   }
   if (!r.ok) {
     const e = await r.json().catch(() => ({})) as { message?: string };
-    throw new Error(e.message ?? `Gateway ${r.status}`);
+    throw createApiError("GATEWAY_ERROR", e.message ?? `Gateway ${r.status}`, r.status);
   }
   return r.json() as Promise<T>;
 }
@@ -69,12 +71,12 @@ async function gw_get<T>(path: string): Promise<T> {
       cache: "no-store",
     });
   } catch (err) {
-    console.error("[gmail-service] gw_get fetch failed:", err);
-    throw new Error("Auth gateway offline");
+    logger.error("gw_get_fetch_failed", { error: err instanceof Error ? err.message : String(err) });
+    throw createApiError("GATEWAY_OFFLINE", "Auth gateway offline", 503);
   }
   if (!r.ok) {
     const e = await r.json().catch(() => ({})) as { message?: string };
-    throw new Error(e.message ?? `Gateway ${r.status}`);
+    throw createApiError("GATEWAY_ERROR", e.message ?? `Gateway ${r.status}`, r.status);
   }
   return r.json() as Promise<T>;
 }

@@ -16,6 +16,8 @@ pub enum ApiError {
     TooManyRequests(String),
     #[error("service unavailable: {0}")]
     ServiceUnavailable(String),
+    #[error("not found: {0}")]
+    NotFound(String),
 }
 
 #[derive(Debug, Serialize)]
@@ -41,12 +43,17 @@ impl ApiError {
         Self::TooManyRequests(message.into())
     }
 
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::NotFound(message.into())
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Unauthorized(_) => "UNAUTHORIZED",
-            Self::BadRequest(_) => "BAD_REQUEST",
-            Self::TooManyRequests(_) => "TOO_MANY_REQUESTS",
+            Self::Unauthorized(_)      => "UNAUTHORIZED",
+            Self::BadRequest(_)        => "BAD_REQUEST",
+            Self::TooManyRequests(_)   => "TOO_MANY_REQUESTS",
             Self::ServiceUnavailable(_) => "SERVICE_UNAVAILABLE",
+            Self::NotFound(_)          => "NOT_FOUND",
         }
     }
 }
@@ -54,16 +61,15 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
-            Self::Unauthorized(message) => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", message),
-            Self::BadRequest(message) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", message),
-            Self::TooManyRequests(message) => {
-                (StatusCode::TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS", message)
-            }
+            Self::Unauthorized(message)     => (StatusCode::UNAUTHORIZED,      "UNAUTHORIZED",       message),
+            Self::BadRequest(message)       => (StatusCode::BAD_REQUEST,        "BAD_REQUEST",        message),
+            Self::TooManyRequests(message)  => (StatusCode::TOO_MANY_REQUESTS,  "TOO_MANY_REQUESTS",  message),
             Self::ServiceUnavailable(message) => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "SERVICE_UNAVAILABLE",
                 message,
             ),
+            Self::NotFound(message) => (StatusCode::NOT_FOUND, "NOT_FOUND", message),
         };
 
         (status, Json(ErrorBody { code, message })).into_response()

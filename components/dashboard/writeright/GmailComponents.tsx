@@ -95,6 +95,7 @@ export function GmailConnectedBadge({
   // Trigger pulse effect when unreadCount increases
   useEffect(() => {
     if (unreadCount > prevCount.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPulse(true)
       const timer = setTimeout(() => setPulse(false), 2000)
       return () => clearTimeout(timer)
@@ -112,7 +113,7 @@ export function GmailConnectedBadge({
     >
       <MailOpen size={14} />
       {unreadCount > 0 && (
-        <span className={`absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--wr-error)] text-[9px] font-bold text-white ${pulse ? 'animate-ping' : ''}`}>
+        <span className={`absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full wr-error-bg wr-text-9 font-bold text-white ${pulse ? 'animate-ping' : ''}`}>
           {unreadCount > 9 ? '9+' : unreadCount}
         </span>
       )}
@@ -241,12 +242,12 @@ export function GmailPanel({
   const renderEmptyState = () => {
     if (activeFilter === 'INBOX') {
       return (
-        <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center text-[var(--wr-text-3)]">
+        <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center wr-text-3-color">
           <svg className="w-12 h-12 stroke-current opacity-70" viewBox="0 0 24 24" fill="none" strokeWidth="1.5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
           </svg>
           <div>
-            <p className="text-sm font-semibold text-[var(--wr-text-2)]">You're all caught up!</p>
+            <p className="text-sm font-semibold wr-text-2-color">You&apos;re all caught up!</p>
             <p className="text-xs">No emails left in your inbox</p>
           </div>
         </div>
@@ -254,12 +255,12 @@ export function GmailPanel({
     }
     if (activeFilter === 'SENT') {
       return (
-        <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center text-[var(--wr-text-3)]">
+        <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center wr-text-3-color">
           <svg className="w-12 h-12 stroke-current opacity-70" viewBox="0 0 24 24" fill="none" strokeWidth="1.5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
           </svg>
           <div>
-            <p className="text-sm font-semibold text-[var(--wr-text-2)]">No sent emails</p>
+            <p className="text-sm font-semibold wr-text-2-color">No sent emails</p>
             <p className="text-xs">Send correspondence to get started</p>
           </div>
         </div>
@@ -267,24 +268,24 @@ export function GmailPanel({
     }
     if (activeFilter === 'SCHEDULED') {
       return (
-        <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center text-[var(--wr-text-3)]">
+        <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center wr-text-3-color">
           <svg className="w-12 h-12 stroke-current opacity-70" viewBox="0 0 24 24" fill="none" strokeWidth="1.5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <div>
-            <p className="text-sm font-semibold text-[var(--wr-text-2)]">No scheduled emails</p>
+            <p className="text-sm font-semibold wr-text-2-color">No scheduled emails</p>
             <p className="text-xs">Defer emails to send them later</p>
           </div>
         </div>
       )
     }
     return (
-      <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center text-[var(--wr-text-3)]">
+      <div className="wr-gmail-empty flex flex-col items-center justify-center gap-3 py-12 text-center wr-text-3-color">
         <svg className="w-12 h-12 stroke-current opacity-70" viewBox="0 0 24 24" fill="none" strokeWidth="1.5">
           <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
         </svg>
         <div>
-          <p className="text-sm font-semibold text-[var(--wr-text-2)]">No drafts</p>
+          <p className="text-sm font-semibold wr-text-2-color">No drafts</p>
         </div>
       </div>
     )
@@ -295,10 +296,10 @@ export function GmailPanel({
       {/* Header Overhaul */}
       <div className="wr-gmail-panel-header justify-between">
         <div className="flex items-center gap-2 min-w-0">
-          <Mail size={16} className="text-[var(--wr-accent)] flex-shrink-0" />
+          <Mail size={16} className="wr-accent-color flex-shrink-0" />
           <span className="wr-gmail-panel-title truncate font-semibold">Gmail</span>
           {connectionStatus.connection && (
-            <span className="text-[10px] text-[var(--wr-text-3)] truncate max-w-[100px] font-mono" title={connectionStatus.connection.gmail_email}>
+            <span className="wr-text-10 wr-text-3-color truncate wr-maxw-100 font-mono" title={connectionStatus.connection.gmail_email}>
               {connectionStatus.connection.gmail_email.split('@')[0]}
             </span>
           )}
@@ -325,10 +326,10 @@ export function GmailPanel({
       </div>
 
       {/* Compose Trigger & Search Bar Overhaul */}
-      <div className="p-3.5 border-b border-[var(--wr-border-soft)] flex flex-col gap-2.5 bg-[var(--wr-surface)]">
+      <div className="p-3.5 border-b wr-border-soft-border flex flex-col gap-2.5 wr-surface-bg">
         <button 
           onClick={onOpenCompose}
-          className="w-full flex items-center justify-center gap-1.5 py-2 px-4 bg-[var(--wr-accent)] hover:bg-[var(--wr-accent-hover)] text-white font-semibold text-xs rounded-full transition-all duration-150 shadow-sm hover:shadow"
+          className="w-full flex items-center justify-center gap-1.5 py-2 px-4 wr-accent-bg wr-hover-accent text-white font-semibold text-xs rounded-full transition-all duration-150 shadow-sm hover:shadow"
         >
           <Plus size={14} /> Compose Email
         </button>
@@ -340,11 +341,11 @@ export function GmailPanel({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="wr-gmail-search-input"
           />
-          <Search size={12} className="absolute left-2.5 text-[var(--wr-text-3)]" />
+          <Search size={12} className="absolute left-2.5 wr-text-3-color" />
           {searchQuery && (
             <button 
               onClick={() => setSearchQuery('')} 
-              className="absolute right-2.5 text-[var(--wr-text-3)] hover:text-[var(--wr-text-1)] text-[10px]"
+              className="absolute right-2.5 wr-text-3-color hover:wr-text-1-color wr-text-10"
             >
               ✕
             </button>
@@ -353,13 +354,13 @@ export function GmailPanel({
       </div>
 
       {/* Filter Tabs */}
-      <div className="wr-gmail-filters flex overflow-x-auto gap-1 p-2 bg-[var(--wr-surface-2)]">
+      <div className="wr-gmail-filters flex overflow-x-auto gap-1 p-2 wr-surface-2-bg">
         <button
           type="button"
           className={`wr-gmail-filter-tab ${activeFilter === 'INBOX' ? 'active' : ''}`}
           onClick={() => { setActiveFilter('INBOX'); onFilterChange('INBOX') }}
         >
-          <Inbox size={12} /> Inbox {unreadCount > 0 && <span className="text-[10px] bg-[var(--wr-error)] text-white px-1.5 py-0.5 rounded-full font-bold">{unreadCount}</span>}
+          <Inbox size={12} /> Inbox {unreadCount > 0 && <span className="wr-text-10 wr-error-bg text-white px-1.5 py-0.5 rounded-full font-bold">{unreadCount}</span>}
         </button>
         <button
           type="button"
@@ -390,10 +391,10 @@ export function GmailPanel({
           <div className="wr-gmail-skeletons p-4">
             {[0, 1, 2].map(i => (
               <div key={i} className="wr-gmail-skeleton-row flex gap-3 mb-4">
-                <div className="wr-gmail-skeleton-avatar w-8 h-8 rounded-full bg-[var(--wr-surface-2)]" />
+                <div className="wr-gmail-skeleton-avatar w-8 h-8 rounded-full wr-surface-2-bg" />
                 <div className="flex-1 flex flex-col gap-2">
-                  <div className="h-3 w-2/3 bg-[var(--wr-surface-2)] rounded" />
-                  <div className="h-3 w-1/2 bg-[var(--wr-surface-2)] rounded" />
+                  <div className="h-3 w-2/3 wr-surface-2-bg rounded" />
+                  <div className="h-3 w-1/2 wr-surface-2-bg rounded" />
                 </div>
               </div>
             ))}
@@ -404,22 +405,22 @@ export function GmailPanel({
           <div className="p-2 flex flex-col gap-2">
             {scheduledSends.length === 0 ? renderEmptyState() : (
               scheduledSends.map(send => (
-                <div key={send.id} className="p-3 bg-[var(--wr-surface)] border border-[var(--wr-border)] rounded-md flex flex-col gap-2 relative">
+                <div key={send.id} className="p-3 wr-surface-bg border wr-border-border rounded-md flex flex-col gap-2 relative">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h4 className="text-xs font-bold text-[var(--wr-text)]">{send.subject}</h4>
-                      <span className="text-[10px] text-[var(--wr-text-3)] block mt-0.5">To: {send.recipient_email}</span>
+                      <h4 className="text-xs font-bold wr-text-color">{send.subject}</h4>
+                      <span className="wr-text-10 wr-text-3-color block mt-0.5">To: {send.recipient_email}</span>
                     </div>
                     <button 
                       onClick={() => onCancelScheduled(send.id)}
-                      className="p-1 hover:bg-red-50 text-[var(--wr-error)] rounded text-xs"
+                      className="p-1 hover:bg-red-50 wr-error-color rounded text-xs"
                       title="Cancel Schedule"
                     >
                       ✕
                     </button>
                   </div>
-                  <p className="text-[10px] text-[var(--wr-text-2)] line-clamp-2">{send.body}</p>
-                  <div className="flex justify-between items-center text-[9px] border-t border-[var(--wr-border-soft)] pt-2 text-[var(--wr-text-3)]">
+                  <p className="wr-text-10 wr-text-2-color line-clamp-2">{send.body}</p>
+                  <div className="flex justify-between items-center wr-text-9 border-t wr-border-soft-border pt-2 wr-text-3-color">
                     <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold uppercase">{send.status}</span>
                     <span>Send at: {new Date(send.scheduled_at).toLocaleDateString()} {new Date(send.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
@@ -440,7 +441,7 @@ export function GmailPanel({
           return (
             <div 
               key={email.id} 
-              className={`wr-gmail-email-row flex items-start gap-3 p-3 border-b border-[var(--wr-border-soft)] group relative transition-all duration-150 hover:scale-[1.01] hover:translate-x-0.5 hover:shadow-sm ${email.is_unread ? 'unread bg-[var(--wr-accent-soft)]' : ''} ${panel.selectedEmail?.id === email.id ? 'selected bg-[var(--wr-surface-3)]' : ''}`}
+              className={`wr-gmail-email-row flex items-start gap-3 p-3 border-b wr-border-soft-border group relative transition-all duration-150 hover:scale-[1.01] hover:translate-x-0.5 hover:shadow-sm ${email.is_unread ? 'unread wr-accent-soft-bg' : ''} ${panel.selectedEmail?.id === email.id ? 'selected wr-surface-3-bg' : ''}`}
             >
               {/* Checkbox */}
               <div className="flex items-center self-center">
@@ -465,8 +466,8 @@ export function GmailPanel({
               {/* Email Content Details */}
               <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelectEmail(email.id)}>
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs font-bold text-[var(--wr-text)] truncate max-w-[130px]">{email.sender_name}</span>
-                  <span className="text-[10px] text-[var(--wr-text-3)] font-mono">{formatRelativeTime(email.timestamp)}</span>
+                  <span className="text-xs font-bold wr-text-color truncate wr-maxw-130">{email.sender_name}</span>
+                  <span className="wr-text-10 wr-text-3-color font-mono">{formatRelativeTime(email.timestamp)}</span>
                 </div>
                 
                 {/* Priority Score Dots & Label Badge */}
@@ -489,10 +490,10 @@ export function GmailPanel({
                   )}
                 </div>
 
-                <div className="text-xs font-semibold text-[var(--wr-text)] truncate">{email.subject}</div>
-                <div className="text-[11px] text-[var(--wr-text-3)] truncate mt-0.5">{email.snippet}</div>
+                <div className="text-xs font-semibold wr-text-color truncate">{email.subject}</div>
+                <div className="text-[11px] wr-text-3-color truncate mt-0.5">{email.snippet}</div>
               </div>
-              <ChevronRight size={14} className="wr-gmail-email-chevron self-center opacity-0 group-hover:opacity-100 text-[var(--wr-text-3)]" />
+              <ChevronRight size={14} className="wr-gmail-email-chevron self-center opacity-0 group-hover:opacity-100 wr-text-3-color" />
             </div>
           )
         })}
@@ -589,7 +590,7 @@ export function GmailEmailPreview({
       <div className="wr-gmail-preview flex flex-col max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         
         {/* Top Meta info */}
-        <div className="wr-gmail-preview-header flex-shrink-0 border-b border-[var(--wr-border-soft)] pb-3 mb-3 flex items-center justify-between">
+        <div className="wr-gmail-preview-header flex-shrink-0 border-b wr-border-soft-border pb-3 mb-3 flex items-center justify-between">
           <div className="wr-gmail-preview-meta flex items-center gap-3">
             <div 
               className="wr-gmail-preview-avatar w-10 h-10 rounded-full flex items-center justify-center text-white font-bold cursor-pointer"
@@ -600,16 +601,16 @@ export function GmailEmailPreview({
               {getInitials(email.sender_name)}
             </div>
             <div>
-              <div className="wr-gmail-preview-sender-name font-bold text-sm text-[var(--wr-text)]">{email.sender_name}</div>
-              <div className="wr-gmail-preview-sender-email text-xs text-[var(--wr-text-3)]">{email.sender_email}</div>
+              <div className="wr-gmail-preview-sender-name font-bold text-sm wr-text-color">{email.sender_name}</div>
+              <div className="wr-gmail-preview-sender-email text-xs wr-text-3-color">{email.sender_email}</div>
             </div>
           </div>
           
           <div className="flex items-center gap-3">
-            <span className="text-[10px] font-mono text-[var(--wr-text-3)]">🕒 {readingTime} min read</span>
+            <span className="wr-text-10 font-mono wr-text-3-color">🕒 {readingTime} min read</span>
             <button 
               onClick={() => onViewContact(email.sender_email)}
-              className="text-xs font-semibold px-2.5 py-1 bg-[var(--wr-surface-2)] text-[var(--wr-text-2)] hover:bg-[var(--wr-border-soft)] rounded-md border border-[var(--wr-border)]"
+              className="text-xs font-semibold px-2.5 py-1 wr-surface-2-bg wr-text-2-color wr-hover-border-soft rounded-md border wr-border-border"
             >
               Contact Card
             </button>
@@ -621,12 +622,12 @@ export function GmailEmailPreview({
 
         {/* Priority & Urgency Score badge */}
         <div className="flex items-center gap-3 mb-3">
-          <span className="text-xs bg-[var(--wr-surface-2)] px-2 py-0.5 rounded font-bold text-[var(--wr-text-2)]">
+          <span className="text-xs wr-surface-2-bg px-2 py-0.5 rounded font-bold wr-text-2-color">
             Urgency Rating: {classification.priority}/5
           </span>
           {classification.label !== 'NONE' && (
             <span 
-              className="wr-gmail-label-badge font-bold text-[10px] px-2 py-0.5 rounded"
+              className="wr-gmail-label-badge font-bold wr-text-10 px-2 py-0.5 rounded"
               style={getLabelStyles(classification.label)}
             >
               {classification.label.replace('_', ' ')}
@@ -635,10 +636,10 @@ export function GmailEmailPreview({
         </div>
 
         {/* Subject */}
-        <h2 className="wr-gmail-preview-subject text-lg font-bold text-[var(--wr-text)] mb-3">{email.subject}</h2>
+        <h2 className="wr-gmail-preview-subject text-lg font-bold wr-text-color mb-3">{email.subject}</h2>
 
         {/* Body content */}
-        <div className="wr-gmail-preview-body text-sm text-[var(--wr-text-2)] leading-relaxed whitespace-pre-wrap flex-1 min-h-[100px] border border-[var(--wr-border-soft)] rounded-lg p-4 bg-[var(--wr-surface-3)] mb-4">
+        <div className="wr-gmail-preview-body text-sm wr-text-2-color leading-relaxed whitespace-pre-wrap flex-1 min-h-[100px] border wr-border-soft-border rounded-lg p-4 wr-surface-3-bg mb-4">
           {email.body_plain || email.snippet}
         </div>
 
@@ -648,7 +649,7 @@ export function GmailEmailPreview({
             <Calendar className="text-blue-500 flex-shrink-0 mt-0.5" size={16} />
             <div>
               <span className="text-xs font-bold text-blue-600 dark:text-blue-400 block">Meeting Request Detected</span>
-              <p className="text-xs text-[var(--wr-text-2)] mt-0.5">This email suggests coordination for a phone call or meeting. Click "Draft Reply" to propose meeting time slots.</p>
+              <p className="text-xs wr-text-2-color mt-0.5">This email suggests coordination for a phone call or meeting. Click &quot;Draft Reply&quot; to propose meeting time slots.</p>
             </div>
           </div>
         )}
@@ -657,7 +658,7 @@ export function GmailEmailPreview({
         <div className="mb-4">
           <button 
             onClick={() => { setShowSmartCompose(!showSmartCompose); onClearSmartCompose() }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--wr-accent-soft)] text-[var(--wr-accent)] font-semibold text-xs rounded-full border border-[var(--wr-accent)]"
+            className="flex items-center gap-1.5 px-3 py-1.5 wr-accent-soft-bg wr-accent-color font-semibold text-xs rounded-full border wr-accent-border"
           >
             ⚡ {showSmartCompose ? 'Hide Smart Compose' : 'Smart Compose Reply'}
           </button>
@@ -669,10 +670,10 @@ export function GmailEmailPreview({
                   <button
                     key={t}
                     onClick={() => setSmartComposeTone(t)}
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    className={`wr-text-10 font-bold px-2 py-0.5 rounded-full border ${
                       smartComposeTone === t 
-                        ? 'bg-[var(--wr-accent)] text-white border-[var(--wr-accent)]' 
-                        : 'bg-[var(--wr-surface)] text-[var(--wr-text-3)] border-[var(--wr-border)]'
+                        ? 'wr-accent-bg text-white wr-accent-border' 
+                        : 'wr-surface-bg wr-text-3-color wr-border-border'
                     }`}
                   >
                     {t}
@@ -687,15 +688,15 @@ export function GmailEmailPreview({
               />
               
               {smartComposeText && (
-                <div className="wr-gmail-compose-stream border border-[var(--wr-border)] mt-2">
+                <div className="wr-gmail-compose-stream border wr-border-border mt-2">
                   {smartComposeText}
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 border-t border-[var(--wr-border-soft)] pt-3 mt-2">
+              <div className="flex justify-end gap-2 border-t wr-border-soft-border pt-3 mt-2">
                 <button
                   onClick={() => { setShowSmartCompose(false); onClearSmartCompose() }}
-                  className="px-3 py-1.5 bg-[var(--wr-surface-2)] text-[var(--wr-text-2)] text-xs font-semibold rounded-full"
+                  className="px-3 py-1.5 wr-surface-2-bg wr-text-2-color text-xs font-semibold rounded-full"
                 >
                   Cancel
                 </button>
@@ -706,7 +707,7 @@ export function GmailEmailPreview({
                       setShowSmartCompose(false)
                       onClearSmartCompose()
                     }}
-                    className="px-4 py-1.5 bg-[var(--wr-success)] text-white text-xs font-semibold rounded-full"
+                    className="px-4 py-1.5 wr-success-bg text-white text-xs font-semibold rounded-full"
                   >
                     Use Draft in WriteRight
                   </button>
@@ -714,7 +715,7 @@ export function GmailEmailPreview({
                   <button
                     onClick={() => onRunSmartCompose(email.body_plain || email.snippet, smartComposeTone, smartComposePrompt)}
                     disabled={smartComposeLoading}
-                    className="px-4 py-1.5 bg-[var(--wr-accent)] text-white text-xs font-semibold rounded-full"
+                    className="px-4 py-1.5 wr-accent-bg text-white text-xs font-semibold rounded-full"
                   >
                     {smartComposeLoading ? 'Generating...' : 'Draft Reply'}
                   </button>
@@ -726,17 +727,17 @@ export function GmailEmailPreview({
 
         {/* Similar Emails Section */}
         {similarEmails.length > 0 && (
-          <div className="mb-4 border-t border-[var(--wr-border-soft)] pt-3">
-            <span className="text-[10px] font-bold text-[var(--wr-text-3)] uppercase tracking-wider block mb-2">Similar Emails from Sender</span>
+          <div className="mb-4 border-t wr-border-soft-border pt-3">
+            <span className="wr-text-10 font-bold wr-text-3-color uppercase tracking-wider block mb-2">Similar Emails from Sender</span>
             <div className="flex flex-col gap-2">
               {similarEmails.map((se: GmailEmailItem) => (
                 <div 
                   key={se.id} 
                   onClick={() => onClose()}
-                  className="p-2 border border-[var(--wr-border)] rounded hover:bg-[var(--wr-surface-2)] cursor-pointer text-xs"
+                  className="p-2 border wr-border-border rounded hover:wr-surface-2-bg cursor-pointer text-xs"
                 >
-                  <div className="font-semibold text-[var(--wr-text)]">{se.subject}</div>
-                  <div className="text-[10px] text-[var(--wr-text-3)] mt-0.5">{se.snippet}</div>
+                  <div className="font-semibold wr-text-color">{se.subject}</div>
+                  <div className="wr-text-10 wr-text-3-color mt-0.5">{se.snippet}</div>
                 </div>
               ))}
             </div>
@@ -744,7 +745,7 @@ export function GmailEmailPreview({
         )}
 
         {/* Action Grid */}
-        <div className="wr-gmail-preview-actions-label mt-auto border-t border-[var(--wr-border-soft)] pt-3 text-[11px] text-[var(--wr-text-3)] uppercase font-bold tracking-wider mb-2 flex items-center gap-1.5">
+        <div className="wr-gmail-preview-actions-label mt-auto border-t wr-border-soft-border pt-3 text-[11px] wr-text-3-color uppercase font-bold tracking-wider mb-2 flex items-center gap-1.5">
           <Sparkles size={12} />
           Import into WriteRight
         </div>
@@ -753,7 +754,7 @@ export function GmailEmailPreview({
             <button
               key={action}
               type="button"
-              className="wr-gmail-action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 border border-[var(--wr-border)] rounded-md hover:bg-[var(--wr-surface-2)] text-[var(--wr-text-2)]"
+              className="wr-gmail-action-btn flex items-center gap-1.5 text-xs px-3 py-1.5 border wr-border-border rounded-md hover:wr-surface-2-bg wr-text-2-color"
               onClick={() => handleAction(action)}
               aria-label={`${label} this email`}
             >
@@ -783,17 +784,17 @@ export function GmailContactCard({
 }) {
   return (
     <div className="wr-gmail-contact-card">
-      <div className="flex justify-between items-center border-b border-[var(--wr-border-soft)] pb-3">
-        <h3 className="text-sm font-bold text-[var(--wr-text)] flex items-center gap-1.5">
+      <div className="flex justify-between items-center border-b wr-border-soft-border pb-3">
+        <h3 className="text-sm font-bold wr-text-color flex items-center gap-1.5">
           <UserCheck size={16} /> Contact Intelligence
         </h3>
-        <button onClick={onClose} className="text-xs text-[var(--wr-text-3)] hover:text-[var(--wr-text)]">✕</button>
+        <button onClick={onClose} className="text-xs wr-text-3-color hover:wr-text-color">✕</button>
       </div>
 
       {loading ? (
-        <div className="text-center py-10 text-xs text-[var(--wr-text-3)]">Analyzing correspondence logs...</div>
+        <div className="text-center py-10 text-xs wr-text-3-color">Analyzing correspondence logs...</div>
       ) : !intel ? (
-        <div className="text-center py-10 text-xs text-[var(--wr-text-2)]">No profile details generated.</div>
+        <div className="text-center py-10 text-xs wr-text-2-color">No profile details generated.</div>
       ) : (
         <div className="flex flex-col gap-4">
           {/* Avatar details */}
@@ -805,40 +806,40 @@ export function GmailContactCard({
               {getInitials(intel.name)}
             </div>
             <div>
-              <h4 className="font-bold text-sm text-[var(--wr-text)]">{intel.name}</h4>
-              <span className="text-xs text-[var(--wr-text-3)]">{intel.email}</span>
+              <h4 className="font-bold text-sm wr-text-color">{intel.name}</h4>
+              <span className="text-xs wr-text-3-color">{intel.email}</span>
             </div>
           </div>
 
           {/* Tone badges */}
           <div className="flex flex-wrap gap-1.5">
             {intel.toneBadges.map((badge, idx) => (
-              <span key={idx} className="text-[10px] bg-[var(--wr-accent-soft)] text-[var(--wr-accent)] font-semibold px-2 py-0.5 rounded">
+              <span key={idx} className="wr-text-10 wr-accent-soft-bg wr-accent-color font-semibold px-2 py-0.5 rounded">
                 🏷️ {badge}
               </span>
             ))}
           </div>
 
           {/* Stats details */}
-          <div className="flex flex-col gap-2 border-y border-[var(--wr-border-soft)] py-3 text-xs text-[var(--wr-text-2)]">
+          <div className="flex flex-col gap-2 border-y wr-border-soft-border py-3 text-xs wr-text-2-color">
             <div className="flex justify-between">
               <span>Emails Exchanged:</span>
-              <span className="font-bold text-[var(--wr-text)]">{intel.emailsExchanged}</span>
+              <span className="font-bold wr-text-color">{intel.emailsExchanged}</span>
             </div>
             <div className="flex justify-between">
               <span>Avg Response Time:</span>
-              <span className="font-bold text-[var(--wr-text)]">{intel.avgResponseHours} hours</span>
+              <span className="font-bold wr-text-color">{intel.avgResponseHours} hours</span>
             </div>
             <div className="flex justify-between">
               <span>Last Contacted:</span>
-              <span className="font-bold text-[var(--wr-text)]">{intel.lastContactedDays} days ago</span>
+              <span className="font-bold wr-text-color">{intel.lastContactedDays} days ago</span>
             </div>
           </div>
 
           {/* Relationship summary */}
-          <div className="bg-[var(--wr-surface-2)] p-3 rounded">
-            <span className="text-[10px] font-bold text-[var(--wr-text-3)] uppercase tracking-wider block mb-1">Relationship Brief</span>
-            <p className="text-xs text-[var(--wr-text-2)] leading-relaxed">{intel.aiSummary}</p>
+          <div className="wr-surface-2-bg p-3 rounded">
+            <span className="wr-text-10 font-bold wr-text-3-color uppercase tracking-wider block mb-1">Relationship Brief</span>
+            <p className="text-xs wr-text-2-color leading-relaxed">{intel.aiSummary}</p>
           </div>
         </div>
       )}
@@ -864,22 +865,22 @@ export function GmailBulkActionBar({
   if (selectedCount === 0) return null
 
   return (
-    <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-[var(--wr-surface)] border border-[var(--wr-border-med)] shadow-[var(--wr-shadow-lg)] px-5 py-3 rounded-full flex items-center gap-4 z-50 animate-bounce">
-      <span className="text-xs font-semibold text-[var(--wr-text)]">
+    <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 wr-surface-bg px-5 py-3 rounded-full flex items-center gap-4 z-50 animate-bounce" style={{ border: '1px solid var(--wr-border-med)', boxShadow: 'var(--wr-shadow-lg)' }}>
+      <span className="text-xs font-semibold wr-text-color">
         🗳️ {selectedCount} emails selected
       </span>
-      <div className="h-4 w-px bg-[var(--wr-border-soft)]" />
+      <div className="h-4 w-px wr-border-soft-border" style={{ background: 'var(--wr-border-soft)' }} />
       <div className="flex gap-2">
         <button
           onClick={onSummarize}
           disabled={loading}
-          className="px-3.5 py-1.5 bg-[var(--wr-accent)] hover:bg-[var(--wr-accent-hover)] text-white text-xs font-bold rounded-full transition-all duration-150"
+          className="px-3.5 py-1.5 wr-accent-bg wr-hover-accent text-white text-xs font-bold rounded-full transition-all duration-150"
         >
           {loading ? 'Summarizing...' : 'Summarize Selected'}
         </button>
         <button
           onClick={onClearSelection}
-          className="px-3 py-1.5 bg-[var(--wr-surface-2)] hover:bg-[var(--wr-border-soft)] text-[var(--wr-text-2)] text-xs font-bold rounded-full"
+          className="px-3 py-1.5 wr-surface-2-bg wr-hover-border-soft wr-text-2-color text-xs font-bold rounded-full"
         >
           Clear
         </button>
@@ -911,16 +912,3 @@ function formatRelativeTime(timestamp: string): string {
   }
 }
 
-function formatFullDate(timestamp: string): string {
-  try {
-    return new Date(timestamp).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-  } catch {
-    return timestamp
-  }
-}

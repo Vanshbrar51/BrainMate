@@ -75,17 +75,32 @@ const USER_MESSAGES: Partial<Record<ErrorCode, string>> = {
   GATEWAY_OFFLINE: "Authentication gateway is offline. Please make sure it is running.",
 };
 
+export interface ErrorMetadata {
+  headers?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+export interface ApiErrorResponse {
+  error: ErrorCode;
+  message: string;
+  issues?: unknown[];
+  upgrade_url?: string;
+  request_id?: string;
+  "Retry-After"?: string;
+  [key: string]: unknown;
+}
+
 export class WriteRightError extends Error {
   code: ErrorCode;
   statusHttp: number;
   userMessage: string;
-  meta?: Record<string, unknown>;
+  meta?: ErrorMetadata;
 
   constructor(
     code: ErrorCode,
     userMessage: string,
     statusHttp = 500,
-    meta?: Record<string, unknown>,
+    meta?: ErrorMetadata,
   ) {
     super(userMessage);
     this.name = "WriteRightError";
@@ -100,7 +115,7 @@ export function createApiError(
   code: ErrorCode,
   msg: string,
   status?: number,
-  meta?: Record<string, unknown>,
+  meta?: ErrorMetadata,
 ): WriteRightError {
   // Always prefer the safe user-facing copy
   const safeMessage = USER_MESSAGES[code] ?? msg;
@@ -121,7 +136,7 @@ export function toApiResponse(err: unknown): NextResponse {
       }
     }
 
-    const body: Record<string, unknown> = {
+    const body: ApiErrorResponse = {
       error: err.code,
       message: err.userMessage,
     };

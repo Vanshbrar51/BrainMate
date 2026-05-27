@@ -14,6 +14,7 @@
 
 import { getRedisPool, ns, isCircuitOpen } from "@/lib/redis";
 import { createHash } from "crypto";
+import { createApiError } from "@/lib/writeright-errors";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -114,7 +115,7 @@ function idempotencyKey(userId: string, requestKey: string): string {
  */
 export async function enqueueWriteRightJob(job: WritingJobPayload): Promise<void> {
   if (isCircuitOpen()) {
-    throw new Error("[writeright-queue] Cannot enqueue: Redis circuit is open");
+    throw createApiError("REDIS_UNAVAILABLE", "[writeright-queue] Cannot enqueue: Redis circuit is open", 503);
   }
 
   const redis = getRedisPool();

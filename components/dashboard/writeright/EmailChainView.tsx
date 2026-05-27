@@ -39,8 +39,6 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
   const [advice, setAdvice] = useState<EmailChainAdvice>(DEFAULT_ADVICE)
   const [nextGoal, setNextGoal] = useState('')
   const [loading, setLoading] = useState(false)
-  
-  // Active stream buffer
   const [activeDraftText, setActiveDraftText] = useState('')
 
   // Escape to close
@@ -75,7 +73,6 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
     const compiled = messages
       .map(m => `--- ${m.label} ---\n${m.body}`)
       .join("\n\n")
-
     navigator.clipboard.writeText(compiled)
     alert("Email chain copied to clipboard!")
   }
@@ -102,11 +99,9 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() || ""
-
         for (const line of lines) {
           const cleanLine = line.trim()
           if (cleanLine.startsWith("data: ")) {
@@ -125,7 +120,6 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
         }
       }
 
-      // Append completed draft to timeline
       setMessages(prev => [
         ...prev,
         {
@@ -136,40 +130,44 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
           collapsed: false
         }
       ])
-      
-      // Clear input state
       setNextGoal('')
       setActiveDraftText('')
-    } catch (err) {
+    } catch {
       alert('Failed to generate email chain draft')
     } finally {
       setLoading(false)
     }
   }
 
+  const getToneBadgeStyle = (toneTrend: string): React.CSSProperties => {
+    if (toneTrend === 'escalating') return { background: 'rgba(220,38,38,0.1)', color: 'var(--wr-error)' }
+    if (toneTrend === 'de-escalating') return { background: 'rgba(22,163,74,0.1)', color: 'var(--wr-success)' }
+    return { background: 'rgba(107,99,88,0.08)', color: '#6b6358' }
+  }
+
   return (
     <div className="wr-chain-overlay">
       {/* Left Column: Timeline */}
-      <div className="flex flex-col h-full overflow-hidden bg-[var(--wr-surface)] border border-[var(--wr-border)] rounded-[var(--wr-radius)] p-5">
-        
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--wr-surface)', border: '1px solid var(--wr-border)', borderRadius: 'var(--wr-radius)', padding: '20px' }}>
+
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[var(--wr-border-soft)] pb-4 mb-4">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--wr-border-soft)', paddingBottom: '16px', marginBottom: '16px' }}>
           <div>
-            <h2 className="text-lg font-bold text-[var(--wr-text)] flex items-center gap-2">
+            <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--wr-text)', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
               🔗 Email Chain Optimizer
             </h2>
-            <p className="text-xs text-[var(--wr-text-3)]">Map and strategize your negotiation threads</p>
+            <p style={{ fontSize: '12px', color: 'var(--wr-text-3)', margin: '4px 0 0' }}>Map and strategize your negotiation threads</p>
           </div>
-          <div className="flex gap-2">
-            <button 
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
               onClick={handleExport}
-              className="px-3.5 py-1.5 bg-[var(--wr-surface-2)] text-[var(--wr-text-2)] hover:bg-[var(--wr-border-soft)] text-xs font-semibold rounded-full border border-[var(--wr-border)]"
+              style={{ padding: '6px 14px', background: 'var(--wr-surface-2)', color: 'var(--wr-text-2)', fontSize: '12px', fontWeight: 600, borderRadius: '999px', border: '1px solid var(--wr-border)', cursor: 'pointer' }}
             >
               📋 Copy Thread
             </button>
-            <button 
+            <button
               onClick={onClose}
-              className="p-1.5 hover:bg-[var(--wr-surface-2)] text-[var(--wr-text-3)] rounded-full"
+              style={{ padding: '6px', background: 'transparent', color: 'var(--wr-text-3)', borderRadius: '999px', border: 'none', cursor: 'pointer' }}
             >
               ✕
             </button>
@@ -177,21 +175,23 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
         </div>
 
         {/* Messages Timeline */}
-        <div className="flex-1 overflow-y-auto wr-chain-timeline pr-1 mb-4">
+        <div className="wr-chain-timeline" style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', marginBottom: '16px' }}>
           {messages.map((m) => (
-            <div key={m.id} className="wr-chain-step-card border border-[var(--wr-border)] rounded-md bg-[var(--wr-surface)]">
+            <div key={m.id} className="wr-chain-step-card" style={{ border: '1px solid var(--wr-border)', borderRadius: '6px', background: 'var(--wr-surface)' }}>
               {/* Card Header */}
-              <div 
+              <div
                 onClick={() => toggleCollapse(m.id)}
-                className="flex items-center justify-between p-3 bg-[var(--wr-surface-3)] cursor-pointer select-none border-b border-[var(--wr-border-soft)]"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--wr-surface-2)', cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid var(--wr-border-soft)' }}
               >
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-[var(--wr-text-3)]">{m.collapsed ? '▶' : '▼'}</span>
-                  <span className="text-sm font-semibold text-[var(--wr-text)]">{m.label}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--wr-text-3)' }}>{m.collapsed ? '▶' : '▼'}</span>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--wr-text)' }}>{m.label}</span>
                 </div>
-                <button 
+                <button
                   onClick={(e) => { e.stopPropagation(); handleDeleteStep(m.id) }}
-                  className="text-xs text-[var(--wr-text-3)] hover:text-[var(--wr-error)]"
+                  style={{ fontSize: '12px', color: 'var(--wr-text-3)', background: 'none', border: 'none', cursor: 'pointer' }}
+                  onMouseEnter={e => { (e.target as HTMLButtonElement).style.color = 'var(--wr-error)' }}
+                  onMouseLeave={e => { (e.target as HTMLButtonElement).style.color = 'var(--wr-text-3)' }}
                 >
                   Delete
                 </button>
@@ -199,12 +199,12 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
 
               {/* Card Body */}
               {!m.collapsed && (
-                <div className="p-3">
+                <div style={{ padding: '12px' }}>
                   <textarea
                     value={m.body}
                     onChange={(e) => handleUpdateMessage(m.id, e.target.value)}
                     rows={4}
-                    className="w-full text-sm p-2 border border-[var(--wr-border)] bg-[var(--wr-surface)] rounded-md outline-none text-[var(--wr-text)] font-sans resize-vertical leading-relaxed"
+                    style={{ width: '100%', fontSize: '0.875rem', padding: '8px', border: '1px solid var(--wr-border)', background: 'var(--wr-surface)', borderRadius: '6px', outline: 'none', color: 'var(--wr-text)', fontFamily: 'sans-serif', lineHeight: 1.6, resize: 'vertical', boxSizing: 'border-box' }}
                   />
                 </div>
               )}
@@ -213,11 +213,11 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
 
           {/* Active Streaming Draft Card */}
           {activeDraftText && (
-            <div className="wr-chain-step-card border border-[var(--wr-accent)] bg-[var(--wr-accent-soft)] p-3 rounded-md">
-              <div className="text-xs font-bold text-[var(--wr-accent)] mb-2 flex items-center gap-1.5">
+            <div className="wr-chain-step-card" style={{ border: '1px solid var(--wr-accent)', background: 'var(--wr-accent-soft)', padding: '12px', borderRadius: '6px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--wr-accent)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span>⚡ Drafting Response...</span>
               </div>
-              <p className="text-sm text-[var(--wr-text)] whitespace-pre-wrap leading-relaxed">
+              <p style={{ fontSize: '0.875rem', color: 'var(--wr-text)', whiteSpace: 'pre-wrap', lineHeight: 1.6, margin: 0 }}>
                 {activeDraftText}
               </p>
             </div>
@@ -225,48 +225,43 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
         </div>
 
         {/* Goal Input Section */}
-        <div className="border-t border-[var(--wr-border-soft)] pt-4 flex flex-col gap-3">
-          <span className="text-xs font-bold text-[var(--wr-text-3)] uppercase tracking-wider">What should the next email accomplish?</span>
-          <div className="flex gap-2">
+        <div style={{ borderTop: '1px solid var(--wr-border-soft)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--wr-text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>What should the next email accomplish?</span>
+          <div style={{ display: 'flex', gap: '8px' }}>
             <input
               type="text"
               placeholder="e.g. Politely declining the Net-60 terms and proposing a 3% volume discount on Net-30."
               value={nextGoal}
               onChange={(e) => setNextGoal(e.target.value)}
-              className="flex-1 text-sm px-3.5 py-2 border border-[var(--wr-border)] bg-[var(--wr-surface)] rounded-md outline-none text-[var(--wr-text)]"
+              style={{ flex: 1, fontSize: '0.875rem', padding: '8px 14px', border: '1px solid var(--wr-border)', background: 'var(--wr-surface)', borderRadius: '6px', outline: 'none', color: 'var(--wr-text)' }}
               disabled={loading}
             />
             <button
               onClick={handleDraftNextEmail}
               disabled={loading || !nextGoal.trim()}
-              className="px-4 py-2 bg-[var(--wr-accent)] hover:bg-[var(--wr-accent-hover)] text-white text-xs font-semibold rounded-md disabled:opacity-50"
+              style={{ padding: '8px 16px', background: 'var(--wr-accent)', color: '#fff', fontSize: '12px', fontWeight: 600, borderRadius: '6px', border: 'none', cursor: 'pointer', opacity: (loading || !nextGoal.trim()) ? 0.5 : 1 }}
             >
               {loading ? 'Drafting...' : 'Draft Response'}
             </button>
           </div>
         </div>
-
       </div>
 
       {/* Right Column: AI advice panel */}
-      <div className="flex flex-col h-full bg-[var(--wr-surface)] border border-[var(--wr-border)] rounded-[var(--wr-radius)] p-5 overflow-y-auto">
-        <span className="text-[10px] font-bold text-[var(--wr-text-3)] uppercase tracking-wider block mb-1">AI Strategic Intelligence</span>
-        <h2 className="text-2xl font-display font-medium text-[var(--wr-text)] mb-5">Negotiation Strategy</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--wr-surface)', border: '1px solid var(--wr-border)', borderRadius: 'var(--wr-radius)', padding: '20px', overflowY: 'auto' }}>
+        <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--wr-text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>AI Strategic Intelligence</span>
+        <h2 style={{ fontSize: '1.5rem', fontFamily: 'var(--font-instrument-serif, Georgia, serif)', fontWeight: 500, color: 'var(--wr-text)', marginBottom: '20px', marginTop: 0 }}>Negotiation Strategy</h2>
 
         {/* Status block */}
-        <div className="mb-5">
-          <span className="text-xs text-[var(--wr-text-3)] font-bold uppercase block mb-1">Negotiation Status</span>
-          <p className="text-sm font-semibold text-[var(--wr-text)]">{advice.negotiationStatus}</p>
+        <div style={{ marginBottom: '20px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--wr-text-3)', fontWeight: 700, textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Negotiation Status</span>
+          <p style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--wr-text)', margin: 0 }}>{advice.negotiationStatus}</p>
         </div>
 
         {/* Tone Trend */}
-        <div className="mb-5">
-          <span className="text-xs text-[var(--wr-text-3)] font-bold uppercase block mb-1.5">Tone Trend</span>
-          <span className={`inline-flex items-center text-xs px-2.5 py-1 rounded font-bold ${
-            advice.toneTrend === 'escalating' ? 'bg-red-100 text-[var(--wr-error)]' :
-            advice.toneTrend === 'de-escalating' ? 'bg-green-100 text-[var(--wr-success)]' :
-            'bg-gray-100 text-gray-700'
-          }`}>
+        <div style={{ marginBottom: '20px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--wr-text-3)', fontWeight: 700, textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>Tone Trend</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '12px', padding: '4px 10px', borderRadius: '4px', fontWeight: 700, ...getToneBadgeStyle(advice.toneTrend) }}>
             {advice.toneTrend === 'escalating' ? '📈 Escalating Conflict' :
              advice.toneTrend === 'de-escalating' ? '📉 De-escalating' :
              '→ Neutral'}
@@ -274,15 +269,15 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
         </div>
 
         {/* Recommended Next Move */}
-        <div className="mb-5 bg-[var(--wr-accent-soft)] border-l-2 border-[var(--wr-accent)] p-3 rounded">
-          <span className="text-xs text-[var(--wr-accent)] font-bold uppercase block mb-1">Recommended Next Move</span>
-          <p className="text-xs text-[var(--wr-text-2)] leading-relaxed">{advice.recommendedNextMove}</p>
+        <div style={{ marginBottom: '20px', background: 'var(--wr-accent-soft)', borderLeft: '2px solid var(--wr-accent)', padding: '12px', borderRadius: '4px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--wr-accent)', fontWeight: 700, textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Recommended Next Move</span>
+          <p style={{ fontSize: '12px', color: 'var(--wr-text-2)', lineHeight: 1.6, margin: 0 }}>{advice.recommendedNextMove}</p>
         </div>
 
         {/* Risk Assessment */}
-        <div className="bg-red-50 dark:bg-red-950/20 border-l-2 border-[var(--wr-error)] p-3 rounded">
-          <span className="text-xs text-[var(--wr-error)] font-bold uppercase block mb-1">Risk Assessment</span>
-          <p className="text-xs text-[var(--wr-text-2)] leading-relaxed">{advice.riskAssessment}</p>
+        <div style={{ background: 'rgba(220,38,38,0.05)', borderLeft: '2px solid var(--wr-error)', padding: '12px', borderRadius: '4px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--wr-error)', fontWeight: 700, textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Risk Assessment</span>
+          <p style={{ fontSize: '12px', color: 'var(--wr-text-2)', lineHeight: 1.6, margin: 0 }}>{advice.riskAssessment}</p>
         </div>
       </div>
     </div>

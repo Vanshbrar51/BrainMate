@@ -1,5 +1,5 @@
 // components/dashboard/writeright/AnalyticsView.tsx
-// Full-screen overlay providing detailed writing history deep analytics, 
+// Full-screen overlay providing detailed writing history deep analytics,
 // including an SVG heatmap and score trends line chart built entirely from scratch.
 
 import React, { useState, useEffect } from 'react'
@@ -19,7 +19,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
   // 1. Fetch Analytics data
   useEffect(() => {
     if (!isOpen) return
-
     async function fetchAnalytics() {
       setLoading(true)
       try {
@@ -28,13 +27,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
           const json = await res.json()
           setData(json)
         }
-      } catch (err) {
-        console.error('Failed to load writing analytics:', err)
+      } catch {
+        // Silent failure - will show empty state UI
       } finally {
         setLoading(false)
       }
     }
-
     fetchAnalytics()
   }, [isOpen])
 
@@ -56,41 +54,33 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
   const renderHeatmap = () => {
     if (!data) return null
 
-    // Build map for quick lookups
     const counts: Record<string, number> = {}
-    data.heatmap.forEach(h => {
-      counts[h.date] = h.count
-    })
+    data.heatmap.forEach(h => { counts[h.date] = h.count })
 
     const cellSize = 10
     const cellGap = 3
     const weeksCount = 53
     const daysCount = 7
-
     const cells: React.ReactNode[] = []
-    
-    // Generate dates for the last 52 weeks (starting from 364 days ago)
+
     const today = new Date()
     const startDate = new Date(today)
     startDate.setDate(today.getDate() - (weeksCount * daysCount) + 1)
 
-    // Helper to get color for cell
     const getCellColor = (count: number) => {
       if (!count) return 'var(--wr-surface-2)'
       if (count === 1) return 'var(--wr-accent-soft)'
       if (count === 2) return 'rgba(217,119,87,0.45)'
       if (count <= 4) return 'var(--wr-accent)'
-      return 'var(--wr-accent-hover)' // max activity
+      return 'var(--wr-accent-hover)'
     }
 
     for (let w = 0; w < weeksCount; w++) {
       for (let d = 0; d < daysCount; d++) {
         const currentDate = new Date(startDate)
         currentDate.setDate(startDate.getDate() + (w * 7) + d)
-        
         const dateStr = currentDate.toISOString().split('T')[0]
         const count = counts[dateStr] || 0
-        
         const x = w * (cellSize + cellGap) + 30
         const y = d * (cellSize + cellGap) + 20
 
@@ -102,7 +92,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
             width={cellSize}
             height={cellSize}
             fill={getCellColor(count)}
-            className="wr-analytics-heatmap-cell cursor-pointer"
+            className="wr-analytics-heatmap-cell"
+            style={{ cursor: 'pointer' }}
             onMouseEnter={(e) => {
               const rect = e.currentTarget.getBoundingClientRect()
               setHoveredCell({
@@ -119,28 +110,22 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
     }
 
     return (
-      <div className="relative overflow-x-auto pb-4">
-        <svg width="730" height="120" className="mx-auto select-none">
-          {/* Week Labels Y Axis */}
+      <div style={{ position: 'relative', overflowX: 'auto', paddingBottom: '1rem' }}>
+        <svg width="730" height="120" style={{ display: 'block', margin: '0 auto', userSelect: 'none' }}>
           <text x="5" y="30" fontSize="9" fill="var(--wr-text-3)">Mon</text>
           <text x="5" y="56" fontSize="9" fill="var(--wr-text-3)">Wed</text>
           <text x="5" y="82" fontSize="9" fill="var(--wr-text-3)">Fri</text>
-
-          {/* Month Labels X Axis */}
           <text x="30" y="115" fontSize="9" fill="var(--wr-text-3)">Jan</text>
           <text x="180" y="115" fontSize="9" fill="var(--wr-text-3)">Apr</text>
           <text x="330" y="115" fontSize="9" fill="var(--wr-text-3)">Jul</text>
           <text x="480" y="115" fontSize="9" fill="var(--wr-text-3)">Oct</text>
           <text x="630" y="115" fontSize="9" fill="var(--wr-text-3)">Dec</text>
-
           {cells}
         </svg>
-        
-        {/* Heatmap Tooltip */}
         {hoveredCell && (
-          <div 
-            className="wr-analytics-tooltip shadow-md border border-[var(--wr-border-soft)]"
-            style={{ left: hoveredCell.x, top: hoveredCell.y }}
+          <div
+            className="wr-analytics-tooltip"
+            style={{ left: hoveredCell.x, top: hoveredCell.y, boxShadow: '0 2px 8px rgba(0,0,0,0.12)', border: '1px solid var(--wr-border-soft)' }}
           >
             <strong>{hoveredCell.count}</strong> improvements on {hoveredCell.date}
           </div>
@@ -158,19 +143,15 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
     const width = 450
     const height = 180
     const padding = 25
-
     const pointsCount = data.score_trends.length
     const chartWidth = width - padding * 2
     const chartHeight = height - padding * 2
 
-    // Helper to get coordinates
-    const getCoords = (index: number, score: number) => {
-      const x = padding + (index / (pointsCount - 1 || 1)) * chartWidth
-      const y = padding + chartHeight - (score / 10) * chartHeight
-      return { x, y }
-    }
+    const getCoords = (index: number, score: number) => ({
+      x: padding + (index / (pointsCount - 1 || 1)) * chartWidth,
+      y: padding + chartHeight - (score / 10) * chartHeight,
+    })
 
-    // Build path commands
     const buildPath = (key: 'clarity' | 'tone' | 'impact') => {
       let path = ''
       data.score_trends.forEach((pt, i) => {
@@ -178,7 +159,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
         if (i === 0) {
           path = `M ${x} ${y}`
         } else {
-          // Simple smooth line using bezier midpoint control
           const prev = getCoords(i - 1, data.score_trends[i - 1][key])
           const cpX1 = prev.x + (x - prev.x) / 2
           const cpY1 = prev.y
@@ -195,131 +175,61 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
     const impactPath = buildPath('impact')
 
     return (
-      <div className="relative">
-        <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="select-none overflow-visible">
-          {/* Y Axis Grid lines */}
+      <div style={{ position: 'relative' }}>
+        <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ userSelect: 'none', overflow: 'visible' }}>
           {[0, 2.5, 5, 7.5, 10].map(val => {
             const y = padding + chartHeight - (val / 10) * chartHeight
             return (
               <g key={val}>
-                <line 
-                  x1={padding} 
-                  y1={y} 
-                  x2={width - padding} 
-                  y2={y} 
-                  stroke="var(--wr-border-soft)" 
-                  strokeWidth="1"
-                  strokeDasharray="4"
-                />
-                <text x="0" y={y + 3} fontSize="8" fill="var(--wr-text-3)" textAnchor="start">
-                  {val}
-                </text>
+                <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="var(--wr-border-soft)" strokeWidth="1" strokeDasharray="4" />
+                <text x="0" y={y + 3} fontSize="8" fill="var(--wr-text-3)" textAnchor="start">{val}</text>
               </g>
             )
           })}
-
-          {/* Clarity Line (Green) */}
           <path d={clarityPath} fill="none" stroke="var(--wr-success)" strokeWidth="2.5" strokeLinecap="round" />
-          
-          {/* Tone Line (Blue) */}
           <path d={tonePath} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" />
-
-          {/* Impact Line (Amber) */}
           <path d={impactPath} fill="none" stroke="var(--wr-warning)" strokeWidth="2.5" strokeLinecap="round" />
-
-          {/* Render points for hover interactions */}
           {data.score_trends.map((pt, i) => {
             const cClarity = getCoords(i, pt.clarity)
             const cTone = getCoords(i, pt.tone)
             const cImpact = getCoords(i, pt.impact)
-
             return (
               <g key={i}>
-                {/* Clarity dot */}
-                <circle 
-                  cx={cClarity.x} 
-                  cy={cClarity.y} 
-                  r="3.5" 
-                  fill="var(--wr-success)" 
-                  className="cursor-pointer hover:r-5 transition-all duration-100"
-                  onMouseEnter={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    setHoveredPoint({
-                      date: pt.date,
-                      value: pt.clarity,
-                      label: 'Clarity',
-                      x: rect.left + window.scrollX - 50,
-                      y: rect.top + window.scrollY - 40
-                    })
-                  }}
+                <circle cx={cClarity.x} cy={cClarity.y} r="3.5" fill="var(--wr-success)" style={{ cursor: 'pointer' }}
+                  onMouseEnter={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setHoveredPoint({ date: pt.date, value: pt.clarity, label: 'Clarity', x: rect.left + window.scrollX - 50, y: rect.top + window.scrollY - 40 }) }}
                   onMouseLeave={() => setHoveredPoint(null)}
                 />
-                
-                {/* Tone dot */}
-                <circle 
-                  cx={cTone.x} 
-                  cy={cTone.y} 
-                  r="3.5" 
-                  fill="#3b82f6" 
-                  className="cursor-pointer hover:r-5 transition-all duration-100"
-                  onMouseEnter={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    setHoveredPoint({
-                      date: pt.date,
-                      value: pt.tone,
-                      label: 'Tone',
-                      x: rect.left + window.scrollX - 50,
-                      y: rect.top + window.scrollY - 40
-                    })
-                  }}
+                <circle cx={cTone.x} cy={cTone.y} r="3.5" fill="#3b82f6" style={{ cursor: 'pointer' }}
+                  onMouseEnter={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setHoveredPoint({ date: pt.date, value: pt.tone, label: 'Tone', x: rect.left + window.scrollX - 50, y: rect.top + window.scrollY - 40 }) }}
                   onMouseLeave={() => setHoveredPoint(null)}
                 />
-
-                {/* Impact dot */}
-                <circle 
-                  cx={cImpact.x} 
-                  cy={cImpact.y} 
-                  r="3.5" 
-                  fill="var(--wr-warning)" 
-                  className="cursor-pointer hover:r-5 transition-all duration-100"
-                  onMouseEnter={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    setHoveredPoint({
-                      date: pt.date,
-                      value: pt.impact,
-                      label: 'Impact',
-                      x: rect.left + window.scrollX - 50,
-                      y: rect.top + window.scrollY - 40
-                    })
-                  }}
+                <circle cx={cImpact.x} cy={cImpact.y} r="3.5" fill="var(--wr-warning)" style={{ cursor: 'pointer' }}
+                  onMouseEnter={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setHoveredPoint({ date: pt.date, value: pt.impact, label: 'Impact', x: rect.left + window.scrollX - 50, y: rect.top + window.scrollY - 40 }) }}
                   onMouseLeave={() => setHoveredPoint(null)}
                 />
               </g>
             )
           })}
         </svg>
-
         {/* Legend */}
-        <div className="flex justify-center gap-6 mt-4 text-xs font-semibold text-[var(--wr-text-2)]">
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-[var(--wr-success)]" />
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '16px', fontSize: '12px', fontWeight: 600, color: 'var(--wr-text-2)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--wr-success)', display: 'inline-block' }} />
             <span>Clarity</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-[#3b82f6]" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block' }} />
             <span>Tone</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-[var(--wr-warning)]" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--wr-warning)', display: 'inline-block' }} />
             <span>Impact</span>
           </div>
         </div>
-
-        {/* Line Chart Tooltip */}
         {hoveredPoint && (
-          <div 
-            className="wr-analytics-tooltip shadow-md border border-[var(--wr-border-soft)]"
-            style={{ left: hoveredPoint.x, top: hoveredPoint.y }}
+          <div
+            className="wr-analytics-tooltip"
+            style={{ left: hoveredPoint.x, top: hoveredPoint.y, boxShadow: '0 2px 8px rgba(0,0,0,0.12)', border: '1px solid var(--wr-border-soft)' }}
           >
             <strong>{hoveredPoint.label}: {hoveredPoint.value}/10</strong> on {hoveredPoint.date}
           </div>
@@ -329,18 +239,18 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
   }
 
   return (
-    <div className={`wr-analytics-overlay ${isOpen ? 'open' : ''} flex flex-col`}>
+    <div className={`wr-analytics-overlay ${isOpen ? 'open' : ''}`} style={{ display: 'flex', flexDirection: 'column' }}>
       {/* Top controls */}
-      <div className="flex items-center justify-between border-b border-[var(--wr-border-med)] pb-4 max-w-[1100px] w-full mx-auto mb-6">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--wr-border-med)', paddingBottom: '1rem', maxWidth: '1100px', width: '100%', margin: '0 auto 1.5rem' }}>
         <div>
-          <h1 className="text-3xl font-display font-medium text-[var(--wr-text)]">
+          <h1 style={{ fontSize: '1.875rem', fontFamily: 'var(--font-instrument-serif, Georgia, serif)', fontWeight: 500, color: 'var(--wr-text)', margin: 0 }}>
             📊 Writing Analytics
           </h1>
-          <p className="text-sm text-[var(--wr-text-3)]">A deep look at your patterns and writing profile</p>
+          <p style={{ fontSize: '0.875rem', color: 'var(--wr-text-3)', margin: '4px 0 0' }}>A deep look at your patterns and writing profile</p>
         </div>
-        <button 
+        <button
           onClick={onClose}
-          className="flex items-center justify-center w-10 h-10 hover:bg-[var(--wr-surface-2)] text-[var(--wr-text-2)] rounded-full border border-[var(--wr-border)] transition-colors duration-150"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', borderRadius: '50%', border: '1px solid var(--wr-border)', background: 'transparent', color: 'var(--wr-text-2)', cursor: 'pointer' }}
           aria-label="Close analytics panel"
         >
           ✕
@@ -348,43 +258,43 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
       </div>
 
       {loading ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-[var(--wr-text-3)] font-medium">
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.875rem', color: 'var(--wr-text-3)', fontWeight: 500 }}>
           Compiling deep analytics report...
         </div>
       ) : !data ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-[var(--wr-text-2)]">
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.875rem', color: 'var(--wr-text-2)' }}>
           No analytics data available yet. Keep writing to generate details!
         </div>
       ) : (
-        <div className="flex-1 max-w-[1100px] w-full mx-auto flex flex-col gap-6">
+        <div style={{ flex: 1, maxWidth: '1100px', width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Top Streak Dashboard */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="wr-analytics-card flex items-center gap-4">
-              <span className="text-3xl">🔥</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            <div className="wr-analytics-card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <span style={{ fontSize: '1.875rem' }}>🔥</span>
               <div>
-                <span className="text-xs text-[var(--wr-text-3)] block font-bold uppercase tracking-wider">Current Streak</span>
-                <span className="text-2xl font-bold font-mono text-[var(--wr-text)]">{data.streak.current} days</span>
+                <span style={{ fontSize: '10px', color: 'var(--wr-text-3)', display: 'block', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current Streak</span>
+                <span style={{ fontSize: '1.5rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--wr-text)' }}>{data.streak.current} days</span>
               </div>
             </div>
-            <div className="wr-analytics-card flex items-center gap-4">
-              <span className="text-3xl">🏆</span>
+            <div className="wr-analytics-card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <span style={{ fontSize: '1.875rem' }}>🏆</span>
               <div>
-                <span className="text-xs text-[var(--wr-text-3)] block font-bold uppercase tracking-wider">Longest Streak</span>
-                <span className="text-2xl font-bold font-mono text-[var(--wr-text)]">{data.streak.longest} days</span>
+                <span style={{ fontSize: '10px', color: 'var(--wr-text-3)', display: 'block', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Longest Streak</span>
+                <span style={{ fontSize: '1.5rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--wr-text)' }}>{data.streak.longest} days</span>
               </div>
             </div>
-            <div className="wr-analytics-card flex items-center gap-4">
-              <span className="text-3xl">📝</span>
+            <div className="wr-analytics-card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <span style={{ fontSize: '1.875rem' }}>📝</span>
               <div>
-                <span className="text-xs text-[var(--wr-text-3)] block font-bold uppercase tracking-wider">Total Writing Days</span>
-                <span className="text-2xl font-bold font-mono text-[var(--wr-text)]">{data.streak.total_days} days</span>
+                <span style={{ fontSize: '10px', color: 'var(--wr-text-3)', display: 'block', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Writing Days</span>
+                <span style={{ fontSize: '1.5rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--wr-text)' }}>{data.streak.total_days} days</span>
               </div>
             </div>
           </div>
 
           {/* Heatmap Row */}
-          <div className="wr-analytics-card flex flex-col gap-4">
-            <h3 className="text-sm font-bold text-[var(--wr-text-3)] uppercase tracking-wider">
+          <div className="wr-analytics-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--wr-text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
               Writing Frequency (Last 12 Months)
             </h3>
             {renderHeatmap()}
@@ -392,53 +302,51 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
 
           {/* Split Charts & Writing DNA Grid */}
           <div className="wr-analytics-grid">
-            {/* Trend Chart */}
-            <div className="wr-analytics-card flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-[var(--wr-text-3)] uppercase tracking-wider">
+            <div className="wr-analytics-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--wr-text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
                 AI Score Trends (Last 30 Days)
               </h3>
               {renderTrendChart()}
             </div>
 
             {/* Writing DNA */}
-            <div className="wr-analytics-card flex flex-col gap-4 justify-between">
+            <div className="wr-analytics-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px', justifyContent: 'space-between' }}>
               <div>
-                <h3 className="text-sm font-bold text-[var(--wr-text-3)] uppercase tracking-wider mb-2">
+                <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--wr-text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
                   Your Writing DNA
                 </h3>
-                <h2 className="text-2xl font-display font-medium text-[var(--wr-text)] mb-3">Your Writing Style</h2>
-                <p className="text-sm italic leading-relaxed text-[var(--wr-text-2)] font-display mb-4">
-                  "{data.writing_dna.style_summary}"
+                <h2 style={{ fontSize: '1.5rem', fontFamily: 'var(--font-instrument-serif, Georgia, serif)', fontWeight: 500, color: 'var(--wr-text)', marginBottom: '12px' }}>Your Writing Style</h2>
+                <p style={{ fontSize: '0.875rem', fontStyle: 'italic', lineHeight: 1.6, color: 'var(--wr-text-2)', fontFamily: 'var(--font-instrument-serif, Georgia, serif)', marginBottom: '16px' }}>
+                  &ldquo;{data.writing_dna.style_summary}&rdquo;
                 </p>
-                <div className="flex flex-wrap gap-1.5 mb-4">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
                   {data.writing_dna.signature_phrases.map((phrase, idx) => (
-                    <span key={idx} className="text-xs px-2.5 py-1 bg-[var(--wr-surface-2)] text-[var(--wr-text-2)] rounded-md font-semibold">
-                      "{phrase}"
+                    <span key={idx} style={{ fontSize: '10px', padding: '2px 10px', background: 'var(--wr-surface-2)', color: 'var(--wr-text-2)', borderRadius: '4px', fontWeight: 600 }}>
+                      &ldquo;{phrase}&rdquo;
                     </span>
                   ))}
                 </div>
               </div>
-              
+
               {/* Bottom Trajectory & Percentile */}
-              <div className="border-t border-[var(--wr-border-soft)] pt-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-[var(--wr-text-3)] font-semibold">Improvement Trajectory</span>
-                  <span className="font-bold text-[var(--wr-accent)]">
+              <div style={{ borderTop: '1px solid var(--wr-border-soft)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px' }}>
+                  <span style={{ color: 'var(--wr-text-3)', fontWeight: 600 }}>Improvement Trajectory</span>
+                  <span style={{ fontWeight: 700, color: 'var(--wr-accent)' }}>
                     {data.writing_dna.improvement_trajectory === 'improving' ? '📈 Improving' : '→ Stable'}
                   </span>
                 </div>
-                <div className="flex flex-col gap-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-[var(--wr-text-3)] font-semibold">Global Percentile</span>
-                    <span className="font-bold text-[var(--wr-text)]">{data.writing_dna.percentile}%</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{ color: 'var(--wr-text-3)', fontWeight: 600 }}>Global Percentile</span>
+                    <span style={{ fontWeight: 700, color: 'var(--wr-text)' }}>{data.writing_dna.percentile}%</span>
                   </div>
-                  <div className="w-full h-2 bg-[var(--wr-surface-2)] rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-[var(--wr-accent)] rounded-full transition-all duration-500" 
-                      style={{ width: `${data.writing_dna.percentile}%` }}
+                  <div style={{ width: '100%', height: '8px', background: 'var(--wr-surface-2)', borderRadius: '999px', overflow: 'hidden' }}>
+                    <div
+                      style={{ height: '100%', background: 'var(--wr-accent)', borderRadius: '999px', width: `${data.writing_dna.percentile}%`, transition: 'width 0.5s ease' }}
                     />
                   </div>
-                  <span className="text-[10px] text-[var(--wr-text-3)]">
+                  <span style={{ fontSize: '10px', color: 'var(--wr-text-3)' }}>
                     You write more clearly than {data.writing_dna.percentile}% of WriteRight users.
                   </span>
                 </div>
@@ -448,24 +356,24 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
 
           {/* Vocabulary stats & top mistakes */}
           <div className="wr-analytics-grid">
-            <div className="wr-analytics-card flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-[var(--wr-text-3)] uppercase tracking-wider">
+            <div className="wr-analytics-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--wr-text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
                 Vocabulary Statistics
               </h3>
-              <div className="flex flex-col gap-3 text-sm">
-                <div className="flex justify-between border-b border-[var(--wr-border-soft)] pb-2">
-                  <span className="text-[var(--wr-text-2)]">Unique Words Used</span>
-                  <span className="font-bold font-mono text-[var(--wr-text)]">{data.vocabulary_stats.unique_words_used}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.875rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--wr-border-soft)', paddingBottom: '8px' }}>
+                  <span style={{ color: 'var(--wr-text-2)' }}>Unique Words Used</span>
+                  <span style={{ fontWeight: 700, fontFamily: 'monospace', color: 'var(--wr-text)' }}>{data.vocabulary_stats.unique_words_used}</span>
                 </div>
-                <div className="flex justify-between border-b border-[var(--wr-border-soft)] pb-2">
-                  <span className="text-[var(--wr-text-2)]">Average Sentence Length</span>
-                  <span className="font-bold font-mono text-[var(--wr-text)]">{data.vocabulary_stats.avg_sentence_length} words</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--wr-border-soft)', paddingBottom: '8px' }}>
+                  <span style={{ color: 'var(--wr-text-2)' }}>Average Sentence Length</span>
+                  <span style={{ fontWeight: 700, fontFamily: 'monospace', color: 'var(--wr-text)' }}>{data.vocabulary_stats.avg_sentence_length} words</span>
                 </div>
-                <div className="flex flex-col gap-1.5 pt-1">
-                  <span className="text-xs text-[var(--wr-text-3)] font-semibold uppercase">Most Improved Areas</span>
-                  <div className="flex flex-wrap gap-1.5">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: '4px' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--wr-text-3)', fontWeight: 700, textTransform: 'uppercase' }}>Most Improved Areas</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     {data.vocabulary_stats.most_improved_areas.map((area, idx) => (
-                      <span key={idx} className="text-xs bg-[var(--wr-accent-soft)] text-[var(--wr-accent)] px-2.5 py-0.5 rounded-full font-semibold">
+                      <span key={idx} style={{ fontSize: '10px', background: 'var(--wr-accent-soft)', color: 'var(--wr-accent)', padding: '2px 10px', borderRadius: '999px', fontWeight: 600 }}>
                         {area}
                       </span>
                     ))}
@@ -474,17 +382,17 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ isOpen, onClose })
               </div>
             </div>
 
-            <div className="wr-analytics-card flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-[var(--wr-text-3)] uppercase tracking-wider">
+            <div className="wr-analytics-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--wr-text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
                 Top Areas of Friction
               </h3>
-              <div className="flex flex-col gap-2">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {data.vocabulary_stats.top_mistakes.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center text-xs p-2 bg-[var(--wr-surface-2)] rounded">
-                    <span className="text-[var(--wr-text-2)] truncate max-w-[240px]" title={item.mistake}>
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', padding: '8px', background: 'var(--wr-surface-2)', borderRadius: '4px' }}>
+                    <span style={{ color: 'var(--wr-text-2)', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px', whiteSpace: 'nowrap' }} title={item.mistake}>
                       {idx + 1}. {item.mistake}
                     </span>
-                    <span className="font-bold text-[var(--wr-error)] bg-red-100 dark:bg-red-950/40 px-2 py-0.5 rounded">
+                    <span style={{ fontWeight: 700, color: 'var(--wr-error)', background: 'rgba(220,38,38,0.1)', padding: '2px 8px', borderRadius: '4px' }}>
                       {item.count} flagged
                     </span>
                   </div>

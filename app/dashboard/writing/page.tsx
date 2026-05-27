@@ -91,6 +91,13 @@ import { EmailChainView } from '@/components/dashboard/writeright/EmailChainView
 // Constants
 // ---------------------------------------------------------------------------
 
+interface SessionStats {
+  today_count: number
+  week_count: number
+  streak_days: number
+  avg_clarity: number
+}
+
 interface CreateChatResponse {
   chat: { id: string; title: string; mode: string }
 }
@@ -2150,6 +2157,23 @@ export default function WriteRightPage() {
   const [voiceModalOpen, setVoiceModalOpen] = useState(false)
   const [showAdvancedTools, setShowAdvancedTools] = useState(false)
   const [showSelectors, setShowSelectors] = useState(false)
+  const [sessionStats, setSessionStats] = useState<SessionStats | null>(null)
+
+  // Fetch session stats on mount
+  useEffect(() => {
+    async function fetchSessionStats() {
+      try {
+        const res = await fetch('/api/writeright/session-stats')
+        if (res.ok) {
+          const json = await res.json()
+          setSessionStats(json)
+        }
+      } catch {
+        // Non-fatal — stats bar is cosmetic
+      }
+    }
+    fetchSessionStats()
+  }, [])
 
   const { playClick, playShimmer, toggleMute, isMuted } = useHaptics()
 
@@ -2481,8 +2505,7 @@ export default function WriteRightPage() {
       setIntensity(preferences.preferredIntensity)
       setOutputLang(preferences.preferredOutputLang)
       setIsSidebarOpen(preferences.uiPreferences.sidebarOpen)
-      const uiPrefs = preferences.uiPreferences as Record<string, unknown>
-      setIsFocusMode(uiPrefs.focusModeEnabled === true || preferences.uiPreferences.analyticsOpen)
+      setIsFocusMode(preferences.uiPreferences.focusModeEnabled === true)
     }
   }, [preferences, prefsLoading])
 
@@ -2526,12 +2549,11 @@ export default function WriteRightPage() {
 
   useEffect(() => {
     if (prefsLoading || isFirstMount.current) return
-    const uiPrefs = preferences.uiPreferences as Record<string, unknown>
-    if (uiPrefs?.analyticsOpen !== isFocusMode && uiPrefs?.focusModeEnabled !== isFocusMode) {
+    if (preferences.uiPreferences?.analyticsOpen !== isFocusMode && preferences.uiPreferences?.focusModeEnabled !== isFocusMode) {
       updatePreference('uiPreferences', {
         ...preferences.uiPreferences,
-        analyticsOpen: isFocusMode
-      } as unknown as typeof preferences.uiPreferences)
+        focusModeEnabled: isFocusMode,
+      })
     }
   }, [isFocusMode, prefsLoading, updatePreference, preferences.uiPreferences])
 
@@ -3781,6 +3803,31 @@ export default function WriteRightPage() {
             )}
           </div>
         </div>
+
+        {/* ── Session Stats Bar ── */}
+        {sessionStats && (
+          <div className="wr-session-bar" role="status" aria-label="Session statistics">
+            <div className="wr-session-bar-item">
+              <span className="wr-session-bar-value">{sessionStats.today_count}</span>
+              <span className="wr-session-bar-label">Today</span>
+            </div>
+            <div className="wr-session-bar-divider" />
+            <div className="wr-session-bar-item">
+              <span className="wr-session-bar-value">{sessionStats.week_count}</span>
+              <span className="wr-session-bar-label">This Week</span>
+            </div>
+            <div className="wr-session-bar-divider" />
+            <div className="wr-session-bar-item">
+              <span className="wr-session-bar-value">{sessionStats.streak_days}🔥</span>
+              <span className="wr-session-bar-label">Streak</span>
+            </div>
+            <div className="wr-session-bar-divider" />
+            <div className="wr-session-bar-item">
+              <span className="wr-session-bar-value">{sessionStats.avg_clarity}/10</span>
+              <span className="wr-session-bar-label">Avg Clarity</span>
+            </div>
+          </div>
+        )}
 
         {/* ── Standard Input Bar ── */}
         <div className="wr-composer-bar">

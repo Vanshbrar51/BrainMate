@@ -39,12 +39,15 @@ export default function SettingsPage() {
     if (typeof window !== 'undefined') {
       try {
         const modules = localStorage.getItem('visible_modules')
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (modules) setVisibleModules(JSON.parse(modules))
         
         const style = localStorage.getItem('sidebar_style') as 'spacious' | 'compact'
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (style) setSidebarStyle(style)
         
         const defMod = localStorage.getItem('default_module')
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (defMod) setDefaultModule(defMod)
       } catch (e) {
         console.error(e)
@@ -80,7 +83,6 @@ export default function SettingsPage() {
   const total = modsUsage.reduce((s, m) => s + m.n, 0)
   const Q_USED = 3
   const Q_MAX = 10
-  const qPct = Math.round((Q_USED / Q_MAX) * 100)
 
   return (
     <div className="h-full overflow-y-auto bg-[var(--bg)] transition-colors duration-300 relative">

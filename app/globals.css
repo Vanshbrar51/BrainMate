@@ -4486,5 +4486,161 @@ mark.wr-grammar-wordy {
   }
 }
 
+/* ============================================================
+   COACH BAR — Real-time writing quality feedback  
+   ============================================================ */
+.wr-coach-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 14px;
+  background: var(--wr-surface);
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm, 8px);
+}
+.wr-coach-metrics {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.wr-coach-metric {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wr-coach-metric-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wr-text-3);
+  white-space: nowrap;
+  min-width: 64px;
+}
+.wr-coach-metric-track {
+  width: 52px;
+  height: 4px;
+  background: var(--wr-border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.wr-coach-metric-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+.wr-coach-metric-fill.coach-good { background: var(--wr-success, #16A34A); }
+.wr-coach-metric-fill.coach-warn { background: var(--wr-warning, #D97706); }
+.wr-coach-metric-fill.coach-bad  { background: var(--wr-error, #DC2626); }
+.wr-coach-metric-val {
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+  min-width: 24px;
+  text-align: right;
+}
+.wr-coach-metric-val.coach-good { color: var(--wr-success, #16A34A); }
+.wr-coach-metric-val.coach-warn { color: var(--wr-warning, #D97706); }
+.wr-coach-metric-val.coach-bad  { color: var(--wr-error, #DC2626); }
+.wr-coach-tip-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  padding-top: 6px;
+  border-top: 1px solid var(--wr-border-soft);
+  font-size: 11.5px;
+  color: var(--wr-text-2);
+}
+.wr-coach-tip-icon { font-size: 12px; flex-shrink: 0; }
+.wr-coach-tip-text { flex: 1; line-height: 1.5; }
+.wr-coach-tip-next {
+  background: none;
+  border: 1px solid var(--wr-border);
+  border-radius: 4px;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  color: var(--wr-text-3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.1s;
+}
+.wr-coach-tip-next:hover { background: var(--wr-surface-2); color: var(--wr-text); }
+.dark [data-module="write"] .wr-coach-bar { background: #242220; border-color: rgba(255,248,220,0.08); }
+
+/* ============================================================
+   REPHRASE CHIPS
+   ============================================================ */
+.wr-rephrase-panel { position: absolute; bottom: calc(100% + 8px); right: 12px; background: var(--wr-surface); border: 1px solid var(--wr-border-soft); border-radius: 14px; padding: 12px; box-shadow: 0 1px 3px rgba(26,23,19,0.04), 0 4px 16px rgba(26,23,19,0.07); z-index: 50; width: 320px; }
+.wr-rephrase-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--wr-text-3); margin-bottom: 9px; }
+.wr-rephrase-style-row { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 10px; }
+.wr-rephrase-style-chip { height: 26px; padding: 0 10px; border: 1px solid var(--wr-border); border-radius: 20px; background: transparent; font-size: 11.5px; color: var(--wr-text-2); cursor: pointer; transition: all 0.11s; }
+.wr-rephrase-style-chip:hover { border-color: var(--wr-border-med, rgba(26,23,19,0.20)); color: var(--wr-text); }
+.wr-rephrase-style-chip.active { background: var(--wr-text); color: #fff; border-color: var(--wr-text); }
+.wr-rephrase-result { padding: 9px 11px; background: var(--wr-surface-3); border: 1px solid var(--wr-border-soft); border-radius: 8px; font-size: 13px; line-height: 1.6; color: var(--wr-text); cursor: pointer; transition: background 0.1s; margin-bottom: 5px; }
+.wr-rephrase-result:hover { background: var(--wr-surface-2); }
+.wr-rephrase-loading { padding: 12px; text-align: center; color: var(--wr-text-3); font-size: 12px; }
+.wr-rephrase-use-btn { width: 100%; height: 30px; background: var(--wr-text); color: #fff; border: none; border-radius: 20px; font-size: 12.5px; font-weight: 500; cursor: pointer; margin-top: 8px; transition: background 0.12s; }
+.wr-rephrase-use-btn:hover { background: var(--wr-text-2); }
+.dark [data-module="write"] .wr-rephrase-panel { background: #211F17; border-color: rgba(255,248,220,0.09); }
+
+/* ============================================================
+   SESSION STATS BAR
+   ============================================================ */
+.wr-session-bar { display: flex; align-items: center; gap: 16px; padding: 5px 16px; border-bottom: 1px solid var(--wr-border-soft); font-size: 11px; color: var(--wr-text-3); font-family: ui-monospace, monospace; }
+.wr-session-stat { display: flex; align-items: center; gap: 4px; }
+.wr-session-stat strong { color: var(--wr-text-2); font-weight: 600; }
+.wr-session-divider { width: 1px; height: 12px; background: var(--wr-border); }
+
+/* session-bar-item variants (wired in page.tsx) */
+.wr-session-bar-item { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.wr-session-bar-value { font-size: 13px; font-weight: 700; color: var(--wr-text-2); font-family: ui-monospace, monospace; }
+.wr-session-bar-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--wr-text-3); font-weight: 600; }
+.wr-session-bar-divider { width: 1px; height: 24px; background: var(--wr-border-soft); }
+
+
+/* ============================================================
+   GMAIL COMPONENTS — Utility token alias classes
+   (Replaces Tailwind arbitrary-value [var(--wr-*)] brackets)
+   ============================================================ */
+
+/* Color utilities */
+.wr-text-3-color  { color: var(--wr-text-3); }
+.wr-text-2-color  { color: var(--wr-text-2); }
+.wr-text-1-color  { color: var(--wr-text); }
+.wr-text-color    { color: var(--wr-text); }
+.wr-accent-color  { color: var(--wr-accent); }
+.wr-error-color   { color: var(--wr-error); }
+
+/* Background utilities */
+.wr-accent-soft-bg { background: var(--wr-accent-soft); }
+.wr-accent-bg      { background: var(--wr-accent); }
+.wr-success-bg     { background: var(--wr-success); }
+.wr-error-bg       { background: var(--wr-error); }
+.wr-surface-bg     { background: var(--wr-surface); }
+.wr-surface-2-bg   { background: var(--wr-surface-2); }
+.wr-surface-3-bg   { background: var(--wr-surface-3); }
+
+/* Border utilities */
+.wr-border-soft-border { border-color: var(--wr-border-soft); }
+.wr-border-border      { border-color: var(--wr-border); }
+.wr-accent-border      { border-color: var(--wr-accent); }
+
+/* Hover utilities */
+.wr-hover-accent:hover       { background: var(--wr-accent-hover); }
+.wr-hover-surface-2:hover    { background: var(--wr-surface-2); }
+.wr-hover-border-soft:hover  { background: var(--wr-border-soft); }
+.wr-hover-text-1:hover       { color: var(--wr-text); }
+.wr-hover-text-2:hover       { color: var(--wr-text-2); }
+
+/* Size utilities */
+.wr-text-10 { font-size: 10px; }
+.wr-text-9  { font-size: 9px; }
+.wr-maxw-130 { max-width: 130px; }
+.wr-maxw-100 { max-width: 100px; }
+
+
 
 

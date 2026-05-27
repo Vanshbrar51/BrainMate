@@ -80,6 +80,24 @@ class Settings(BaseSettings):
         description="env: ENABLE_CRITIQUE_PIPELINE",
     )
 
+    # Smart Suggestions / Session DNA / Rephrase feature flags
+    enable_smart_suggestions: bool = Field(
+        default=True,
+        description="env: ENABLE_SMART_SUGGESTIONS",
+    )
+    smart_suggestions_max_per_session: int = Field(
+        default=10,
+        description="env: SMART_SUGGESTIONS_MAX_PER_SESSION",
+    )
+    session_dna_cache_hours: int = Field(
+        default=24,
+        description="env: SESSION_DNA_CACHE_HOURS",
+    )
+    rephrase_max_chars: int = Field(
+        default=500,
+        description="env: REPHRASE_MAX_CHARS",
+    )
+
 
 _settings_instance: Settings | None = None
 

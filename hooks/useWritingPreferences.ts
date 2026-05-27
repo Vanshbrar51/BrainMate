@@ -17,7 +17,9 @@ const DEFAULT_PREFERENCES: WritingPreferences = {
     sidebarOpen: true,
     analyticsOpen: false,
     coachBarEnabled: true,
-    splitViewDefault: false
+    splitViewDefault: false,
+    focusModeEnabled: false,
+    grammarScanEnabled: false,
   }
 }
 
@@ -52,7 +54,7 @@ export function useWritingPreferences() {
           }
         }
       } catch (err) {
-        console.error('Failed to load user preferences from backend', err)
+        // Silent failure - will use cached or default preferences
       } finally {
         if (active) setLoading(false)
       }
@@ -75,7 +77,7 @@ export function useWritingPreferences() {
         body: JSON.stringify(updatedPrefs)
       })
     } catch (err) {
-      console.error('Failed to persist preferences to backend', err)
+      // Silent failure - localStorage already updated
     }
   }, [])
 

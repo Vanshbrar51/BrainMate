@@ -48,7 +48,7 @@ const PASSIVE_VERB_PATTERN = /\b(is|am|are|was|were|be|been|being)\s+([a-z]+ed|[
 
 // Helper to count syllables in a word (rough approximation)
 function countWordSyllables(word: string): number {
-  let cleanWord = word.toLowerCase().replace(/[^a-z]/g, '')
+  const cleanWord = word.toLowerCase().replace(/[^a-z]/g, '')
   if (cleanWord.length <= 3) return 1
   
   // Count vowel groups

@@ -7,6 +7,20 @@
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const requiredEnv = [
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "INTERNAL_API_TOKEN",
+      "REDIS_URL",
+      "RUST_GATEWAY_URL"
+    ];
+    for (const key of requiredEnv) {
+      if (!process.env[key]) {
+        throw new Error(`Missing required environment variable: ${key}`);
+      }
+    }
+
     process.on("unhandledRejection", (reason) => {
       console.error(JSON.stringify({
         event: "unhandled_rejection",

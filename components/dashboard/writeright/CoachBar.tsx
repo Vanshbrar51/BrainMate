@@ -1,7 +1,6 @@
 // components/dashboard/writeright/CoachBar.tsx
-// Renders the real-time writing coach metrics and actionable tips.
-
-import React from 'react'
+'use client'
+import React, { useState } from 'react'
 import type { CoachMetrics } from '@/types/writeright'
 
 interface CoachBarProps {
@@ -9,127 +8,47 @@ interface CoachBarProps {
   visible: boolean
 }
 
-export const CoachBar: React.FC<CoachBarProps> = ({ metrics, visible }) => {
+const METRIC_KEYS: Array<{ key: keyof CoachMetrics; label: string }> = [
+  { key: 'clarity', label: 'Clarity' },
+  { key: 'formality', label: 'Formality' },
+  { key: 'conciseness', label: 'Conciseness' },
+  { key: 'indianEnglish', label: 'Global' },
+  { key: 'passiveVoice', label: 'Active Voice' },
+]
+
+export function CoachBar({ metrics, visible }: CoachBarProps) {
+  const [tipIdx, setTipIdx] = useState(0)
   if (!visible) return null
-
-  // Helper to determine score color class
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-[var(--wr-success)]'
-    if (score >= 50) return 'text-[var(--wr-warning)]'
-    return 'text-[var(--wr-error)]'
-  }
-
-  // Helper to render score color progress bar background
-  const getBarColor = (score: number) => {
-    if (score >= 80) return 'bg-[var(--wr-success)]'
-    if (score >= 50) return 'bg-[var(--wr-warning)]'
-    return 'bg-[var(--wr-error)]'
-  }
-
+  const scoreClass = (v: number) =>
+    v >= 75 ? 'coach-good' : v >= 45 ? 'coach-warn' : 'coach-bad'
+  const tips = metrics.suggestions ?? []
   return (
-    <div className="wr-coach-container flex flex-col gap-3">
-      {/* Metrics Row */}
-      <div className="flex flex-wrap items-center justify-between gap-4 w-full">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-[var(--wr-accent)] bg-[var(--wr-accent-soft)] px-2 py-0.5 rounded-md">
-            ✍️ Writing Coach
-          </span>
-        </div>
-
-        <div className="wr-coach-metrics-row flex flex-wrap gap-5">
-          {/* Clarity */}
-          <div className="wr-coach-metric-item">
-            <span className="wr-coach-metric-label">Clarity</span>
-            <div className="flex items-center gap-2">
-              <span className={`wr-coach-metric-value ${getScoreColor(metrics.clarity)}`}>
-                {metrics.clarity}%
-              </span>
-              <div className="w-12 h-1.5 bg-[var(--wr-border-soft)] rounded-full overflow-hidden">
-                <div 
-                  className={`h-full ${getBarColor(metrics.clarity)} transition-all duration-300`} 
-                  style={{ width: `${metrics.clarity}%` }}
-                />
+    <div className="wr-coach-bar" role="status" aria-live="polite" aria-label="Live writing coach">
+      <div className="wr-coach-metrics">
+        {METRIC_KEYS.map(({ key, label }) => {
+          const val = metrics[key] as number
+          return (
+            <div key={key} className="wr-coach-metric">
+              <span className="wr-coach-metric-label">{label}</span>
+              <div className="wr-coach-metric-track">
+                <div className={`wr-coach-metric-fill ${scoreClass(val)}`} style={{ width: `${val}%` }} />
               </div>
+              <span className={`wr-coach-metric-val ${scoreClass(val)}`}>{val}</span>
             </div>
-          </div>
-
-          {/* Conciseness */}
-          <div className="wr-coach-metric-item">
-            <span className="wr-coach-metric-label">Conciseness</span>
-            <div className="flex items-center gap-2">
-              <span className={`wr-coach-metric-value ${getScoreColor(metrics.conciseness)}`}>
-                {metrics.conciseness}%
-              </span>
-              <div className="w-12 h-1.5 bg-[var(--wr-border-soft)] rounded-full overflow-hidden">
-                <div 
-                  className={`h-full ${getBarColor(metrics.conciseness)} transition-all duration-300`} 
-                  style={{ width: `${metrics.conciseness}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Formality */}
-          <div className="wr-coach-metric-item">
-            <span className="wr-coach-metric-label">Formality</span>
-            <div className="flex items-center gap-2">
-              <span className={`wr-coach-metric-value text-[var(--wr-text)]`}>
-                {metrics.formality}%
-              </span>
-              <div className="w-12 h-1.5 bg-[var(--wr-border-soft)] rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-[var(--wr-text-2)] transition-all duration-300" 
-                  style={{ width: `${metrics.formality}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Indian English */}
-          <div className="wr-coach-metric-item">
-            <span className="wr-coach-metric-label">Global English</span>
-            <div className="flex items-center gap-2">
-              <span className={`wr-coach-metric-value ${getScoreColor(metrics.indianEnglish)}`}>
-                {metrics.indianEnglish}%
-              </span>
-              <div className="w-12 h-1.5 bg-[var(--wr-border-soft)] rounded-full overflow-hidden">
-                <div 
-                  className={`h-full ${getBarColor(metrics.indianEnglish)} transition-all duration-300`} 
-                  style={{ width: `${metrics.indianEnglish}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Passive Voice */}
-          <div className="wr-coach-metric-item">
-            <span className="wr-coach-metric-label">Active Voice</span>
-            <div className="flex items-center gap-2">
-              <span className={`wr-coach-metric-value ${getScoreColor(metrics.passiveVoice)}`}>
-                {metrics.passiveVoice}%
-              </span>
-              <div className="w-12 h-1.5 bg-[var(--wr-border-soft)] rounded-full overflow-hidden">
-                <div 
-                  className={`h-full ${getBarColor(metrics.passiveVoice)} transition-all duration-300`} 
-                  style={{ width: `${metrics.passiveVoice}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+          )
+        })}
       </div>
-
-      {/* Suggestions block if any exist */}
-      {metrics.suggestions && metrics.suggestions.length > 0 && (
-        <div className="wr-coach-suggestions flex flex-col gap-1 w-full border-t border-[var(--wr-border-soft)] pt-2 mt-1">
-          {metrics.suggestions.map((tip, idx) => (
-            <div key={idx} className="wr-coach-suggestion-text flex items-start gap-1.5 text-xs text-[var(--wr-text-2)]">
-              <span className="text-[var(--wr-accent)] font-bold">•</span>
-              <span>{tip}</span>
-            </div>
-          ))}
+      {tips.length > 0 && (
+        <div className="wr-coach-tip-row">
+          <span className="wr-coach-tip-icon">💡</span>
+          <span className="wr-coach-tip-text">{tips[tipIdx % tips.length]}</span>
+          {tips.length > 1 && (
+            <button className="wr-coach-tip-next" onClick={() => setTipIdx(i => (i + 1) % tips.length)} aria-label="Next tip">›</button>
+          )}
         </div>
       )}
     </div>
   )
 }
+
+export default CoachBar
