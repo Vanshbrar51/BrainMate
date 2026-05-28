@@ -1,13 +1,14 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { withSpan, addSpanAttributes, traceLogFields } from "@/lib/tracing";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { getPreferredInternalApiToken } from "@/lib/internal-api-token";
 
 const VALID_MODES = ["email", "paragraph", "linkedin", "whatsapp"] as const;
 const VALID_TONES = ["Professional", "Friendly", "Concise", "Academic", "Assertive"] as const;
 const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://localhost:8000";
-const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || "dev-token";
 
 async function generateTemplateName(content: string, mode: string): Promise<string | null> {
   try {
@@ -15,7 +16,7 @@ async function generateTemplateName(content: string, mode: string): Promise<stri
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Internal-API-Token": INTERNAL_API_TOKEN,
+        "X-Internal-API-Token": await getPreferredInternalApiToken(),
       },
       body: JSON.stringify({ content: content.slice(0, 500), mode }),
       signal: AbortSignal.timeout(3000),
@@ -46,7 +47,7 @@ export async function GET(req: Request) {
         .order("use_count", { ascending: false });
 
       if (error) {
-        console.error("[api.writeright.templates.list] Failed", {
+        logError("[api.writeright.templates.list] Failed", {
           error: error.message,
           ...traceLogFields(),
         });
@@ -100,7 +101,7 @@ export async function POST(req: Request) {
         .single();
 
       if (error || !data) {
-        console.error("[api.writeright.templates.create] Failed", {
+        logError("[api.writeright.templates.create] Failed", {
           error: error?.message,
           ...traceLogFields(),
         });

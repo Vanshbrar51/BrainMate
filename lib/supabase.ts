@@ -7,7 +7,7 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createApiError } from "@/lib/writeright-errors";
-import { logger } from "@/lib/writeright-logger";
+import { logError, logEvent } from "@/lib/writeright-logger";
 
 // ---------------------------------------------------------------------------
 // Singleton — one client per process lifetime
@@ -70,7 +70,7 @@ export function getSupabaseWithTiming(): {
   const logSlow = (operationName: string, startMs: number) => {
     const duration = Date.now() - startMs;
     if (duration > 500) {
-      logger.warn("slow_db_query", {
+      logEvent("slow_db_query", {
         operation: operationName,
         duration_ms: duration,
       });

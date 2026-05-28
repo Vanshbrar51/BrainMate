@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -43,7 +44,7 @@ export async function GET(
         process.env.NEXTAUTH_SECRET;
 
       if (!secret) {
-        console.error("[api.writeright.public.share] Missing share token secret", traceLogFields());
+        logError("[api.writeright.public.share] Missing share token secret", traceLogFields());
         throw createApiError("MISSING_SECRET", "Share feature unavailable", 503);
       }
 

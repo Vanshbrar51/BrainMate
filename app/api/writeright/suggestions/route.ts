@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -95,7 +96,7 @@ export async function GET(req: Request) {
            }
         }
       } catch (err) {
-          console.error("[api.writeright.suggestions] AI call failed:", err);
+          logError("[api.writeright.suggestions] AI call failed:", err);
       }
 
       // 5. Cache result

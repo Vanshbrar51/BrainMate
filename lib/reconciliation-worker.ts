@@ -29,7 +29,7 @@ import { getInternalApiTokenCandidates } from "@/lib/internal-api-token";
 import { context } from "@opentelemetry/api";
 import { type Redis } from "ioredis";
 import { getRedisPool, isCircuitOpen } from "@/lib/redis";
-import { logEvent } from "@/lib/writeright-logger";
+import { logError, logEvent } from "@/lib/writeright-logger";
 import { createApiError } from "@/lib/writeright-errors";
 
 // ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ export async function enqueueReconciliation(
 
   // Use the process-level singleton Redis pool.
   if (isCircuitOpen()) {
-    console.error("[reconciliation] Cannot enqueue: Redis circuit is open");
+    logError("[reconciliation] Cannot enqueue: Redis circuit is open", new Error("[reconciliation] Cannot enqueue: Redis circuit is open"));
     incrementMetric("reconciliation_enqueue_ratelimited_total", { type: op.type });
     return;
   }
@@ -138,9 +138,7 @@ export async function enqueueReconciliation(
     ]);
 
     if (pendingCount >= MAX_QUEUE_SIZE) {
-      console.error(
-        `[reconciliation] Queue full (pending=${pendingCount}, dlq=${dlqCount}), dropping enqueue for ${entry.id}`,
-      );
+      logError("Queue full", new Error("Queue full"));
       return;
     }
 
@@ -175,7 +173,7 @@ export async function enqueueReconciliation(
     // Metrics
     incrementMetric("reconciliation_enqueued_total", { type: entry.op.type });
   } catch (err) {
-    console.error("[reconciliation] Failed to enqueue:", err);
+    logError("[reconciliation] Failed to enqueue:", err);
   }
 }
 
@@ -284,9 +282,7 @@ export async function processPendingOperations(): Promise<number> {
           incrementMetric("reconciliation_circuit_open_total", {
             type: entry.op.type,
           });
-          console.error(
-            `[reconciliation] Circuit opened for ${CIRCUIT_COOLDOWN_MS}ms after ${circuitState.failures} consecutive failures`,
-          );
+          logError("Circuit opened", new Error("Circuit opened"));
         }
 
         if (entry.attempt >= entry.maxAttempts) {
@@ -299,9 +295,7 @@ export async function processPendingOperations(): Promise<number> {
           await redis.del(lockKey);
           incrementMetric("reconciliation_dlq_total", { type: entry.op.type });
 
-          console.error(
-            `[reconciliation] DLQ: ${entry.op.type} (id: ${entry.id}) after ${entry.attempt} attempts: ${errorMsg}`,
-          );
+          logError("Moved to DLQ", new Error("DLQ"));
         } else {
           // Retry with exponential backoff
           const delay = BASE_DELAY_MS * Math.pow(2, entry.attempt - 1);
@@ -320,7 +314,7 @@ export async function processPendingOperations(): Promise<number> {
       }
     }
   } catch (err) {
-    console.error("[reconciliation] Worker error:", err);
+    logError("[reconciliation] Worker error:", err);
   }
 
   return processed;
@@ -511,7 +505,7 @@ export async function bumpSessionVersion(
     await redis.expire(sessionVersionKey(sessionId), IDEM_TTL_SECS);
     return next;
   } catch (err) {
-    console.error("[reconciliation] bumpSessionVersion failed:", err);
+    logError("[reconciliation] bumpSessionVersion failed:", err);
     return 0;
   }
 }
@@ -523,7 +517,7 @@ export async function readSessionVersion(
   try {
     return await getSessionVersion(redis, sessionId);
   } catch (err) {
-    console.error("[reconciliation] readSessionVersion failed:", err);
+    logError("[reconciliation] readSessionVersion failed:", err);
     return 0;
   }
 }
@@ -572,7 +566,7 @@ function incrementMetric(name: string, labels: Record<string, string>): void {
  */
 export async function startWorker(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") {
-    console.warn("[reconciliation] Worker cannot run in Edge Runtime");
+    logEvent("[reconciliation] Worker cannot run in Edge Runtime");
     return;
   }
 
@@ -591,7 +585,7 @@ export async function startWorker(): Promise<void> {
         logEvent("reconciliation.batch_processed", { count: processed });
       }
     } catch (err) {
-      console.error("[reconciliation] Worker iteration error:", err);
+      logError("[reconciliation] Worker iteration error:", err);
     }
 
     // Poll interval
@@ -615,7 +609,7 @@ export async function getQueueStats(): Promise<{ pending: number; dlq: number } 
     ]);
     return { pending: pending.length, dlq: dlq.length };
   } catch (err) {
-    console.error("[reconciliation] getQueueStats failed:", err);
+    logError("[reconciliation] getQueueStats failed:", err);
     return null;
   }
 }

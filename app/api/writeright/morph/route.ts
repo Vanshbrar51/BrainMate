@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // app/api/writeright/morph/route.ts — Direct streaming morphing gateway
 //
 // This route proxies requests to the Python worker's /morph endpoint
@@ -7,9 +8,9 @@ import { auth } from "@clerk/nextjs/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { withSpan, addSpanAttributes, injectTraceContext } from "@/lib/tracing";
+import { getPreferredInternalApiToken } from "@/lib/internal-api-token";
 
 const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://localhost:8000";
-const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || "dev-token";
 
 export async function POST(req: Request) {
   return withErrorHandler(req, async () => {
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Internal-API-Token": INTERNAL_API_TOKEN,
+          "X-Internal-API-Token": await getPreferredInternalApiToken(),
           ...traceHeaders,
         },
         body: JSON.stringify({
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
 
       if (!pythonRes.ok) {
         const errorText = await pythonRes.text();
-        console.error("[api.writeright.morph] Python worker error:", errorText);
+        logError("[api.writeright.morph] Python worker error:", errorText);
         throw createApiError("WORKER_ERROR", "Failed to morph text", 502);
       }
 

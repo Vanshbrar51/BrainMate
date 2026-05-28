@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // app/api/writeright/chat/[id]/route.ts — Single chat operations
 //
 // GET    — Get a single chat with message count
@@ -68,7 +69,7 @@ export async function GET(
         if (error?.code === "PGRST116") {
           throw createApiError("NOT_FOUND", "Chat not found", 404);
         }
-        console.error("[api.writeright.chat] Get failed:", {
+        logError("[api.writeright.chat] Get failed:", {
           error: error?.message,
           ...traceLogFields(),
         });
@@ -132,7 +133,7 @@ export async function DELETE(
         .select("id");
 
       if (error) {
-        console.error("[api.writeright.chat] Delete failed:", {
+        logError("[api.writeright.chat] Delete failed:", {
           error: error.message,
           ...traceLogFields(),
         });
@@ -207,7 +208,7 @@ export async function PATCH(
         if (error?.code === "PGRST116") {
           throw createApiError("NOT_FOUND", "Chat not found", 404);
         }
-        console.error("[api.writeright.chat] Patch failed:", {
+        logError("[api.writeright.chat] Patch failed:", {
           error: error?.message,
           ...traceLogFields(),
         });

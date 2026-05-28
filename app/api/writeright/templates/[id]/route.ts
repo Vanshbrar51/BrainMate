@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -49,7 +50,7 @@ export async function PATCH(
         if (error?.code === "PGRST116") {
           throw createApiError("NOT_FOUND", "Template not found", 404);
         }
-        console.error("[api.writeright.templates.rename] Failed", {
+        logError("[api.writeright.templates.rename] Failed", {
           error: error?.message,
           ...traceLogFields(),
         });
@@ -85,7 +86,7 @@ export async function DELETE(
         .eq("user_id", userId);
 
       if (error) {
-        console.error("[api.writeright.templates.delete] Failed", {
+        logError("[api.writeright.templates.delete] Failed", {
           error: error.message,
           ...traceLogFields(),
         });

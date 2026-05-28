@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // app/api/writeright/voice/route.ts — Brand Voice example ingestion + Audio STT
 //
 // GET  — List brand voice examples (proxied to Python worker)
@@ -8,9 +9,9 @@ import { NextResponse } from "next/server";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { withSpan, addSpanAttributes, injectTraceContext } from "@/lib/tracing";
 import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
+import { getPreferredInternalApiToken } from "@/lib/internal-api-token";
 
 const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://localhost:8000";
-const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || "dev-token";
 const AUDIO_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const AUDIO_RATE_LIMIT = 10; // 10/min — STT is expensive
 
@@ -38,7 +39,7 @@ export async function GET(req: Request) {
       const traceHeaders = injectTraceContext(new Headers());
       const res = await fetch(`${PYTHON_WORKER_URL}/voice/examples?user_id=${userId}`, {
         headers: {
-          "X-Internal-API-Token": INTERNAL_API_TOKEN,
+          "X-Internal-API-Token": await getPreferredInternalApiToken(),
           ...traceHeaders,
         },
       });
@@ -159,7 +160,7 @@ export async function POST(req: Request) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Internal-API-Token": INTERNAL_API_TOKEN,
+          "X-Internal-API-Token": await getPreferredInternalApiToken(),
           ...traceHeaders,
         },
         body: JSON.stringify({ user_id: userId, content }),
@@ -167,7 +168,7 @@ export async function POST(req: Request) {
 
       if (!res.ok) {
         const err = await res.text();
-        console.error("[api.writeright.voice] Ingestion failed:", err);
+        logError("[api.writeright.voice] Ingestion failed:", err);
         throw createApiError("WORKER_ERROR", "Failed to process style example", 502);
       }
 

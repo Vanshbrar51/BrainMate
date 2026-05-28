@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // lib/secrets.ts — Cloud KMS / Secret Manager integration
 //
 // Replaces env-based secrets (INTERNAL_API_TOKEN, OTP_PEPPER) with
@@ -98,9 +99,7 @@ export async function getSecretWithOptions(
     if (!value) {
       value = process.env[name] ?? "";
       if (PROVIDER !== "env") {
-        console.warn(
-          `[secrets] Cloud fetch failed for ${name}, using env var fallback`,
-        );
+        logEvent(`[secrets] Cloud fetch failed for ${name}, using env var fallback`,);
       }
     }
 
@@ -148,7 +147,7 @@ export async function checkRotation(): Promise<string[]> {
       const current = await getSecretWithOptions(envName, { forceRefresh: true });
       if (current !== cached.value) {
         rotated.push(envName);
-        console.log(`[secrets] Rotation detected for ${envName}`);
+        logEvent(`[secrets] Rotation detected for ${envName}`);
       }
     } catch {
       // Skip rotation check on error
@@ -203,7 +202,7 @@ async function fetchFromAWSSecretsManager(name: string): Promise<string | null> 
 
     return null;
   } catch (err) {
-    console.error(`[secrets] AWS Secrets Manager error for ${secretName}:`, err);
+    logError(`[secrets] AWS Secrets Manager error for ${secretName}:`, err);
     return null;
   }
 }
@@ -240,7 +239,7 @@ async function fetchFromGCPSecretManager(name: string): Promise<string | null> {
 
     return null;
   } catch (err) {
-    console.error(`[secrets] GCP Secret Manager error for ${secretName}:`, err);
+    logError(`[secrets] GCP Secret Manager error for ${secretName}:`, err);
     return null;
   }
 }
@@ -273,18 +272,18 @@ export function startRotationChecker(): void {
     try {
       const rotated = await checkRotation();
       if (rotated.length > 0) {
-        console.log(`[secrets] Rotated secrets detected: ${rotated.join(", ")}`);
+        logEvent(`[secrets] Rotated secrets detected: ${rotated.join(", ")}`);
         // Invalidate rotated secrets so next access fetches fresh values
         for (const name of rotated) {
           invalidateSecret(name);
         }
       }
     } catch (err) {
-      console.error("[secrets] Rotation check error:", err);
+      logError("[secrets] Rotation check error:", err);
     }
   }, 30_000);
 
-  console.log("[secrets] Rotation checker started");
+  logEvent("[secrets] Rotation checker started");
 }
 
 /**

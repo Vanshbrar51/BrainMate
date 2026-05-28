@@ -82,7 +82,7 @@ export default function InterviewProPage() {
         })
         setMessages((p) => [...p, { role: 'ai', content: <MarkdownContent content={response.content} /> }])
       } catch (err) {
-        console.error('InterviewPro error:', err)
+
         setMessages((p) => [
           ...p,
           { role: 'ai', content: 'Sorry, I encountered an error. Please try again.' },

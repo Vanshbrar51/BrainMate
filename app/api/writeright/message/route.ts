@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // FILE: app/api/writeright/message/route.ts — Core WriteRight message processing
 // ── CHANGED: [BE-3] Rate limit headers + [BE-1] centralized error handling ──
 //
@@ -130,7 +131,7 @@ async function fetchChatHistory(
     .limit(HISTORY_LIMIT);
 
   if (error || !data) {
-    console.error("[api.writeright.message] History lookup failed:", {
+    logError("[api.writeright.message] History lookup failed:", {
       error: error?.message,
       ...traceLogFields(),
     });
@@ -248,7 +249,7 @@ export async function POST(req: Request) {
       try {
         await supabase.rpc('increment_wr_daily_usage', { p_user_id: userId, p_chars: text.length, p_reqs: 1 });
       } catch (err) {
-        console.warn('Failed to increment daily usage', err);
+        logError('Failed to increment daily usage', err);
       }
 
       // 5.5 Rate limit check
@@ -272,7 +273,7 @@ export async function POST(req: Request) {
         ) {
           throw err;
         }
-        console.error("[api.writeright.message] Rate limit check failed:", {
+        logError("[api.writeright.message] Rate limit check failed:", {
           error: err instanceof Error ? err.message : String(err),
           ...traceLogFields(),
         });
@@ -337,7 +338,7 @@ export async function POST(req: Request) {
         .single();
 
       if (msgError || !message) {
-        console.error("[api.writeright.message] Insert message failed:", {
+        logError("[api.writeright.message] Insert message failed:", {
           error: msgError?.message,
           ...traceLogFields(),
         });
@@ -394,7 +395,7 @@ export async function POST(req: Request) {
           );
         }
       } catch (err) {
-        console.error("[api.writeright.message] Cache check failed:", {
+        logError("[api.writeright.message] Cache check failed:", {
           error: err instanceof Error ? err.message : String(err),
           ...traceLogFields(),
         });
@@ -422,7 +423,7 @@ export async function POST(req: Request) {
         .single();
 
       if (jobError || !job) {
-        console.error("[api.writeright.message] Insert job failed:", {
+        logError("[api.writeright.message] Insert job failed:", {
           error: jobError?.message,
           ...traceLogFields(),
         });
@@ -466,7 +467,7 @@ Content: ${email.body_preview}
             }
           }
         } catch (err) {
-          console.error("[api.writeright.message] Failed to fetch Gmail context:", err);
+          logError("[api.writeright.message] Failed to fetch Gmail context:", err);
         }
       }
 
@@ -493,7 +494,7 @@ Content: ${email.body_preview}
         await invalidateStatsCache(userId);
         addSpanEvent("job.enqueued", { job_id: job.id });
       } catch (err) {
-        console.error("[api.writeright.message] Redis enqueue failed:", {
+        logError("[api.writeright.message] Redis enqueue failed:", {
           error: err instanceof Error ? err.message : String(err),
           job_id: job.id,
           ...traceLogFields(),

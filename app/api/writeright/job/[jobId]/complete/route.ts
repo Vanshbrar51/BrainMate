@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 import { NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -107,7 +108,7 @@ export async function POST(
           await redis.del(ns("writeright", "stats", job.user_id));
 
         } catch (err) {
-          console.error("[api.writeright.job.complete] Redis update failed", {
+          logError("[api.writeright.job.complete] Redis update failed", {
             error: err instanceof Error ? err.message : String(err),
             ...traceLogFields(),
           });

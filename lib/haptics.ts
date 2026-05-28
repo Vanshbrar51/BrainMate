@@ -18,7 +18,7 @@ export function useHaptics() {
       const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
       audioCtxRef.current = new AudioContextClass()
     } catch (e) {
-      console.error("AudioContext init failed", e)
+
     }
   }, [])
 

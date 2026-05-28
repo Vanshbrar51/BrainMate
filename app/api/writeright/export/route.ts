@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // FILE: app/api/writeright/export/route.ts — WriteRight data export
 
 import { auth } from "@clerk/nextjs/server";
@@ -61,7 +62,7 @@ export async function GET(req: Request) {
 
       const { data: messages, error } = await query;
       if (error) {
-        console.error("[api.writeright.export] DB Error:", { error: error.message, ...traceLogFields() });
+        logError("[api.writeright.export] DB Error:", { error: error.message, ...traceLogFields() });
         throw createApiError("DB_ERROR", "Failed to load history", 500);
       }
 

@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { withSpan, addSpanAttributes, traceLogFields } from "@/lib/tracing";
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
       const result = await syncSession({ sessionId, userId, expiresAt });
 
       if (!result.ok) {
-        console.error("[auth/sync] session sync failed:", {
+        logError("[auth/sync] session sync failed:", {
           reason: result.reason,
           ...traceLogFields(),
         });

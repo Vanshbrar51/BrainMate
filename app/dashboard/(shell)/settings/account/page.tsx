@@ -36,18 +36,18 @@ export default function AccountPage() {
       try {
         const modules = localStorage.getItem('visible_modules')
         if (modules) {
-          setVisibleModules(JSON.parse(modules))
+          setVisibleModules(JSON.parse(modules)); // eslint-disable-line react-hooks/set-state-in-effect
         }
         const style = localStorage.getItem('sidebar_style') as 'spacious' | 'compact'
         if (style) {
-          setSidebarStyle(style)
+          setSidebarStyle(style);
         }
         const defMod = localStorage.getItem('default_module')
         if (defMod) {
           setDefaultModule(defMod)
         }
       } catch (e) {
-        console.error(e)
+
       }
     }
   }, [])
@@ -60,7 +60,7 @@ export default function AccountPage() {
   }
 
   const handleStyleChange = (style: 'spacious' | 'compact') => {
-    setSidebarStyle(style)
+    setSidebarStyle(style);
     localStorage.setItem('sidebar_style', style)
     window.dispatchEvent(new Event('sidebar-config-changed'))
   }

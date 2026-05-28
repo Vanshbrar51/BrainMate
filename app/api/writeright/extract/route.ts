@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // app/api/writeright/extract/route.ts — File text extraction for WriteRight
 //
 // POST — Accepts TXT / PDF / DOCX and returns extracted text (max 10k chars).
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
         }
       } catch (err) {
         if (err instanceof WriteRightError) throw err;
-        console.error("[api.writeright.extract] Rate-limit check failed", {
+        logError("[api.writeright.extract] Rate-limit check failed", {
           error: err instanceof Error ? err.message : String(err),
           ...traceLogFields(),
         });

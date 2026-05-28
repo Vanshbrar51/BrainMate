@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // lib/rust-auth.ts — Enterprise-grade auth gateway client with retry logic + tracing
 
 import { withClientSpan, addSpanAttributes, injectTraceContext } from "@/lib/tracing";
@@ -176,7 +177,7 @@ export async function syncSession(
     const tokenCandidates = await getInternalApiTokenCandidates();
 
     if (!baseUrl || tokenCandidates.length === 0) {
-      console.error("[rust-auth] AUTH_GATEWAY_INTERNAL_URL or INTERNAL_API_TOKEN not configured");
+      logError("[rust-auth] AUTH_GATEWAY_INTERNAL_URL or INTERNAL_API_TOKEN not configured", new Error("[rust-auth] AUTH_GATEWAY_INTERNAL_URL or INTERNAL_API_TOKEN not configured"));
       return { ok: false as const, status: 500, reason: "Internal gateway not configured" };
     }
 

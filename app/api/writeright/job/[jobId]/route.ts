@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // app/api/writeright/job/[jobId]/route.ts — Poll job status and result
 //
 // GET — Check job status (Redis first, Supabase fallback).
@@ -71,7 +72,7 @@ export async function GET(
           });
         }
       } catch (err) {
-        console.error("[api.writeright.job] Redis status check failed:", {
+        logError("[api.writeright.job] Redis status check failed:", {
           error: err instanceof Error ? err.message : String(err),
           job_id: jobId,
           ...traceLogFields(),

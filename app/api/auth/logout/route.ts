@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { forceRevokeSession } from "@/lib/rust-auth";
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
         // Can't get a token but have a session — force-revoke via internal gateway
         const result = await forceRevokeSession(sessionId);
         if (!result.ok) {
-          console.error("[auth/logout] force revoke failed:", {
+          logError("[auth/logout] force revoke failed:", {
             reason: result.reason,
             ...traceLogFields(),
           });
@@ -88,25 +89,19 @@ export async function POST(req: Request) {
         publicSucceeded = res.ok || res.status === 204;
 
         if (!publicSucceeded) {
-          console.warn(
-            `[auth/logout] public gateway returned ${res.status}, falling back to internal`,
+          logEvent(`[auth/logout] public gateway returned ${res.status}, falling back to internal`,
             traceLogFields(),
           );
         }
       } catch (err) {
-        console.warn(
-          "[auth/logout] public gateway unreachable, falling back to internal:",
-          err instanceof Error ? err.message : err,
-          traceLogFields(),
-        );
+        logError("[auth/logout] public gateway unreachable, falling back to internal", err, traceLogFields());
       }
 
       // Stage 2: If public failed, force-revoke via internal gateway
       if (!publicSucceeded) {
         const result = await forceRevokeSession(sessionId, jti, exp);
         if (!result.ok && isRetryableFailure(result.status)) {
-          console.error(
-            "[auth/logout] internal force-revoke also failed:",
+          logError("[auth/logout] internal force-revoke also failed:",
             { reason: result.reason, ...traceLogFields() },
           );
           // Stage 3: Enqueue to reconciliation worker for async retry
@@ -118,8 +113,7 @@ export async function POST(req: Request) {
             targetVersion: sessionVersion,
           });
         } else if (!result.ok) {
-          console.warn(
-            "[auth/logout] internal force-revoke failed with non-retryable status:",
+          logEvent("[auth/logout] internal force-revoke failed with non-retryable status:",
             { reason: result.reason, ...traceLogFields() },
           );
         }

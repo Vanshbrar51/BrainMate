@@ -43,14 +43,14 @@ export default function SettingsPage() {
         if (modules) setVisibleModules(JSON.parse(modules))
         
         const style = localStorage.getItem('sidebar_style') as 'spacious' | 'compact'
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+
         if (style) setSidebarStyle(style)
         
         const defMod = localStorage.getItem('default_module')
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+
         if (defMod) setDefaultModule(defMod)
       } catch (e) {
-        console.error(e)
+
       }
     }
   }, [])

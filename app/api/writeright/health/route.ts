@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // FILE: app/api/writeright/health/route.ts — Health check endpoint
 // ── CHANGED: [BE-5] Full health endpoint with latency tracking ──
 
@@ -40,7 +41,7 @@ export async function GET(req: Request) {
           redisOk = true;
         }
       } catch (error) {
-        console.error("[api.writeright.health] Redis health check failed:", {
+        logError("[api.writeright.health] Redis health check failed:", {
           error: error instanceof Error ? error.message : String(error),
           ...traceLogFields(),
         });
@@ -80,8 +81,7 @@ export async function GET(req: Request) {
           if (!sbResult.error) {
             supabaseOk = true;
           } else {
-            console.error(
-              "[api.writeright.health] Supabase health check failed:", {
+            logError("[api.writeright.health] Supabase health check failed:", {
                 error: sbResult.error,
                 ...traceLogFields(),
               }
@@ -89,7 +89,7 @@ export async function GET(req: Request) {
           }
         }
       } catch (error) {
-        console.error("[api.writeright.health] Supabase health check failed:", {
+        logError("[api.writeright.health] Supabase health check failed:", {
           error: error instanceof Error ? error.message : String(error),
           ...traceLogFields(),
         });

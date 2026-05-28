@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // FILE: app/api/writeright/search/route.ts — WriteRight global search
 
 import { auth } from "@clerk/nextjs/server";
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
         }
       } catch (err) {
         if (err instanceof Error && err.name === "WriteRightError") throw err;
-        console.error("[api.writeright.search] Rate-limit check failed", {
+        logError("[api.writeright.search] Rate-limit check failed", {
           error: err instanceof Error ? err.message : String(err),
           ...traceLogFields(),
         });
@@ -122,7 +123,7 @@ export async function GET(req: Request) {
       ]);
 
       if (titleMatchesRes.error || messageMatchesRes.error) {
-        console.error("[api.writeright.search] Query failed", {
+        logError("[api.writeright.search] Query failed", {
           title_error: titleMatchesRes.error?.message,
           message_error: messageMatchesRes.error?.message,
           ...traceLogFields(),
@@ -144,7 +145,7 @@ export async function GET(req: Request) {
         : { data: [], error: null };
 
       if (supplementalChats.error) {
-        console.error("[api.writeright.search] Supplemental chat lookup failed", {
+        logError("[api.writeright.search] Supplemental chat lookup failed", {
           error: supplementalChats.error.message,
           ...traceLogFields(),
         });

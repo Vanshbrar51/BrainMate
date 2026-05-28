@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // app/api/writeright/share/route.ts — WriteRight public share link generation
 //
 // POST — Create a time-limited share link for a completed job result.
@@ -99,7 +100,7 @@ export async function POST(req: Request) {
         process.env.NEXTAUTH_SECRET;
 
       if (!secret) {
-        console.error("[api.writeright.share] Missing share token secret", traceLogFields());
+        logError("[api.writeright.share] Missing share token secret", traceLogFields());
         throw createApiError(
           "INTERNAL_ERROR",
           "Server misconfigured — missing secret",
@@ -131,7 +132,7 @@ export async function POST(req: Request) {
       });
 
       if (insertError) {
-        console.error("[api.writeright.share] Insert failed", {
+        logError("[api.writeright.share] Insert failed", {
           error: insertError.message,
           ...traceLogFields(),
         });

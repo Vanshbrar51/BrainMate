@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // app/api/writeright/triage/route.ts — Secure gateway for bulk inbox triage
 //
 // Proxies bulk text dumps to the Python worker for segmentation and analysis.
@@ -7,9 +8,9 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { withSpan, addSpanAttributes, injectTraceContext } from "@/lib/tracing";
+import { getPreferredInternalApiToken } from "@/lib/internal-api-token";
 
 const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://localhost:8000";
-const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || "dev-token";
 
 export async function POST(req: Request) {
   return withErrorHandler(req, async () => {
@@ -60,7 +61,7 @@ export async function POST(req: Request) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Internal-API-Token": INTERNAL_API_TOKEN,
+          "X-Internal-API-Token": await getPreferredInternalApiToken(),
           ...traceHeaders,
         },
         body: JSON.stringify({
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
 
       if (!pythonRes.ok) {
         const errorText = await pythonRes.text();
-        console.error("[api.writeright.triage] Python worker error:", errorText);
+        logError("[api.writeright.triage] Python worker error:", errorText);
         throw createApiError("WORKER_ERROR", "Failed to triage text", 502);
       }
 

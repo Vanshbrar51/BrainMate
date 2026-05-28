@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // app/api/writeright/chat/[id]/messages/route.ts — Fetch messages for a chat
 //
 // GET — Returns all messages ordered by created_at ASC
@@ -72,7 +73,7 @@ export async function GET(
         .order("created_at", { ascending: true });
 
       if (error) {
-        console.error("[api.writeright.messages] List failed:", {
+        logError("[api.writeright.messages] List failed:", {
           error: error.message,
           ...traceLogFields(),
         });

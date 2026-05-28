@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { withSpan, addSpanAttributes, traceLogFields } from "@/lib/tracing";
@@ -34,7 +35,7 @@ export async function POST(
         if (existingError?.code === "PGRST116") {
           throw createApiError("NOT_FOUND", "Template not found", 404);
         }
-        console.error("[api.writeright.templates.use] Read failed", {
+        logError("[api.writeright.templates.use] Read failed", {
           error: existingError?.message,
           ...traceLogFields(),
         });
@@ -51,7 +52,7 @@ export async function POST(
         .single();
 
       if (error || !data) {
-        console.error("[api.writeright.templates.use] Update failed", {
+        logError("[api.writeright.templates.use] Update failed", {
           error: error?.message,
           ...traceLogFields(),
         });

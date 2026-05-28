@@ -61,7 +61,7 @@ export async function DELETE(req: Request) {
 
       addSpanEvent("gdpr.erase_completed", { user_id: userId });
       logAudit("gdpr.data_deleted", userId);
-      console.error("[api.writeright.account.data] GDPR erasure completed", {
+      logError("[api.writeright.account.data] GDPR erasure completed", {
         user_id: userId,
         ...traceLogFields(),
       });
@@ -76,7 +76,7 @@ export async function DELETE(req: Request) {
             ns("writeright", "quota", userId),
           );
         } catch (err) {
-          console.error("[api.writeright.account.data] Redis delete failed", {
+          logError("[api.writeright.account.data] Redis delete failed", {
             error: err instanceof Error ? err.message : String(err),
             ...traceLogFields(),
           });
