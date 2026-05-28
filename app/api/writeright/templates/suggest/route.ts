@@ -34,10 +34,12 @@ export async function GET(req: Request) {
       const toneCount: Record<string, number> = {}
 
       messages?.forEach(msg => {
-        const meta = msg.metadata as Record<string, any> | null
+        const meta = msg.metadata as Record<string, unknown> | null
         if (meta) {
-          if (meta.mode) modeCount[meta.mode] = (modeCount[meta.mode] || 0) + 1
-          if (meta.tone) toneCount[meta.tone] = (toneCount[meta.tone] || 0) + 1
+          const mode = meta.mode
+          const tone = meta.tone
+          if (typeof mode === 'string') modeCount[mode] = (modeCount[mode] || 0) + 1
+          if (typeof tone === 'string') toneCount[tone] = (toneCount[tone] || 0) + 1
         }
       })
 
