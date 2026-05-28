@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // FILE: app/api/writeright/stats/route.ts — WriteRight usage statistics
 
 import { auth } from "@clerk/nextjs/server";
@@ -74,7 +75,7 @@ export async function GET(req: Request) {
             return NextResponse.json(JSON.parse(cached) as StatsResponse);
           }
         } catch (err) {
-          console.error("[api.writeright.stats] Cache read failed", {
+          logError("[api.writeright.stats] Cache read failed", {
             error: err instanceof Error ? err.message : String(err),
             ...traceLogFields(),
           });
@@ -143,7 +144,7 @@ export async function GET(req: Request) {
       ]);
 
       if (tokenUsageError) {
-        console.error("[api.writeright.stats] Token usage query failed", {
+        logError("[api.writeright.stats] Token usage query failed", {
           error: tokenUsageError.message,
           ...traceLogFields(),
         });
@@ -242,7 +243,7 @@ export async function GET(req: Request) {
           const redis = getRedisPool();
           await redis.setex(statsCacheKey(userId), 300, JSON.stringify(response));
         } catch (err) {
-          console.error("[api.writeright.stats] Cache write failed", {
+          logError("[api.writeright.stats] Cache write failed", {
             error: err instanceof Error ? err.message : String(err),
             ...traceLogFields(),
           });

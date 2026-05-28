@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // lib/writeright-queue.ts — Redis queue system for WriteRight AI jobs
 //
 // Extends lib/redis.ts patterns: uses getRedisPool() + ns() for all keys.
@@ -159,7 +160,7 @@ export async function dequeueWriteRightJobs(batchSize: number = 1): Promise<Writ
       const job = JSON.parse(results[i] as string) as WritingJobPayload;
       jobs.push(job);
     } catch {
-      console.error("[writeright-queue] Failed to parse dequeued job:", results[i]);
+      logError("[writeright-queue] Failed to parse dequeued job:", results[i]);
     }
   }
 
@@ -265,7 +266,7 @@ export async function readJobResult(jobId: string): Promise<AIJobResult | null> 
       try {
         return JSON.parse(fields[i + 1]) as AIJobResult;
       } catch {
-        console.error("[writeright-queue] Failed to parse stream result");
+        logError("[writeright-queue] Failed to parse stream result", new Error("[writeright-queue] Failed to parse stream result"));
         return null;
       }
     }
@@ -324,7 +325,7 @@ export async function getCachedAIResponse(inputHash: string): Promise<AIJobResul
   try {
     return JSON.parse(cached) as AIJobResult;
   } catch {
-    console.error("[writeright-queue] Failed to parse cached response");
+    logError("[writeright-queue] Failed to parse cached response", new Error("[writeright-queue] Failed to parse cached response"));
     return null;
   }
 }
@@ -379,7 +380,7 @@ export async function getIdempotentResponse<T>(
   try {
     return JSON.parse(cached) as T;
   } catch {
-    console.error("[writeright-queue] Failed to parse idempotent response");
+    logError("[writeright-queue] Failed to parse idempotent response", new Error("[writeright-queue] Failed to parse idempotent response"));
     return null;
   }
 }

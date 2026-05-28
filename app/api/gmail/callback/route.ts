@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // app/api/gmail/callback/route.ts
 // Handles the Google OAuth callback by delegating to the Rust Auth Gateway proxy.
 
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
       try {
         await handleCallback(code, state, userId);
       } catch (err) {
-        console.error("[gmail.callback] Gateway token exchange failed:", {
+        logError("[gmail.callback] Gateway token exchange failed:", {
           error: err instanceof Error ? err.message : String(err),
           user_id: userId,
         });

@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // FILE: app/api/writeright/feedback/route.ts — WriteRight feedback submission
 
 import { auth } from "@clerk/nextjs/server";
@@ -69,7 +70,7 @@ export async function POST(req: Request) {
         });
 
       if (fbError) {
-        console.error("[api.writeright.feedback] failed:", { error: fbError.message, ...traceLogFields() });
+        logError("[api.writeright.feedback] failed:", { error: fbError.message, ...traceLogFields() });
         throw createApiError("DB_ERROR", "Failed to save feedback", 500);
       }
 

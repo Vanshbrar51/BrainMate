@@ -106,7 +106,7 @@ export function DashboardSidebar() {
           setSidebarStyle(style)
         }
       } catch (e) {
-        console.error(e)
+
       }
     }
     loadConfig()

@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { withSpan, addSpanAttributes, traceLogFields } from "@/lib/tracing";
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
             return NextResponse.json(JSON.parse(cached));
           }
         } catch (err) {
-          console.error("[api.writeright.profile] Cache read failed", {
+          logError("[api.writeright.profile] Cache read failed", {
             error: err instanceof Error ? err.message : String(err),
             ...traceLogFields(),
           });
@@ -57,7 +58,7 @@ export async function GET(req: Request) {
           const redis = getRedisPool();
           await redis.setex(profileCacheKey(userId), 300, JSON.stringify(response));
         } catch (err) {
-          console.error("[api.writeright.profile] Cache write failed", {
+          logError("[api.writeright.profile] Cache write failed", {
             error: err instanceof Error ? err.message : String(err),
             ...traceLogFields(),
           });

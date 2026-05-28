@@ -16,7 +16,7 @@
 
 import { type Redis as RedisClient } from "ioredis";
 import { createApiError } from "@/lib/writeright-errors";
-import { logger } from "@/lib/writeright-logger";
+import { logError, logEvent } from "@/lib/writeright-logger";
 
 // ---------------------------------------------------------------------------
 // Configuration — read once at module load, never from untrusted input
@@ -119,7 +119,7 @@ export function ns(...parts: string[]): string {
  */
 function retryStrategy(times: number): number | null {
   if (times > MAX_RETRIES) {
-    logger.error("redis_max_retries_exceeded", { message: `[redis] Exceeded ${MAX_RETRIES} reconnection attempts. Giving up.` });
+    logError("redis_max_retries_exceeded", { message: `[redis] Exceeded ${MAX_RETRIES} reconnection attempts. Giving up.` });
     return null; // Stop retrying — ioredis will emit 'close'
   }
 
@@ -127,7 +127,7 @@ function retryStrategy(times: number): number | null {
   const jitter = Math.random() * base;
   const delay = Math.round(jitter);
 
-  logger.warn("redis_reconnecting", { message: `[redis] Connection lost. Retry attempt ${times}/${MAX_RETRIES} in ${delay}ms` });
+  logEvent("redis_reconnecting", { message: `[redis] Connection lost. Retry attempt ${times}/${MAX_RETRIES} in ${delay}ms` });
 
   return delay;
 }
@@ -228,11 +228,11 @@ async function createRedisClient(): Promise<RedisClient> {
   client.on("connect", () => {
     _circuit.consecutiveErrors = 0;
     _circuit.totalConnects += 1;
-    logger.info("redis_connected", { url: maskUrl(url), connectCount: _circuit.totalConnects });
+    logEvent("redis_connected", { url: maskUrl(url), connectCount: _circuit.totalConnects });
   });
 
   client.on("ready", () => {
-    logger.info("redis_ready", { message: "[redis] Connection ready — commands can be issued" });
+    logEvent("redis_ready", { message: "[redis] Connection ready — commands can be issued" });
   });
 
   client.on("error", (err: Error) => {
@@ -241,29 +241,29 @@ async function createRedisClient(): Promise<RedisClient> {
 
     if (_circuit.consecutiveErrors >= CIRCUIT_ERROR_THRESHOLD) {
       _circuit.openUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
-      logger.error("redis_circuit_open", { 
+      logError("redis_circuit_open", {
         cooldownSeconds: CIRCUIT_COOLDOWN_MS / 1000, 
         consecutiveErrors: _circuit.consecutiveErrors 
       });
     }
 
     // Avoid logging the full URL (it contains credentials)
-    logger.error("redis_connection_error", { 
+    logError("redis_connection_error", {
       consecutive: _circuit.consecutiveErrors, 
       error: err.message 
     });
   });
 
   client.on("close", () => {
-    logger.warn("redis_closed", { message: "[redis] Connection closed" });
+    logEvent("redis_closed", { message: "[redis] Connection closed" });
   });
 
   client.on("reconnecting", (delay: number) => {
-    logger.warn("redis_reconnecting", { delayMs: delay });
+    logEvent("redis_reconnecting", { delayMs: delay });
   });
 
   client.on("end", () => {
-    logger.warn("redis_ended", { message: "[redis] Connection ended — no more reconnect attempts" });
+    logEvent("redis_ended", { message: "[redis] Connection ended — no more reconnect attempts" });
     // Clear singleton so the next call recreates the client
     // (only relevant if shutdownRedisPool was NOT called explicitly)
     _poolInstance = null;
@@ -330,13 +330,13 @@ export async function shutdownRedisPool(): Promise<void> {
   if (!client || client.status === "end") return;
 
   try {
-    logger.info("redis_shutdown_start", { message: "[redis] Shutting down Redis connection pool…" });
+    logEvent("redis_shutdown_start", { message: "[redis] Shutting down Redis connection pool…" });
     await client.quit();
-    logger.info("redis_shutdown_complete", { message: "[redis] Redis connection closed gracefully" });
+    logEvent("redis_shutdown_complete", { message: "[redis] Redis connection closed gracefully" });
   } catch (err) {
     // If QUIT fails (e.g., already closed), just disconnect.
     client.disconnect();
-    logger.warn("redis_forced_disconnect", { error: err instanceof Error ? err.message : String(err) });
+    logEvent("redis_forced_disconnect", { error: err instanceof Error ? err.message : String(err) });
   } finally {
     _poolInstance = null;
     globalThis.__ioredis_pool__ = undefined;

@@ -2,7 +2,7 @@
 // Thin proxy to Rust Auth Gateway. Zero credentials. Zero token handling.
 import { getPreferredInternalApiToken } from "@/lib/internal-api-token";
 import { createApiError } from "@/lib/writeright-errors";
-import { logger } from "@/lib/writeright-logger";
+import { logError, logEvent } from "@/lib/writeright-logger";
 
 const GW = process.env.AUTH_GATEWAY_INTERNAL_URL ?? "http://127.0.0.1:9091";
 
@@ -50,7 +50,7 @@ async function gw_post<T>(path: string, body: unknown): Promise<T> {
       body: JSON.stringify(body),
     });
   } catch (err) {
-    logger.error("gw_post_fetch_failed", { error: err instanceof Error ? err.message : String(err) });
+    logError("gw_post_fetch_failed", { error: err instanceof Error ? err.message : String(err) });
     throw createApiError("GATEWAY_OFFLINE", "Auth gateway offline", 503);
   }
   if (!r.ok) {
@@ -71,7 +71,7 @@ async function gw_get<T>(path: string): Promise<T> {
       cache: "no-store",
     });
   } catch (err) {
-    logger.error("gw_get_fetch_failed", { error: err instanceof Error ? err.message : String(err) });
+    logError("gw_get_fetch_failed", { error: err instanceof Error ? err.message : String(err) });
     throw createApiError("GATEWAY_OFFLINE", "Auth gateway offline", 503);
   }
   if (!r.ok) {

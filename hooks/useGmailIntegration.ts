@@ -60,7 +60,7 @@ async function gmailGet<T>(path: string): Promise<T> {
   const res = await fetch(path)
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { message?: string }
-    throw new Error(body.message ?? `Gmail API error ${res.status}`)
+    return Promise.reject(new Error(body.message ?? `Gmail API error ${res.status}`))
   }
   return res.json() as Promise<T>
 }
@@ -73,7 +73,7 @@ async function gmailPost<T>(path: string, body?: unknown): Promise<T> {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as { message?: string }
-    throw new Error(data.message ?? `Gmail API error ${res.status}`)
+    return Promise.reject(new Error(data.message ?? `Gmail API error ${res.status}`))
   }
   return res.json() as Promise<T>
 }
@@ -379,7 +379,7 @@ export function useGmailIntegration() {
 
       return result.summary || null
     } catch (err) {
-      console.error('Failed to run batch bulk action:', err)
+
       return null
     }
   }, [selectedEmails, clearSelection])
@@ -409,7 +409,10 @@ export function useGmailIntegration() {
         body: JSON.stringify({ emailBody, tone, prompt })
       })
 
-      if (!response.ok) throw new Error('Smart compose request failed')
+      if (!response.ok) {
+
+        return
+      }
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       if (!reader) return
@@ -438,7 +441,7 @@ export function useGmailIntegration() {
         }
       }
     } catch (err) {
-      console.error('Smart compose error:', err)
+
     } finally {
       setSmartComposeLoading(false)
     }
@@ -459,7 +462,7 @@ export function useGmailIntegration() {
         setThreadBrief(data.brief || '')
       }
     } catch (err) {
-      console.error('Failed to retrieve thread details:', err)
+
     } finally {
       setThreadLoading(false)
     }
@@ -497,7 +500,7 @@ export function useGmailIntegration() {
         return true
       }
     } catch (err) {
-      console.error('Schedule send failed:', err)
+
     }
     return false
   }, [connectionStatus, fetchScheduledSends])
@@ -510,7 +513,7 @@ export function useGmailIntegration() {
         return true
       }
     } catch (err) {
-      console.error('Cancel scheduled failed:', err)
+
     }
     return false
   }, [fetchScheduledSends])

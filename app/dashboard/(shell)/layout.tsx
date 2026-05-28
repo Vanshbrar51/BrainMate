@@ -32,7 +32,7 @@ export default async function ShellLayout({
       expiresAt,
     }).then((result) => {
       if (!result.ok) {
-        console.warn("[shell/layout] gateway error syncing session:", result.reason);
+
       }
     });
   }

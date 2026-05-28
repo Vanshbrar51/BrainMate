@@ -1,3 +1,4 @@
+import { logError, logEvent } from "@/lib/writeright-logger";
 // FILE: app/api/writeright/chat/route.ts — Create and list WriteRight chats
 //
 // POST — Create a new chat session
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
         .single();
 
       if (error) {
-        console.error("[api.writeright.chat] Insert failed:", {
+        logError("[api.writeright.chat] Insert failed:", {
           error: error.message,
           ...traceLogFields(),
         });
@@ -115,7 +116,7 @@ export async function GET(req: Request) {
         .range(offset, offset + limit - 1);
 
       if (error) {
-        console.error("[api.writeright.chat] List failed:", {
+        logError("[api.writeright.chat] List failed:", {
           error: error.message,
           ...traceLogFields(),
         });

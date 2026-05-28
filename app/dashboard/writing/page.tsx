@@ -471,7 +471,7 @@ async function apiPatch<T>(url: string, body: unknown): Promise<T> {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-    throw new Error(err.error ?? `Request failed: ${res.status}`)
+    return Promise.reject(new Error(err.error ?? `Request failed: ${res.status}`))
   }
   return res.json()
 }
@@ -511,7 +511,7 @@ async function apiDelete(url: string): Promise<void> {
   const res = await fetch(url, { method: 'DELETE' })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-    throw new Error(err.error ?? `Request failed: ${res.status}`)
+    return Promise.reject(new Error(err.error ?? `Request failed: ${res.status}`))
   }
 }
 
@@ -549,7 +549,7 @@ async function streamJobResult(
   }
 
   if (!res.body) {
-    throw new Error('Stream connection failed. Please try again.')
+    return Promise.reject(new Error('Stream connection failed. Please try again.'))
   }
 
   const reader = res.body
@@ -625,7 +625,7 @@ async function streamJobResult(
     }
   }
 
-  throw new Error('Stream ended before a result was returned.')
+  return Promise.reject(new Error('Stream ended before a result was returned.'))
 }
 
 function useRantDetector(text: string): boolean {
@@ -1128,14 +1128,17 @@ function WriteDiffBlock({
           tone
         })
       })
-      if (!res.ok) throw new Error('Refine failed')
+      if (!res.ok) {
+
+        return
+      }
       const data = await res.json()
       // Replace only the selected segment in the working draft
       setWorkingDraft(prev => prev.replace(selection.text, data.refinedText))
       setSelection(null)
       setRefinePrompt('')
     } catch (err) {
-      console.error('Refine error:', err)
+
     } finally {
       setIsRefining(false)
     }
@@ -1147,7 +1150,7 @@ function WriteDiffBlock({
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(textToCopy)
       } else {
-        throw new Error('Clipboard API not available')
+        return Promise.reject(new Error('Clipboard API not available'))
       }
       setCopied(true)
       setTimeout(() => setCopied(false), 2200)
@@ -1496,7 +1499,10 @@ function BrandVoiceModal({
     setLoading(true)
     try {
       const res = await fetch('/api/writeright/voice')
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+      showError('Request failed')
+      return
+    }
       const data = await res.json()
       setExamples(data.examples || [])
     } catch {
@@ -1522,7 +1528,10 @@ function BrandVoiceModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: newContent }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+      showError('Request failed')
+      return
+    }
       setNewContent('')
       loadExamples()
     } catch {
@@ -1535,7 +1544,10 @@ function BrandVoiceModal({
   const handleDelete = async (id: string) => {
     try {
       const res = await fetch(`/api/writeright/voice/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+      showError('Request failed')
+      return
+    }
       loadExamples()
     } catch {
       showError('Failed to delete example.')
@@ -2282,10 +2294,16 @@ export default function WriteRightPage() {
         }),
       })
 
-      if (!response.ok) throw new Error('Morph failed')
+      if (!response.ok) {
+      showError('Morph failed')
+      return
+    }
 
       const reader = response.body?.getReader()
-      if (!reader) throw new Error('No reader')
+      if (!reader) {
+      showError('No reader')
+      return
+    }
 
       let morphedText = ''
       while (true) {
@@ -2306,7 +2324,7 @@ export default function WriteRightPage() {
         })
       }
     } catch (err) {
-      console.error('[WriteRight] Morphing error:', err)
+
     } finally {
       setIsMorphing(false)
     }
@@ -2321,11 +2339,14 @@ export default function WriteRightPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ raw_text: input, chatId }),
       })
-      if (!res.ok) throw new Error('Triage failed')
+      if (!res.ok) {
+      showError('Triage failed')
+      return
+    }
       const data: TriageResponse = await res.json()
       setTriageItems(data.items)
     } catch (err) {
-      console.error('[WriteRight] Triage error:', err)
+
       showError('Failed to triage messages. Please try again.')
     } finally {
       setTriageLoading(false)
@@ -2588,14 +2609,17 @@ export default function WriteRightPage() {
           tone
         })
       })
-      if (!res.ok) throw new Error('Refine failed')
+      if (!res.ok) {
+
+        return
+      }
       const data = await res.json()
       setLastImprovedText(prev => prev.replace(splitSelection.text, data.refinedText))
       setSplitSelection(null)
       setSelectedSentenceIndex(null)
       setSplitRefinePrompt('')
     } catch (err) {
-      console.error(err)
+
     } finally {
       setIsSplitRefining(false)
     }
@@ -2655,7 +2679,7 @@ export default function WriteRightPage() {
       const res = await apiGet<ListChatsResponse>('/api/writeright/chat?page=0&limit=20')
       setChats(res.chats || [])
     } catch (err) {
-      console.error('Failed to load chats', err)
+
     }
   }, [])
 
@@ -2666,7 +2690,7 @@ export default function WriteRightPage() {
       const res = await apiGet<WriterightStats>('/api/writeright/stats')
       setStats(res)
     } catch (err) {
-      console.error('Failed to load stats', err)
+
     } finally {
       setStatsLoading(false)
     }
@@ -2720,7 +2744,7 @@ export default function WriteRightPage() {
         if (targetEl) spawnConfetti(targetEl)
         return
       }
-      throw new Error('Clipboard API unavailable')
+      return Promise.reject(new Error('Clipboard API unavailable'))
     } catch {
       const ta = document.createElement('textarea')
       ta.value = text
@@ -2755,7 +2779,7 @@ export default function WriteRightPage() {
       })
       setSaveModalOpen(false)
     } catch (err) {
-      console.error('Failed to save template', err)
+
       showError('Failed to save template. Please try again.')
     }
   }, [createTemplate, saveTemplatePayload, showError])
@@ -2874,7 +2898,7 @@ export default function WriteRightPage() {
       setSearchQuery('')
       scrollBottom()
     } catch (err) {
-      console.error('Failed to load chat messages', err)
+
     }
   }, [buildAiResultMessage, scrollBottom, tone])
 
@@ -2887,7 +2911,7 @@ export default function WriteRightPage() {
         handleModeChange('email')
       }
     } catch (err) {
-      console.error('Failed to delete chat', err)
+
     }
   }, [chatId, handleModeChange])
 
@@ -2962,7 +2986,7 @@ export default function WriteRightPage() {
         }, 1000)
       }, 500)
     } catch (err) {
-      console.error('Export failed', err); showError('Failed to export. Please try again.')
+       showError('Failed to export. Please try again.')
       setIsExporting(false)
     }
   }, [showError])

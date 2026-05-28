@@ -4,9 +4,9 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { withSpan, addSpanAttributes, injectTraceContext } from "@/lib/tracing";
+import { getPreferredInternalApiToken } from "@/lib/internal-api-token";
 
 const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://localhost:8000";
-const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN || "dev-token";
 
 export async function DELETE(
   req: Request,
@@ -26,7 +26,7 @@ export async function DELETE(
       const res = await fetch(`${PYTHON_WORKER_URL}/voice/examples/${id}?user_id=${userId}`, {
         method: "DELETE",
         headers: {
-          "X-Internal-API-Token": INTERNAL_API_TOKEN,
+          "X-Internal-API-Token": await getPreferredInternalApiToken(),
           ...traceHeaders,
         },
       });

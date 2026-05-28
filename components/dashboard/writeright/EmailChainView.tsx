@@ -90,7 +90,10 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
         body: JSON.stringify({ messages, nextGoal })
       })
 
-      if (!response.ok) throw new Error('AI chain draft request failed')
+      if (!response.ok) {
+
+        return
+      }
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       if (!reader) return

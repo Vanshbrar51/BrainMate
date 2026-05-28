@@ -78,7 +78,7 @@ export default function StudyMatePage() {
         const response = await apiPost<{ content: string }>('/api/writeright/homework', { prompt: msg })
         setMessages((p) => [...p, { role: 'ai', content: <MarkdownContent content={response.content} /> }])
       } catch (err) {
-        console.error('StudyMate error:', err)
+
         setMessages((p) => [
           ...p,
           { role: 'ai', content: 'Sorry, I encountered an error. Please try again.' },

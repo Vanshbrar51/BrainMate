@@ -38,7 +38,10 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
   const loadTemplates = useCallback(async () => {
     try {
       const res = await fetch('/api/writeright/templates')
-      if (!res.ok) throw new Error('Failed to load templates')
+      if (!res.ok) {
+
+        return
+      }
       const data = await res.json()
       
       // Sort by sort_order if present, otherwise fallback
@@ -98,7 +101,10 @@ export const TemplatePanel: React.FC<TemplatePanelProps> = ({ onUseTemplate, onC
         body: JSON.stringify({ prompt: aiPrompt })
       })
 
-      if (!res.ok) throw new Error('AI generation failed')
+      if (!res.ok) {
+
+        return
+      }
       const reader = res.body?.getReader()
       const decoder = new TextDecoder()
       if (!reader) return

@@ -1,3 +1,4 @@
+import { logError } from "@/lib/writeright-logger";
 // FILE: lib/writeright-errors.ts — Centralized error handling for WriteRight
 // ── CHANGED: [BE-1] Centralized Error Handler ──
 
@@ -19,6 +20,10 @@ export type ErrorCode =
   | "INVALID_TOKEN"
   | "INVALID_CHAT_ID"
   | "INVALID_JOB_ID"
+  | "UPSTREAM_ERROR"
+  | "GATEWAY_ERROR"
+  | "REDIS_UNAVAILABLE"
+  | "DB_ERROR"
   | "UNAUTHORIZED"
   | "INVALID_BODY"
   | "VALIDATION_ERROR"
@@ -189,7 +194,7 @@ export function toApiResponse(err: unknown): NextResponse {
     );
   }
 
-  console.error("[WriteRight] Unhandled API error:", err);
+  logError("Unhandled API error", err);
   return NextResponse.json(
     {
       error: "INTERNAL_ERROR" as ErrorCode,
