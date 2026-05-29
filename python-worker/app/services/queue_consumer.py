@@ -22,6 +22,7 @@ import time
 from typing import Any, cast
 
 import redis.asyncio as aioredis
+import redis.exceptions
 
 from app.config import get_settings
 from app.models.job import WritingJob
@@ -303,8 +304,16 @@ async def consume_jobs(
             if active_tasks:
                 await asyncio.gather(*active_tasks, return_exceptions=True)
             break
+        except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as ce:
+            logger.warning(
+                "Worker %s: Redis connection/timeout error in main loop: %s. Retrying in %.1fs",
+                worker_id,
+                str(ce),
+                poll_interval,
+            )
+            await asyncio.sleep(poll_interval)
         except Exception:
-            logger.exception("Worker %s encountered an error in main loop", worker_id)
+            logger.exception("Worker %s encountered an unexpected error in main loop", worker_id)
             await asyncio.sleep(poll_interval)
 
     if active_tasks:

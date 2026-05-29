@@ -89,17 +89,11 @@ export async function GET(req: Request) {
       }
       const { query: rawQuery } = parsed.data;
       const displayQuery = sanitizeSearchQuery(rawQuery);
-      const safeQuery = displayQuery
-        .split(/\s+/)
-        .filter(Boolean)
-        .map((word) => word.replace(/[^a-zA-Z0-9\u0900-\u097F]/g, ""))
-        .filter((word) => word.length > 1)
-        .join(" & ");
-      if (!safeQuery) {
+      if (!displayQuery) {
         throw createApiError("VALIDATION_ERROR", "Query too short", 400);
       }
 
-      addSpanAttributes({ "writeright.search.length": safeQuery.length });
+      addSpanAttributes({ "writeright.search.length": displayQuery.length });
 
       const supabase = getSupabaseAdmin();
       const [titleMatchesRes, messageMatchesRes] = await Promise.all([
@@ -108,7 +102,7 @@ export async function GET(req: Request) {
           .select("id, title, mode, updated_at")
           .eq("user_id", userId)
           .is("deleted_at", null)
-          .textSearch("title", safeQuery, { type: 'websearch' })
+          .ilike("title", `%${displayQuery}%`)
           .order("updated_at", { ascending: false })
           .limit(SEARCH_LIMIT),
         supabase
@@ -117,7 +111,7 @@ export async function GET(req: Request) {
           .eq("user_id", userId)
           .eq("role", "user")
           .is("deleted_at", null)
-          .textSearch("content", safeQuery, { type: 'websearch' })
+          .ilike("content", `%${displayQuery}%`)
           .order("created_at", { ascending: false })
           .limit(SEARCH_LIMIT),
       ]);

@@ -65,28 +65,70 @@ export async function POST(
 
       const supabase = getSupabaseAdmin();
 
-      const { data: job, error: jobError } = await supabase.from("writeright_ai_jobs").select("chat_id, user_id, message_id").eq("id", jobId).single();
+      const { data: job, error: jobError } = await supabase
+        .from("writeright_ai_jobs")
+        .select("chat_id, user_id, message_id, metadata")
+        .eq("id", jobId)
+        .single();
 
       if (jobError || !job) {
-          throw createApiError("NOT_FOUND", "Job not found", 404);
+        throw createApiError("NOT_FOUND", "Job not found", 404);
       }
 
       // Update DB
       await supabase.from("writeright_ai_jobs").update({
-          status: "completed",
-          output: result,
+        status: "completed",
+        output: result,
       }).eq("id", jobId);
 
       // Update Usage
       await supabase.from("writeright_usage").insert({
-          user_id: job.user_id,
-          job_id: jobId,
-          chat_id: job.chat_id,
-          model,
-          prompt_tokens,
-          completion_tokens,
-          total_tokens: prompt_tokens + completion_tokens
+        user_id: job.user_id,
+        job_id: jobId,
+        chat_id: job.chat_id,
+        model,
+        prompt_tokens,
+        completion_tokens,
+        total_tokens: prompt_tokens + completion_tokens,
       });
+
+      // ─────────────────────────────────────────────────────────────────────
+      // Record writing session — this is what powers analytics.
+      // Non-fatal: failure here must not block the job completion response.
+      // ─────────────────────────────────────────────────────────────────────
+      try {
+        const clarity = result.scores?.clarity ?? 7;
+        const tone = result.scores?.tone ?? 7;
+        const impact = result.scores?.impact ?? 7;
+        const totalTokens = prompt_tokens + completion_tokens;
+        const mode = (job.metadata as Record<string, unknown>)?.mode as string ?? "email";
+        const wordCount = result.improved_text
+          ? result.improved_text.split(/\s+/).filter(Boolean).length
+          : 0;
+
+        const { error: sessionError } = await supabase.rpc("upsert_writing_session", {
+          p_user_id: job.user_id,
+          p_clarity: clarity,
+          p_tone: tone,
+          p_impact: impact,
+          p_tokens: totalTokens,
+          p_mode: mode,
+          p_word_count: wordCount,
+        });
+
+        if (sessionError) {
+          logError("[api.writeright.job.complete] upsert_writing_session failed", {
+            error: sessionError.message,
+            job_id: jobId,
+            user_id: job.user_id,
+          });
+        }
+      } catch (sessionErr) {
+        logError("[api.writeright.job.complete] session recording threw", {
+          error: sessionErr instanceof Error ? sessionErr.message : String(sessionErr),
+          ...traceLogFields(),
+        });
+      }
 
       // Update Redis status and stream result
       if (!isCircuitOpen()) {
@@ -105,8 +147,13 @@ export async function POST(
           // Cache result
           const cacheKey = ns("writeright", "cache", jobId);
           await redis.setex(cacheKey, 3600, JSON.stringify(result));
-          await redis.del(ns("writeright", "stats", job.user_id));
 
+          // Invalidate analytics + stats caches so next fetch reflects new session
+          await Promise.allSettled([
+            redis.del(ns("writeright", "stats", job.user_id)),
+            redis.del(ns("writeright", "analytics", job.user_id)),
+            redis.del(ns("writeright", "session-stats", job.user_id)),
+          ]);
         } catch (err) {
           logError("[api.writeright.job.complete] Redis update failed", {
             error: err instanceof Error ? err.message : String(err),

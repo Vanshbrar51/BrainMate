@@ -8,7 +8,7 @@ import { getPreferredInternalApiToken } from "@/lib/internal-api-token";
 
 const VALID_MODES = ["email", "paragraph", "linkedin", "whatsapp"] as const;
 const VALID_TONES = ["Professional", "Friendly", "Concise", "Academic", "Assertive"] as const;
-const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://localhost:8000";
+const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://127.0.0.1:8000";
 
 async function generateTemplateName(content: string, mode: string): Promise<string | null> {
   try {

@@ -11,7 +11,7 @@ import { withSpan, addSpanAttributes, injectTraceContext } from "@/lib/tracing";
 import { getRedisPool, isCircuitOpen, ns } from "@/lib/redis";
 import { getPreferredInternalApiToken } from "@/lib/internal-api-token";
 
-const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://localhost:8000";
+const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://127.0.0.1:8000";
 const AUDIO_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const AUDIO_RATE_LIMIT = 10; // 10/min — STT is expensive
 

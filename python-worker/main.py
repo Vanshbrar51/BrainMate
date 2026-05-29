@@ -106,10 +106,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 2. Connect to Redis
     redis_client: aioredis.Redis | None = None
     try:
+        from redis.retry import Retry
+        from redis.backoff import ExponentialBackoff
+        from redis.exceptions import ConnectionError, TimeoutError
+
+        retry_strategy = Retry(ExponentialBackoff(), 3)
         redis_client = aioredis.from_url(
             settings.redis_url,
             decode_responses=False,
             max_connections=20,
+            health_check_interval=30,
+            retry=retry_strategy,
+            retry_on_timeout=True,
+            retry_on_error=[ConnectionError, TimeoutError],
         )
         await redis_client.ping()  # type: ignore[misc]
         logger.info("Redis connected: %s", _mask_url(settings.redis_url))

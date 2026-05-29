@@ -10,7 +10,7 @@ import { withErrorHandler, createApiError } from "@/lib/writeright-errors";
 import { withSpan, addSpanAttributes, injectTraceContext } from "@/lib/tracing";
 import { getPreferredInternalApiToken } from "@/lib/internal-api-token";
 
-const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://localhost:8000";
+const PYTHON_WORKER_URL = process.env.PYTHON_WORKER_URL || "http://127.0.0.1:8000";
 
 export async function POST(req: Request) {
   return withErrorHandler(req, async () => {

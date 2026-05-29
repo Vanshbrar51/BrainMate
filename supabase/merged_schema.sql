@@ -1482,20 +1482,24 @@ CREATE INDEX IF NOT EXISTS idx_wr_smart_suggestions_user
 CREATE INDEX IF NOT EXISTS idx_wr_smart_suggestions_chat
   ON writeright_smart_suggestions (chat_id) WHERE dismissed = false;
 
+DROP TRIGGER IF EXISTS trg_wr_smart_suggestions_updated_at ON writeright_smart_suggestions;
 CREATE TRIGGER trg_wr_smart_suggestions_updated_at
   BEFORE UPDATE ON writeright_smart_suggestions
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 ALTER TABLE writeright_smart_suggestions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "wr_smart_suggestions_own_select" ON writeright_smart_suggestions;
 CREATE POLICY "wr_smart_suggestions_own_select"
   ON writeright_smart_suggestions FOR SELECT
   USING (clerk_user_id = current_setting('app.current_user_id', true));
 
+DROP POLICY IF EXISTS "wr_smart_suggestions_own_insert" ON writeright_smart_suggestions;
 CREATE POLICY "wr_smart_suggestions_own_insert"
   ON writeright_smart_suggestions FOR INSERT
   WITH CHECK (clerk_user_id = current_setting('app.current_user_id', true));
 
+DROP POLICY IF EXISTS "wr_smart_suggestions_own_update" ON writeright_smart_suggestions;
 CREATE POLICY "wr_smart_suggestions_own_update"
   ON writeright_smart_suggestions FOR UPDATE
   USING (clerk_user_id = current_setting('app.current_user_id', true));
@@ -1528,12 +1532,14 @@ CREATE TABLE IF NOT EXISTS writeright_writing_sessions (
 CREATE INDEX IF NOT EXISTS idx_wr_sessions_user_date
   ON writeright_writing_sessions (clerk_user_id, session_date DESC);
 
+DROP TRIGGER IF EXISTS trg_wr_sessions_updated_at ON writeright_writing_sessions;
 CREATE TRIGGER trg_wr_sessions_updated_at
   BEFORE UPDATE ON writeright_writing_sessions
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 ALTER TABLE writeright_writing_sessions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "wr_sessions_own" ON writeright_writing_sessions;
 CREATE POLICY "wr_sessions_own" ON writeright_writing_sessions
   FOR ALL USING (clerk_user_id = current_setting('app.current_user_id', true));
 
@@ -1576,5 +1582,121 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION upsert_writing_session TO service_role;
+GRANT EXECUTE ON FUNCTION upsert_writing_session(text, numeric, numeric, numeric, integer, text) TO service_role;
 
+
+-- ==========================================
+-- FILE: 0032_writeright_analytics_word_count.sql
+-- ==========================================
+
+-- Adds word_count to writing sessions for vocabulary tracking in the analytics engine.
+-- Also adds a cached total_improvements column to avoid full table scans in analytics queries.
+
+ALTER TABLE writeright_writing_sessions
+  ADD COLUMN IF NOT EXISTS word_count integer NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_wr_sessions_user_date_covering
+  ON writeright_writing_sessions (clerk_user_id, session_date DESC)
+  INCLUDE (improvements, avg_clarity, avg_tone_score, avg_impact_score, modes_used, word_count);
+
+-- Update upsert_writing_session to track word count
+CREATE OR REPLACE FUNCTION upsert_writing_session(
+  p_user_id       text,
+  p_clarity       numeric,
+  p_tone          numeric,
+  p_impact        numeric,
+  p_tokens        integer,
+  p_mode          text,
+  p_word_count    integer DEFAULT 0
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO writeright_writing_sessions(
+    clerk_user_id, session_date, improvements, total_tokens,
+    avg_clarity, avg_tone_score, avg_impact_score, modes_used, word_count
+  )
+  VALUES(
+    p_user_id, CURRENT_DATE, 1, p_tokens,
+    p_clarity, p_tone, p_impact, ARRAY[p_mode], p_word_count
+  )
+  ON CONFLICT (clerk_user_id, session_date)
+  DO UPDATE SET
+    improvements     = writeright_writing_sessions.improvements + 1,
+    total_tokens     = writeright_writing_sessions.total_tokens + p_tokens,
+    word_count       = writeright_writing_sessions.word_count + p_word_count,
+    avg_clarity      = ROUND(
+                         (writeright_writing_sessions.avg_clarity * writeright_writing_sessions.improvements
+                          + p_clarity) / (writeright_writing_sessions.improvements + 1), 1),
+    avg_tone_score   = ROUND(
+                         (writeright_writing_sessions.avg_tone_score * writeright_writing_sessions.improvements
+                          + p_tone) / (writeright_writing_sessions.improvements + 1), 1),
+    avg_impact_score = ROUND(
+                         (writeright_writing_sessions.avg_impact_score * writeright_writing_sessions.improvements
+                          + p_impact) / (writeright_writing_sessions.improvements + 1), 1),
+    modes_used       = ARRAY(SELECT DISTINCT unnest(writeright_writing_sessions.modes_used || ARRAY[p_mode])),
+    updated_at       = now();
+END;
+$$;
+
+DROP FUNCTION IF EXISTS upsert_writing_session(text, numeric, numeric, numeric, integer, text);
+
+GRANT EXECUTE ON FUNCTION upsert_writing_session(text, numeric, numeric, numeric, integer, text, integer) TO service_role;
+
+-- supabase/migrations/0033_writeright_analytics_real_percentile.sql
+
+-- Drop the function if it exists to make the migration idempotent
+DROP FUNCTION IF EXISTS get_global_percentile(text);
+
+CREATE OR REPLACE FUNCTION get_global_percentile(p_user_id text)
+RETURNS numeric
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_percentile numeric;
+  v_total_users integer;
+  v_user_score integer;
+BEGIN
+  -- We base percentile on total improvements
+  -- Get this user's total improvements
+  SELECT COALESCE(SUM(improvements), 0) INTO v_user_score
+  FROM writeright_writing_sessions
+  WHERE clerk_user_id = p_user_id;
+
+  -- If they have 0 improvements, they are in the 1st percentile
+  IF v_user_score = 0 THEN
+    RETURN 1.0;
+  END IF;
+
+  -- Get total users who have at least one session
+  SELECT COUNT(DISTINCT clerk_user_id) INTO v_total_users
+  FROM writeright_writing_sessions;
+
+  IF v_total_users <= 1 THEN
+    -- If they are the only user, default to a high percentile (99th) to feel good
+    RETURN 99.0;
+  END IF;
+
+  -- Calculate percentile: (Number of users with score < user_score) / (Total users) * 100
+  SELECT COALESCE(
+    (COUNT(DISTINCT clerk_user_id)::numeric / v_total_users::numeric) * 100, 
+    1.0
+  ) INTO v_percentile
+  FROM (
+    SELECT clerk_user_id, SUM(improvements) as total_imp
+    FROM writeright_writing_sessions
+    GROUP BY clerk_user_id
+  ) scores
+  WHERE total_imp < v_user_score;
+
+  -- Ensure it's between 1 and 99
+  RETURN LEAST(GREATEST(ROUND(v_percentile, 1), 1.0), 99.0);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_global_percentile(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_global_percentile(text) TO service_role;

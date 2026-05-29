@@ -209,8 +209,29 @@ export interface AnalyticsData {
     signature_phrases: string[]
     improvement_trajectory: 'improving' | 'stable' | 'declining'
     percentile: number
+    dominant_mode: string
+    dominant_tone: string
+    // AI-generated qualitative fields (Gemini)
+    strength?: string
+    growth_area?: string
+    coach_message?: string
+    top_mistake_fixed?: string
   }
   streak: { current: number; longest: number; total_days: number }
+  // New fields added in analytics v2
+  total_improvements: number
+  total_words_improved: number
+  avg_scores: { clarity: number; tone: number; impact: number }
+  daily_activity: Array<{ date_label: string; count: number }>
+  weekly_report: {
+    this_week_words: number;
+    last_week_words: number;
+    this_week_clarity: number;
+    last_week_clarity: number;
+    this_week_improvements: number;
+    last_week_improvements: number;
+  }
+  insights: string[]
 }
 
 // ============================================================
@@ -292,6 +313,11 @@ export interface WritingDNA {
   percentile: number
   dominant_mode: string
   dominant_tone: string
+  // AI-generated qualitative fields (Gemini)
+  strength?: string
+  growth_area?: string
+  coach_message?: string
+  top_mistake_fixed?: string
 }
 
 // ============================================================

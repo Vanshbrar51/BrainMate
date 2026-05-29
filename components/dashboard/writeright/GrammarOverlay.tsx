@@ -103,7 +103,7 @@ export const GrammarOverlay: React.FC<GrammarOverlayProps> = ({ text, isActive, 
   const getIssueBadgeStyle = (type: string): React.CSSProperties => {
     if (type === 'grammar') return { background: 'rgba(220,38,38,0.1)', color: 'var(--wr-error)' }
     if (type === 'indian_english') return { background: 'rgba(217,119,6,0.1)', color: 'var(--wr-warning)' }
-    return { background: 'rgba(59,130,246,0.1)', color: '#3b82f6' }
+    return { background: 'rgba(59,130,246,0.1)', color: 'var(--wr-info)' }
   }
 
   return (

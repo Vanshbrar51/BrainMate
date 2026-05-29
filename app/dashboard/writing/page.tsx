@@ -86,17 +86,13 @@ import { AnalyticsView } from '@/components/dashboard/writeright/AnalyticsView'
 import { WriteSplitView } from '@/components/dashboard/writeright/WriteSplitView'
 import { GrammarOverlay } from '@/components/dashboard/writeright/GrammarOverlay'
 import { EmailChainView } from '@/components/dashboard/writeright/EmailChainView'
+import { ProjectModal, type ProjectData } from '@/components/dashboard/writeright/ProjectModal'
+import { ProjectView } from '@/components/dashboard/writeright/ProjectView'
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-interface SessionStats {
-  today_count: number
-  week_count: number
-  streak_days: number
-  avg_clarity: number
-}
 
 interface CreateChatResponse {
   chat: { id: string; title: string; mode: string }
@@ -1431,22 +1427,117 @@ function SaveTemplateModal({
   if (!open) return null
 
   return (
-    <div className="wr-overlay" onClick={onClose}>
-      <div className="wr-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <h3 className="wr-modal-title">Save As Template</h3>
-        <input
-          className="wr-search-field"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={120}
-          placeholder="Template name"
-          autoFocus
-        />
-        <div className="wr-modal-footer">
-          <button className="wr-modal-cancel" onClick={onClose}>Cancel</button>
+    <div 
+      className="fixed inset-0 flex items-center justify-center p-4 z-50" 
+      onClick={onClose} 
+      style={{ 
+        background: 'rgba(26,23,19,0.4)', 
+        backdropFilter: 'blur(4px)', 
+        WebkitBackdropFilter: 'blur(4px)',
+        animation: 'fade-in 0.22s ease-out'
+      }}
+    >
+      <div 
+        className="flex flex-col gap-6 p-6 w-full max-w-md" 
+        onClick={(e) => e.stopPropagation()} 
+        role="dialog" 
+        aria-modal="true"
+        style={{ 
+          background: 'var(--bg-surface)', 
+          border: '1px solid var(--border-soft)',
+          borderRadius: '16px',
+          boxShadow: '0 4px 20px rgba(26,23,19,0.10)',
+          animation: 'scale-up 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
+        }}
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex flex-col gap-1.5">
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-1)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: 'var(--accent)' }}><BookmarkPlus size={20} /></span>
+              Save as Template
+            </h3>
+            <p style={{ fontSize: '14.5px', color: 'var(--text-2)', margin: 0, lineHeight: 1.5 }}>
+              Save this refined writing draft to your library for quick reuse.
+            </p>
+          </div>
+          <button 
+            onClick={onClose} 
+            className="flex items-center justify-center rounded-lg transition-colors flex-shrink-0"
+            style={{ width: '30px', height: '30px', color: 'var(--text-3)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,23,19,0.06)'; e.currentTarget.style.color = 'var(--text-1)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-3)'; }}
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label style={{ fontSize: '13px', fontWeight: 450, color: 'var(--text-2)', margin: 0 }}>
+            Template Name
+          </label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={120}
+            placeholder="e.g., Professional Email Follow-up"
+            autoFocus
+            className="w-full px-3 py-2 text-sm transition-all outline-none"
+            style={{ 
+              background: 'transparent', 
+              border: '1px solid var(--border-soft)',
+              borderRadius: '8px',
+              color: 'var(--text-1)',
+              fontFamily: 'inherit',
+              fontSize: '14.5px'
+            }}
+            onFocus={e => {
+              e.currentTarget.style.borderColor = 'var(--border-medium)';
+              e.currentTarget.style.boxShadow = '0 0 0 1px var(--border-faint)';
+            }}
+            onBlur={e => {
+              e.currentTarget.style.borderColor = 'var(--border-soft)';
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          />
+        </div>
+
+        <div className="flex justify-end gap-2 mt-2">
           <button
-            className="wr-modal-confirm"
+            onClick={onClose}
+            className="px-4 transition-colors"
+            style={{
+              height: '32px',
+              background: 'transparent',
+              border: '1px solid var(--border-soft)',
+              borderRadius: '20px',
+              color: 'var(--text-2)',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: 'pointer'
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,23,19,0.04)'; e.currentTarget.style.color = 'var(--text-1)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-2)'; }}
+          >
+            Cancel
+          </button>
+          <button
             onClick={() => onSave(name.trim() || defaultName)}
+            disabled={!name.trim()}
+            className="btn-primary flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              height: '32px',
+              padding: '0 16px',
+              background: name.trim() ? 'var(--ink)' : 'var(--ink-disabled)',
+              color: name.trim() ? '#fff' : 'var(--ink-text-dis)',
+              border: 'none',
+              borderRadius: '20px',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: name.trim() ? 'pointer' : 'not-allowed'
+            }}
+            onMouseEnter={e => { if (name.trim()) e.currentTarget.style.background = 'var(--ink-hover)'; }}
+            onMouseLeave={e => { if (name.trim()) e.currentTarget.style.background = 'var(--ink)'; }}
           >
             Save Template
           </button>
@@ -1557,7 +1648,7 @@ function BrandVoiceModal({
   if (!open) return null
 
   return (
-    <div className="wr-overlay" onClick={onClose}>
+    <div className="wr-modal-overlay" onClick={onClose}>
       <div className="wr-modal wr-voice-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="wr-modal-header">
           <div className="wr-modal-header-icon"><Fingerprint size={20} /></div>
@@ -1747,7 +1838,7 @@ function ShareModal({
   if (!open || !payload) return null
 
   return (
-    <div className="wr-overlay" onClick={onClose}>
+    <div className="wr-modal-overlay" onClick={onClose}>
       <div className="wr-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <h3 className="wr-modal-title">Share Card</h3>
         <div className="wr-share-canvas-wrap">
@@ -1786,64 +1877,76 @@ function ShortcutsModal({
 }) {
   if (!open) return null
 
+  const isMac = typeof window !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent)
+  const mod = isMac ? '⌘' : 'Ctrl'
+  const shift = isMac ? '⇧' : 'Shift'
+  const enter = isMac ? '↵' : 'Enter'
+  const backspace = isMac ? '⌫' : 'Backspace'
+
   const groups = [
     {
-      label: 'Compose',
+      label: 'General',
       items: [
-        { desc: 'Submit message', keys: ['Ctrl', 'Enter'] },
-        { desc: 'Cancel current request', keys: ['Escape'] },
-        { desc: 'Focus input', keys: ['Ctrl', 'K'] },
-        { desc: 'Cycle tone', keys: ['T'] },
+        { desc: 'Focus composer input', keys: [mod, 'K'] },
+        { desc: 'Toggle focus mode', keys: [mod, shift, 'F'] },
+        { desc: 'Keyboard shortcuts', keys: [mod, '/'] },
+        { desc: 'Keyboard shortcuts (?)', keys: ['?'] },
+        { desc: 'Cancel request / Close dialogs', keys: ['Esc'] },
       ],
     },
     {
-      label: 'Navigation',
+      label: 'Compose & Actions',
       items: [
-        { desc: 'Switch modes', keys: ['1-4'] },
+        { desc: 'Submit draft/message', keys: [mod, enter] },
+        { desc: 'Save last output as template', keys: [mod, 'S'] },
+        { desc: 'Copy last improved text', keys: [mod, shift, 'C'] },
+      ],
+    },
+    {
+      label: 'Navigation & Modes',
+      items: [
+        { desc: 'Switch writing mode', keys: ['1-4'] },
         { desc: 'New chat', keys: ['N'] },
-        { desc: 'Back to landing', keys: ['Backspace'] },
-      ],
-    },
-    {
-      label: 'Actions',
-      items: [
-        { desc: 'Save last output as template', keys: ['Ctrl', 'S'] },
-        { desc: 'Copy last improved text', keys: ['Ctrl', 'Shift', 'C'] },
-        { desc: 'Open shortcuts', keys: ['Ctrl', '/'] },
-        { desc: 'Open shortcuts (?)', keys: ['?'] },
+        { desc: 'Clear chat / Back to landing', keys: [backspace] },
+        { desc: 'Cycle through tones', keys: ['T'] },
       ],
     },
   ] as const
 
   return (
-    <div className="wr-overlay" onClick={onClose}>
+    <div className="wr-modal-overlay" onClick={onClose}>
       <div
-        className="wr-modal"
+        className="wr-modal wr-shortcuts-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Keyboard shortcuts"
       >
-        <h3 className="wr-modal-title">Keyboard Shortcuts</h3>
-        {groups.map((group) => (
-          <div key={group.label} className="wr-shortcut-section">
-            <p className="wr-shortcut-section-lbl">{group.label}</p>
-            {group.items.map((item) => (
-              <div key={`${group.label}-${item.desc}`} className="wr-shortcut-row">
-                <span className="wr-shortcut-desc">{item.desc}</span>
-                <div className="wr-shortcut-keys">
-                  {item.keys.map((keyPart) => (
-                    <kbd key={`${item.desc}-${keyPart}`} className="wr-kbd">{keyPart}</kbd>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
-        <div className="wr-modal-footer">
-          <button className="wr-modal-confirm" onClick={onClose}>
-            Got it
+        <div className="wr-modal-header">
+          <h3 className="wr-modal-title">Keyboard shortcuts</h3>
+          <button className="wr-modal-close" onClick={onClose} aria-label="Close modal">
+            <X size={18} />
           </button>
+        </div>
+
+        <div className="wr-shortcuts-body">
+          {groups.map((group) => (
+            <div key={group.label} className="wr-shortcut-section">
+              <p className="wr-shortcut-section-lbl">{group.label}</p>
+              <div className="wr-shortcut-list">
+                {group.items.map((item) => (
+                  <div key={`${group.label}-${item.desc}`} className="wr-shortcut-row">
+                    <span className="wr-shortcut-desc">{item.desc}</span>
+                    <div className="wr-shortcut-keys">
+                      {item.keys.map((keyPart) => (
+                        <kbd key={`${item.desc}-${keyPart}`} className="wr-kbd">{keyPart}</kbd>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -2169,23 +2272,7 @@ export default function WriteRightPage() {
   const [voiceModalOpen, setVoiceModalOpen] = useState(false)
   const [showAdvancedTools, setShowAdvancedTools] = useState(false)
   const [showSelectors, setShowSelectors] = useState(false)
-  const [sessionStats, setSessionStats] = useState<SessionStats | null>(null)
 
-  // Fetch session stats on mount
-  useEffect(() => {
-    async function fetchSessionStats() {
-      try {
-        const res = await fetch('/api/writeright/session-stats')
-        if (res.ok) {
-          const json = await res.json()
-          setSessionStats(json)
-        }
-      } catch {
-        // Non-fatal — stats bar is cosmetic
-      }
-    }
-    fetchSessionStats()
-  }, [])
 
   const { playClick, playShimmer, toggleMute, isMuted } = useHaptics()
 
@@ -2503,6 +2590,11 @@ export default function WriteRightPage() {
   const [templatePanelOpen, setTemplatePanelOpen] = useState(false)
   const [coachMetrics, setCoachMetrics] = useState<CoachMetrics | null>(null)
   const [splitSelection, setSplitSelection] = useState<{ text: string; rect: DOMRect | null } | null>(null)
+  
+  const [projectModalOpen, setProjectModalOpen] = useState(false)
+  const [editingProject, setEditingProject] = useState<ProjectData | null>(null)
+  const [projects, setProjects] = useState<ProjectData[]>([])
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   const [splitRefinePrompt, setSplitRefinePrompt] = useState('')
   const [isSplitRefining, setIsSplitRefining] = useState(false)
   const [analyticsOpen, setAnalyticsOpen] = useState(false)
@@ -2705,11 +2797,21 @@ export default function WriteRightPage() {
     }
   }, [])
 
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await apiGet<{ projects: ProjectData[] }>('/api/writeright/projects')
+      setProjects(res.projects || [])
+    } catch {
+      // Non-fatal
+    }
+  }, [])
+
   useEffect(() => {
     loadChats()
     loadTemplates().catch(() => undefined)
     loadProfile()
-  }, [loadChats, loadTemplates, loadProfile])
+    loadProjects()
+  }, [loadChats, loadTemplates, loadProfile, loadProjects])
 
   useEffect(() => () => { abortRef.current?.abort() }, [])
 
@@ -2914,6 +3016,37 @@ export default function WriteRightPage() {
 
     }
   }, [chatId, handleModeChange])
+
+  const renameChat = useCallback(async (e: React.MouseEvent, id: string, newTitle: string) => {
+    e.stopPropagation()
+    if (!newTitle.trim()) return
+    try {
+      await apiPatch(`/api/writeright/chat/${id}`, { name: newTitle }) // Note: some schemas use 'name', some use 'title'. TemplateRenameSchema uses 'name'. Let's pass 'name' based on what I saw earlier in the backend.
+      setChats((prev) => prev.map((c) => (c.id === id ? { ...c, title: newTitle } : c)))
+    } catch (err) {
+      // showError('Failed to rename chat')
+    }
+  }, [])
+
+  const handleSaveProject = useCallback(async (data: Omit<ProjectData, 'id'>) => {
+    if (editingProject) {
+      const res = await apiPatch<{ project: ProjectData }>(`/api/writeright/projects/${editingProject.id}`, data)
+      setProjects(prev => prev.map(p => p.id === res.project.id ? res.project : p))
+    } else {
+      const res = await apiPost<{ project: ProjectData }>(`/api/writeright/projects`, data)
+      setProjects(prev => [res.project, ...prev])
+    }
+  }, [editingProject])
+
+  const handleDeleteProject = useCallback(async (id: string) => {
+    try {
+      await apiDelete(`/api/writeright/projects/${id}`)
+      setProjects(prev => prev.filter(p => p.id !== id))
+      if (activeProjectId === id) setActiveProjectId(null)
+    } catch {
+      // showError('Failed to delete project')
+    }
+  }, [activeProjectId])
 
   const [isExporting, setIsExporting] = useState(false)
 
@@ -3456,50 +3589,57 @@ export default function WriteRightPage() {
                           <span className="wr-item-count">{c.message_count}</span>
                         )}
                       </div>
-                      <button className="wr-item-delete" onClick={(e) => { void deleteChat(e, c.id) }} aria-label="Delete chat">
-                        <Trash2 size={13} />
-                      </button>
+                      <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                        <button className="wr-item-delete" onClick={(e) => {
+                          e.stopPropagation()
+                          const newName = window.prompt('Rename chat:', c.title || 'New Conversation')
+                          if (newName) void renameChat(e, c.id, newName)
+                        }} aria-label="Rename chat">
+                          <Pencil size={13} />
+                        </button>
+                        <button className="wr-item-delete" onClick={(e) => { void deleteChat(e, c.id) }} aria-label="Delete chat">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </details>
 
                 <details open>
                   <summary className="wr-section-header flex items-center justify-between w-full">
-                    <span>Templates</span>
+                    <span>Projects</span>
                     <button
                       type="button"
                       className="wr-template-settings-btn"
                       onClick={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
-                        setTemplatePanelOpen(true)
+                        setEditingProject(null)
+                        setProjectModalOpen(true)
                       }}
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', marginLeft: 'auto', display: 'flex', alignItems: 'center' }}
-                      title="Template Panel"
+                      title="New Project"
                     >
-                      <Settings2 size={12} />
+                      <Plus size={12} />
                     </button>
                   </summary>
-                  {templates.length === 0 && (
-                    <p className="wr-sidebar-empty-text-text">No templates saved yet.</p>
+                  {projects.length === 0 && (
+                    <p className="wr-sidebar-empty-text-text">No projects yet.</p>
                   )}
-                  {templates.map((template) => (
+                  {projects.map((proj) => (
                     <div
-                      key={template.id}
-                      className="wr-item"
-                      data-mode={template.mode}
+                      key={proj.id}
+                      className={`wr-item${activeProjectId === proj.id ? ' is-active' : ''}`}
                       onClick={() => {
-                        setInput(template.content.slice(0, CHAR_MAX))
-                        setMode(template.mode)
-                        setTone(template.tone)
-                        void markUsed(template.id)
-                        taRef.current?.focus()
+                        setActiveProjectId(proj.id)
+                        setChatId(null)
+                        setMessages([])
+                        setHasStarted(false)
+                        setInput('')
                       }}
                     >
-                      <div className="wr-item-title">{template.name}</div>
+                      <div className="wr-item-title">{proj.name}</div>
                       <div className="wr-item-meta">
-                        <span className="wr-item-date">{template.tone}</span>
-                        <span className="wr-item-count">{template.use_count}</span>
+                        <span className="wr-item-date">{proj.icon}</span>
                       </div>
                     </div>
                   ))}
@@ -3517,12 +3657,12 @@ export default function WriteRightPage() {
         </div>
       </div>
 
-      <div className="wr-main" style={{ position: 'relative', overflow: 'hidden' }}>
+      <div className="wr-main">
         <div className="wr-plan-bar">
           <div className="wr-plan-badge">
             <span className="wr-plan-badge-dot" />
             <span>Pro Plan</span>
-            <span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>
+            <span className="wr-plan-sep">•</span>
             <Link href="/dashboard/settings" className="wr-plan-upgrade">
               Manage Plan
             </Link>
@@ -3584,7 +3724,13 @@ export default function WriteRightPage() {
 
         <div className="wr-scroll" ref={scrollRef}>
           <div className="wr-content">
-            {templatePanelOpen ? (
+            {activeProjectId && projects.find(p => p.id === activeProjectId) ? (
+              <ProjectView
+                project={projects.find(p => p.id === activeProjectId)!}
+                onEdit={(p) => { setEditingProject(p); setProjectModalOpen(true) }}
+                onDelete={handleDeleteProject}
+              />
+            ) : templatePanelOpen ? (
               <TemplatePanel
                 onUseTemplate={(content, tplMode, tplTone) => {
                   setInput(content.slice(0, CHAR_MAX))
@@ -3732,8 +3878,8 @@ export default function WriteRightPage() {
                           {m.role === 'ai' && m.kind === 'result' && (
                             <div className="wr-ai-row">
                               <div className="wr-ai-header">
-                                <div className="wr-ai-avatar">✍️</div>
-                                <span className="wr-ai-label">Writeright</span>
+                                <div className="wr-ai-avatar">W</div>
+                                <span className="wr-ai-label">WriteRight</span>
                               </div>
                               <WriteDiffBlock
                                 before={m.before}
@@ -3776,8 +3922,8 @@ export default function WriteRightPage() {
                           {m.role === 'ai' && m.kind === 'notice' && (
                             <div className="wr-ai-row">
                               <div className="wr-ai-header">
-                                <div className="wr-ai-avatar">✍️</div>
-                                <span className="wr-ai-label">Notice</span>
+                                <div className="wr-ai-avatar">W</div>
+                                <span className="wr-ai-label">WriteRight</span>
                               </div>
                               {m.content === 'Cancelled' || m.content.startsWith('Switched to ')
                                 ? <div className="wr-divider-line">{m.content}</div>
@@ -3811,8 +3957,8 @@ export default function WriteRightPage() {
                 {loading && streamingText && (
                   <div className="wr-ai-row">
                     <div className="wr-ai-header">
-                      <div className="wr-ai-avatar">✍️</div>
-                      <span className="wr-ai-label">Writing...</span>
+                      <div className="wr-ai-avatar">W</div>
+                      <span className="wr-ai-label">WriteRight</span>
                     </div>
                     <WriteDiffBlock
                       before={streamingBefore || (lastSubmittedText ?? 'Your draft')}
@@ -3828,30 +3974,6 @@ export default function WriteRightPage() {
           </div>
         </div>
 
-        {/* ── Session Stats Bar ── */}
-        {sessionStats && (
-          <div className="wr-session-bar" role="status" aria-label="Session statistics">
-            <div className="wr-session-bar-item">
-              <span className="wr-session-bar-value">{sessionStats.today_count}</span>
-              <span className="wr-session-bar-label">Today</span>
-            </div>
-            <div className="wr-session-bar-divider" />
-            <div className="wr-session-bar-item">
-              <span className="wr-session-bar-value">{sessionStats.week_count}</span>
-              <span className="wr-session-bar-label">This Week</span>
-            </div>
-            <div className="wr-session-bar-divider" />
-            <div className="wr-session-bar-item">
-              <span className="wr-session-bar-value">{sessionStats.streak_days}🔥</span>
-              <span className="wr-session-bar-label">Streak</span>
-            </div>
-            <div className="wr-session-bar-divider" />
-            <div className="wr-session-bar-item">
-              <span className="wr-session-bar-value">{sessionStats.avg_clarity}/10</span>
-              <span className="wr-session-bar-label">Avg Clarity</span>
-            </div>
-          </div>
-        )}
 
         {/* ── Standard Input Bar ── */}
         <div className="wr-composer-bar">
@@ -4041,7 +4163,7 @@ export default function WriteRightPage() {
                     aria-expanded={showSelectors}
                   >
                     {MODES.find(m => m.id === mode)?.label ?? 'Email'}
-                    <span style={{ color: '#9C9489', fontSize: '11px' }}>·</span>
+                    <span className="wr-plan-sep">·</span>
                     {tone}
                     <ChevronDown size={12} className="wr-selector-chevron" />
                   </button>
@@ -4071,7 +4193,7 @@ export default function WriteRightPage() {
                     aria-label="Improve text"
                   >
                     {loading
-                      ? <>{[0, 1, 2].map((i) => <span key={i} className="wr-dot" style={{ animationDelay: `${i * 0.2}s` }} />)}</>
+                      ? <>{[0, 1, 2].map((i) => <span key={i} className="wr-dot" />)}</>
                       : <><Wand2 size={13} strokeWidth={2.2} /> Improve</>
                     }
                   </motion.button>
@@ -4358,6 +4480,13 @@ export default function WriteRightPage() {
           </div>
         ))}
       </div>
+
+      <ProjectModal
+        isOpen={projectModalOpen}
+        onClose={() => setProjectModalOpen(false)}
+        initialData={editingProject}
+        onSave={handleSaveProject}
+      />
     </div>
   )
 }

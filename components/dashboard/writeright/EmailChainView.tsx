@@ -145,7 +145,7 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
   const getToneBadgeStyle = (toneTrend: string): React.CSSProperties => {
     if (toneTrend === 'escalating') return { background: 'rgba(220,38,38,0.1)', color: 'var(--wr-error)' }
     if (toneTrend === 'de-escalating') return { background: 'rgba(22,163,74,0.1)', color: 'var(--wr-success)' }
-    return { background: 'rgba(107,99,88,0.08)', color: '#6b6358' }
+    return { background: 'rgba(107,99,88,0.08)', color: 'var(--wr-text-2)' }
   }
 
   return (
@@ -242,7 +242,7 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
             <button
               onClick={handleDraftNextEmail}
               disabled={loading || !nextGoal.trim()}
-              style={{ padding: '8px 16px', background: 'var(--wr-accent)', color: '#fff', fontSize: '12px', fontWeight: 600, borderRadius: '6px', border: 'none', cursor: 'pointer', opacity: (loading || !nextGoal.trim()) ? 0.5 : 1 }}
+              className="wr-chain-send-btn"
             >
               {loading ? 'Drafting...' : 'Draft Response'}
             </button>
@@ -278,7 +278,7 @@ export const EmailChainView: React.FC<EmailChainViewProps> = ({ isOpen, onClose 
         </div>
 
         {/* Risk Assessment */}
-        <div style={{ background: 'rgba(220,38,38,0.05)', borderLeft: '2px solid var(--wr-error)', padding: '12px', borderRadius: '4px' }}>
+        <div className="wr-chain-risk-card">
           <span style={{ fontSize: '12px', color: 'var(--wr-error)', fontWeight: 700, textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Risk Assessment</span>
           <p style={{ fontSize: '12px', color: 'var(--wr-text-2)', lineHeight: 1.6, margin: 0 }}>{advice.riskAssessment}</p>
         </div>

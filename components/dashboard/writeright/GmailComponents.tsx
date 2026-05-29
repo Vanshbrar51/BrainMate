@@ -138,34 +138,18 @@ const GMAIL_ACTIONS: Array<{ action: GmailAction; label: string; icon: React.Rea
 // ---------------------------------------------------------------------------
 // Label styling helper for vibrant, curated priorities
 // ---------------------------------------------------------------------------
-function getLabelStyles(label: string): React.CSSProperties {
+function getLabelClass(label: string): string {
   switch (label) {
     case 'URGENT':
-      return {
-        color: 'var(--wr-error)',
-        backgroundColor: 'rgba(192, 57, 43, 0.08)',
-        border: '1px solid rgba(192, 57, 43, 0.15)',
-      }
+      return 'wr-gmail-label-urgent'
     case 'ACTION_REQUIRED':
-      return {
-        color: 'var(--wr-warning)',
-        backgroundColor: 'rgba(183, 121, 31, 0.08)',
-        border: '1px solid rgba(183, 121, 31, 0.15)',
-      }
+      return 'wr-gmail-label-action'
     case 'CLIENT':
-      return {
-        color: 'var(--wr-success)',
-        backgroundColor: 'rgba(45, 106, 79, 0.08)',
-        border: '1px solid rgba(45, 106, 79, 0.15)',
-      }
+      return 'wr-gmail-label-client'
     case 'NEWSLETTER':
     case 'FYI':
     default:
-      return {
-        color: 'var(--wr-text-3)',
-        backgroundColor: 'var(--wr-surface-2)',
-        border: '1px solid var(--wr-border)',
-      }
+      return 'wr-gmail-label-fyi'
   }
 }
 
@@ -482,8 +466,7 @@ export function GmailPanel({
                   </div>
                   {classification.label !== 'NONE' && (
                     <span 
-                      className="wr-gmail-label-badge" 
-                      style={getLabelStyles(classification.label)}
+                      className={`wr-gmail-label-badge ${getLabelClass(classification.label)}`}
                     >
                       {classification.label.replace('_', ' ')}
                     </span>
@@ -627,8 +610,7 @@ export function GmailEmailPreview({
           </span>
           {classification.label !== 'NONE' && (
             <span 
-              className="wr-gmail-label-badge font-bold wr-text-10 px-2 py-0.5 rounded"
-              style={getLabelStyles(classification.label)}
+              className={`wr-gmail-label-badge font-bold wr-text-10 px-2 py-0.5 rounded ${getLabelClass(classification.label)}`}
             >
               {classification.label.replace('_', ' ')}
             </span>
